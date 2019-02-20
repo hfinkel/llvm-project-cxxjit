@@ -1826,6 +1826,11 @@ def fallow_editor_placeholders : Flag<["-"], "fallow-editor-placeholders">,
 def fno_allow_editor_placeholders : Flag<["-"],
   "fno-allow-editor-placeholders">, Group<f_Group>;
 
+def fjit : Flag<["-"], "fjit">, Group<f_Group>,
+  HelpText<"Enable C++ JIT extensions">, Flags<[CC1Option]>;
+def fno_jit : Flag<["-"], "fno-jit">, Group<f_Group>,
+  HelpText<"Disable C++ JIT extensions">;
+
 def fdebug_types_section: Flag <["-"], "fdebug-types-section">, Group<f_Group>,
   Flags<[CC1Option]>, HelpText<"Place debug types in their own section (ELF Only)">;
 def fno_debug_types_section: Flag<["-"], "fno-debug-types-section">, Group<f_Group>,

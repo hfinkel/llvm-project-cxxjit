@@ -3950,6 +3950,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (Args.hasArg(options::OPT_fsplit_stack))
     CmdArgs.push_back("-split-stacks");
 
+  if (Args.hasFlag(options::OPT_fjit, options::OPT_fno_jit, false))
+    CmdArgs.push_back("-fjit");
+
   RenderFloatingPointOptions(TC, D, OFastEnabled, Args, CmdArgs);
 
   // Decide whether to use verbose asm. Verbose assembly is the default on
