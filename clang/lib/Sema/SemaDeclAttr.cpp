@@ -4301,6 +4301,15 @@ OptimizeNoneAttr *Sema::mergeOptimizeNoneAttr(Decl *D, SourceRange Range,
                                           AttrSpellingListIndex);
 }
 
+JITFuncAttr *Sema::mergeJITFuncAttr(Decl *D, SourceRange Range,
+                                    unsigned AttrSpellingListIndex) {
+  if (D->hasAttr<JITFuncAttr>())
+    return nullptr;
+
+  return ::new (Context) JITFuncAttr(Range, Context,
+                                     AttrSpellingListIndex);
+}
+
 SpeculativeLoadHardeningAttr *Sema::mergeSpeculativeLoadHardeningAttr(
     Decl *D, const SpeculativeLoadHardeningAttr &AL) {
   if (checkAttrMutualExclusion<NoSpeculativeLoadHardeningAttr>(*this, D, AL))
@@ -4330,6 +4339,12 @@ static void handleOptimizeNoneAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   if (OptimizeNoneAttr *Optnone = S.mergeOptimizeNoneAttr(
           D, AL.getRange(), AL.getAttributeSpellingListIndex()))
     D->addAttr(Optnone);
+}
+
+static void handleJITFuncAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  if (JITFuncAttr *JF = S.mergeJITFuncAttr(
+          D, AL.getRange(), AL.getAttributeSpellingListIndex()))
+    D->addAttr(JF);
 }
 
 static void handleConstantAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
@@ -6641,6 +6656,9 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     break;
   case ParsedAttr::AT_OptimizeNone:
     handleOptimizeNoneAttr(S, D, AL);
+    break;
+  case ParsedAttr::AT_JITFunc:
+    handleJITFuncAttr(S, D, AL);
     break;
   case ParsedAttr::AT_FlagEnum:
     handleSimpleAttribute<FlagEnumAttr>(S, D, AL);

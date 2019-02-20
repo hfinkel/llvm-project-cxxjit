@@ -4095,3 +4095,16 @@ Likewise, when applied to a strong local variable, that variable becomes
 
 When compiled without ``-fobjc-arc``, this attribute is ignored.
 }]; }
+
+def JITFuncDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+The ``jit`` attribute can be applied to function templates. When such a
+template is instantiated, this is deferred until program execution using
+just-in-time (JIT) compilation. Non-type template parameters of such
+template instantiation may be non-constant expressions. The type of such
+an instantiation, and the return type if dependent, is not available for
+further type deduction.
+  }];
+}
+

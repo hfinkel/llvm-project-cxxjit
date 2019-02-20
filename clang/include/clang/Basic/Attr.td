@@ -118,6 +118,10 @@ def GlobalVar : SubsetSubject<Var,
 def InlineFunction : SubsetSubject<Function,
                              [{S->isInlineSpecified()}], "inline functions">;
 
+def FunctionTmpl : SubsetSubject<Function,
+                             [{S->getTemplatedKind() == FunctionDecl::TK_FunctionTemplate}],
+                             "function templates">;
+
 // FIXME: this hack is needed because DeclNodes.td defines the base Decl node
 // type to be a class, not a definition. This makes it impossible to create an
 // attribute subject which accepts a Decl. Normally, this is not a problem,
@@ -3201,3 +3205,10 @@ def ObjCExternallyRetained : InheritableAttr {
   let Subjects = SubjectList<[NonParmVar, Function, Block, ObjCMethod]>;
   let Documentation = [ObjCExternallyRetainedDocs];
 }
+
+def JITFunc : InheritableAttr {
+  let Spellings = [Clang<"jit">];
+  let Subjects = SubjectList<[FunctionTmpl]>;
+  let Documentation = [JITFuncDocs];
+}
+
