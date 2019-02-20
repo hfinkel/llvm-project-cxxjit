@@ -2950,6 +2950,10 @@ def err_invalid_attribute_on_virtual_function : Error<
 def ext_cannot_use_trivial_abi : ExtWarn<
   "'trivial_abi' cannot be applied to %0">, InGroup<IgnoredAttributes>;
 
+def warn_jit_attribute_ignored :
+  Warning<"'jit' attribute ignored; use -fjit to enable the attribute">,
+  InGroup<IgnoredAttributes>;
+
 // Availability attribute
 def warn_availability_unknown_platform : Warning<
   "unknown platform %0 in availability macro">, InGroup<Availability>;
