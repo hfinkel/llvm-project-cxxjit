@@ -300,13 +300,13 @@ struct CompilerData {
     Ctx->setExternalSource(Reader);
 
     switch (Reader->ReadAST(Filename, serialization::MK_MainFile,
-                            SourceLocation(), ASTReader::ARR_None)) {
+                            SourceLocation(), ASTReader::ARR_OutOfDate)) {
     case ASTReader::Success:
+    case ASTReader::OutOfDate:
       break;
 
     case ASTReader::Failure:
     case ASTReader::Missing:
-    case ASTReader::OutOfDate:
     case ASTReader::VersionMismatch:
     case ASTReader::ConfigurationMismatch:
     case ASTReader::HadErrors:
