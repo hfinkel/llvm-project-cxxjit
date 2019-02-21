@@ -21,6 +21,9 @@ set(LLVM_LINK_COMPONENTS
   Support
   Target
   TransformUtils
+  ExecutionEngine
+  Interpreter
+  nativecodegen
   )
 
 # In a standard Clang+LLVM build, we need to generate intrinsics before
@@ -92,6 +95,7 @@ add_clang_library(clangCodeGen
   SwiftCallingConv.cpp
   TargetInfo.cpp
   VarBypassDetector.cpp
+  JIT.cpp
 
   DEPENDS
   ${codegen_deps}

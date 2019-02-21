@@ -44,6 +44,10 @@ bool addXRayRuntime(const ToolChain &TC, const llvm::opt::ArgList &Args,
 void linkXRayRuntimeDeps(const ToolChain &TC,
                          llvm::opt::ArgStringList &CmdArgs);
 
+void AddJITRunTimeLibs(const ToolChain &TC, const Driver &D,
+                       llvm::opt::ArgStringList &CmdArgs,
+                       const llvm::opt::ArgList &Args);
+
 void AddRunTimeLibs(const ToolChain &TC, const Driver &D,
                     llvm::opt::ArgStringList &CmdArgs,
                     const llvm::opt::ArgList &Args);
