@@ -218,7 +218,7 @@ FEATURE(shadow_call_stack,
         LangOpts.Sanitize.has(SanitizerKind::ShadowCallStack))
 FEATURE(tls, PP.getTargetInfo().isTLSSupported())
 FEATURE(underlying_type, LangOpts.CPlusPlus)
-FEATURE(clang_cxx_jit, LangOpts.CPlusPlusJIT)
+FEATURE(clang_cxx_jit, LangOpts.isJITEnabled())
 
 // C11 features supported by other languages as extensions.
 EXTENSION(c_alignas, true)

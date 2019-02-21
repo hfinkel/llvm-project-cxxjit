@@ -1096,6 +1096,9 @@ public:
   /// with this AST context, if any.
   ASTMutationListener *getASTMutationListener() const { return Listener; }
 
+  /// When needed for JIT, the buffer into which to save the AST.
+  SmallString<128> ASTBufferForJIT;
+
   void PrintStats() const;
   const SmallVectorImpl<Type *>& getTypes() const { return Types; }
 

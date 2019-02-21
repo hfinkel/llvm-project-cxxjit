@@ -979,7 +979,8 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   // FIXME: For backend options that are not yet recorded as function
   // attributes in the IR, keep track of them so we can embed them in a
   // separate data section and use them when building the bitcode.
-  if (Opts.getEmbedBitcode() == CodeGenOptions::Embed_All) {
+  if (Opts.getEmbedBitcode() == CodeGenOptions::Embed_All ||
+      Args.hasArg(OPT_fjit)) {
     for (const auto &A : Args) {
       // Do not encode output and input.
       if (A->getOption().getID() == options::OPT_o ||
@@ -2992,7 +2993,10 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
 
   Opts.RegisterStaticDestructors = !Args.hasArg(OPT_fno_cxx_static_destructors);
 
-  Opts.CPlusPlusJIT = Args.hasArg(OPT_fjit);
+  if (Args.hasArg(OPT_fis_jit))
+    Opts.setCPlusPlusJIT(LangOptions::JITMode::JM_IsJIT);
+  else if (Args.hasArg(OPT_fjit))
+    Opts.setCPlusPlusJIT(LangOptions::JITMode::JM_Enabled);
 
   if (Arg *A = Args.getLastArg(OPT_fclang_abi_compat_EQ)) {
     Opts.setClangABICompat(LangOptions::ClangABI::Latest);

@@ -319,7 +319,7 @@ LANGOPT(PaddingOnUnsignedFixedPoint, 1, 0,
 
 LANGOPT(RegisterStaticDestructors, 1, 1, "Register C++ static destructors")
 
-LANGOPT(CPlusPlusJIT, 1, 0, "C++ JIT support")
+ENUM_LANGOPT(CPlusPlusJIT, JITMode, 2, JITMode::JM_None, "C++ JIT support")
 
 #undef LANGOPT
 #undef COMPATIBLE_LANGOPT

@@ -6542,7 +6542,8 @@ public:
   ExprResult CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
                                    QualType InstantiatedParamType, Expr *Arg,
                                    TemplateArgument &Converted,
-                               CheckTemplateArgumentKind CTAK = CTAK_Specified);
+                               CheckTemplateArgumentKind CTAK = CTAK_Specified,
+                               bool IsForJIT = false);
   bool CheckTemplateTemplateArgument(TemplateParameterList *Params,
                                      TemplateArgumentLoc &Arg);
 

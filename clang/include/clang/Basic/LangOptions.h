@@ -84,6 +84,17 @@ public:
     CMK_ModuleInterface,
   };
 
+  enum JITMode {
+    /// No JIT support is enabled.
+    JM_None,
+
+    /// JIT support is enabled for AoT compilation.
+    JM_Enabled,
+
+    /// Compiler instance is part of the JIT engine.
+    JM_IsJIT,
+  };
+
   enum PragmaMSPointersToMembersKind {
     PPTMK_BestCase,
     PPTMK_FullGeneralitySingleInheritance,
@@ -300,6 +311,10 @@ public:
 
   /// Return the OpenCL C or C++ version as a VersionTuple.
   VersionTuple getOpenCLVersionTuple() const;
+
+  bool isJITEnabled() const {
+    return CPlusPlusJIT == JM_Enabled;
+  }
 };
 
 /// Floating point control options

@@ -1453,7 +1453,14 @@ TemplateDeclInstantiator::VisitFunctionTemplateDecl(FunctionTemplateDecl *D) {
     return nullptr;
 
   FunctionDecl *Instantiated = nullptr;
-  if (CXXMethodDecl *DMethod = dyn_cast<CXXMethodDecl>(D->getTemplatedDecl()))
+
+  // If we're going to JIT this function template, then don't actually
+  // instantiate it now.
+  if (SemaRef.getLangOpts().isJITEnabled() &&
+      D->getTemplatedDecl()->hasAttr<JITFuncAttr>())
+    Instantiated = D->getTemplatedDecl();
+  else if (CXXMethodDecl *DMethod = dyn_cast<CXXMethodDecl>(
+                                                          D->getTemplatedDecl()))
     Instantiated = cast_or_null<FunctionDecl>(VisitCXXMethodDecl(DMethod,
                                                                  InstParams));
   else
@@ -4126,7 +4133,8 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
       return;
 
     StmtResult Body;
-    if (PatternDecl->hasSkippedBody()) {
+    if (PatternDecl->hasSkippedBody() ||
+        (getLangOpts().isJITEnabled() && PatternDecl->hasAttr<JITFuncAttr>())) {
       ActOnSkippedFunctionBody(Function);
       Body = nullptr;
     } else {

@@ -4804,9 +4804,15 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
     case TemplateArgument::Expression: {
       TemplateArgument Result;
       unsigned CurSFINAEErrors = NumSFINAEErrors;
+
+      bool IsForJIT = false;
+      if (getLangOpts().isJITEnabled())
+        if (auto *FT = dyn_cast<FunctionTemplateDecl>(Template))
+          IsForJIT = FT->getTemplatedDecl()->hasAttr<JITFuncAttr>();
+
       ExprResult Res =
         CheckTemplateArgument(NTTP, NTTPType, Arg.getArgument().getAsExpr(),
-                              Result, CTAK);
+                              Result, CTAK, IsForJIT);
       if (Res.isInvalid())
         return true;
       // If the current template argument causes an error, give up now.
@@ -6185,7 +6191,8 @@ static bool CheckTemplateArgumentPointerToMember(Sema &S,
 ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
                                        QualType ParamType, Expr *Arg,
                                        TemplateArgument &Converted,
-                                       CheckTemplateArgumentKind CTAK) {
+                                       CheckTemplateArgumentKind CTAK,
+                                       bool IsForJIT) {
   SourceLocation StartLoc = Arg->getBeginLoc();
 
   // If the parameter type somehow involves auto, deduce the type now.
@@ -6264,6 +6271,13 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
   // type-dependent, there's nothing we can check now.
   if (ParamType->isDependentType() || Arg->isTypeDependent()) {
     // FIXME: Produce a cloned, canonical expression?
+    Converted = TemplateArgument(Arg);
+    return Arg;
+  }
+
+  // If we're going to JIT this function template, then this expression might
+  // be anything.
+  if (IsForJIT) {
     Converted = TemplateArgument(Arg);
     return Arg;
   }
