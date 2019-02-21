@@ -15,6 +15,7 @@ set(LLVM_LINK_COMPONENTS
   MC
   ObjCARCOpts
   Object
+  Option
   Passes
   ProfileData
   ScalarOpts
@@ -104,7 +105,10 @@ add_clang_library(clangCodeGen
   clangAnalysis
   clangAST
   clangBasic
+  clangDriver
   clangFrontend
   clangLex
+  clangParse
+  clangSema
   clangSerialization
   )
