@@ -2384,7 +2384,7 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
          "Emitting a JIT stub for a non-JIT method?");
 
   static llvm::Value *CmdLineStr = nullptr, *CmdLineStrLen = nullptr,
-                     *ASTData = nullptr;
+                     *ASTData = nullptr, *ASTDataLen = nullptr;
   static int Cnt = 0;
 
   if (!CmdLineStr) {
@@ -2398,6 +2398,9 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
     ASTData =
       CGF.Builder.CreateGlobalStringPtr(CGF.getContext().ASTBufferForJIT,
                                         "__clang_jit_ast");
+    ASTDataLen =
+      llvm::ConstantInt::get(CGF.Int64Ty,
+                             CGF.getContext().ASTBufferForJIT.size());
   }
 
   auto &C = CGF.getContext();
@@ -2475,7 +2478,8 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
 
   // Emit call to __clang_jit(const char *CmdArgs, void *AST, void *Params)
   llvm::Type *TypeParams[] =
-    {CGF.Int8PtrTy, CGF.Int32Ty, CGF.VoidPtrTy, CGF.VoidPtrTy, CGF.Int32Ty};
+    {CGF.Int8PtrTy, CGF.Int32Ty, CGF.VoidPtrTy, CGF.Int64Ty,
+     CGF.VoidPtrTy, CGF.Int32Ty};
   auto *RetFTy = CGF.getTypes().GetFunctionType(GlobalDecl(FD));
 
   // This function is marked as readonly to allow the optimizer to remove it if
@@ -2490,7 +2494,7 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
   auto RTLFn = CGF.CGM.CreateRuntimeFunction(FnTy, "__clang_jit", ReadOnlyAttr);
 
   llvm::Value *Args[] = {
-      CmdLineStr, CmdLineStrLen, ASTData,
+      CmdLineStr, CmdLineStrLen, ASTData, ASTDataLen,
       CGF.Builder.CreatePointerCast(AI.getPointer(), CGF.VoidPtrTy),
       CGF.Builder.getInt32(Cnt)
   };
