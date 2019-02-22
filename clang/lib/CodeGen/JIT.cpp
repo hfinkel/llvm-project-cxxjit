@@ -472,6 +472,7 @@ struct CompilerData {
       Sema::InstantiatingTemplate Inst(
         *S, Loc, FTD, NewTAL->asArray(),
         Sema::CodeSynthesisContext::ExplicitTemplateArgumentSubstitution, Info);
+      Sema::ContextRAII TUContext(*S, Ctx->getTranslationUnitDecl());
 
       auto *Specialization = cast_or_null<FunctionDecl>(
         S->SubstDecl(FunctionTemplate->getTemplatedDecl(), Owner, SubstArgs));
