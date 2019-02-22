@@ -224,6 +224,46 @@ namespace clang {
       return false; // success
     }
 
+    void FinalizeForJIT(ASTContext &C) {
+      if (!LangOpts.isJITEnabled())
+        return;
+
+      SmallVector<llvm::CallInst *, 10> JCalls;
+      for (auto &F : getModule()->functions())
+      for (auto &BB : F)
+      for (auto &I : BB)
+        if (auto *CI = dyn_cast<llvm::CallInst>(&I))
+          if (auto *Callee = CI->getCalledFunction())
+            if (Callee->getName() == "__clang_jit")
+              JCalls.push_back(CI);
+
+      if (JCalls.empty())
+        return;
+
+      llvm::IRBuilder<> Builder(JCalls[0]->getParent());
+      auto &CmdArgs = CodeGenOpts.CmdArgs;
+      llvm::Value *CmdLineStr =
+        Builder.CreateGlobalStringPtr(std::string(CmdArgs.begin(),
+                                                  CmdArgs.end()),
+                                      "__clang_jit_cmdline");
+      llvm::Value *CmdLineStrLen = llvm::ConstantInt::get(Gen->CGM().Int32Ty,
+                                                          CmdArgs.size());
+
+      llvm::Value *ASTData =
+        Builder.CreateGlobalStringPtr(C.ASTBufferForJIT,
+                                      "__clang_jit_ast");
+      llvm::Value *ASTDataLen =
+        llvm::ConstantInt::get(Gen->CGM().SizeTy,
+                               C.ASTBufferForJIT.size());
+
+      for (auto *JCI : JCalls) {
+        JCI->setArgOperand(0, CmdLineStr);
+        JCI->setArgOperand(1, CmdLineStrLen);
+        JCI->setArgOperand(2, ASTData);
+        JCI->setArgOperand(3, ASTDataLen);
+      }
+    }
+
     void HandleTranslationUnit(ASTContext &C) override {
       {
         PrettyStackTraceString CrashInfo("Per-file LLVM IR generation");
@@ -288,6 +328,8 @@ namespace clang {
         return;
 
       EmbedBitcode(getModule(), CodeGenOpts, llvm::MemoryBufferRef());
+
+      FinalizeForJIT(C);
 
       EmitBackendOutput(Diags, HeaderSearchOpts, CodeGenOpts, TargetOpts,
                         LangOpts, C.getTargetInfo().getDataLayout(),

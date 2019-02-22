@@ -2383,28 +2383,9 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
   assert(CGF.getLangOpts().isJITEnabled() && FD->hasAttr<JITFuncAttr>() &&
          "Emitting a JIT stub for a non-JIT method?");
 
-  static llvm::Value *CmdLineStr = nullptr, *CmdLineStrLen = nullptr,
-                     *ASTData = nullptr, *ASTDataLen = nullptr;
-
   assert(FD->hasAttr<JITFuncInstantiationAttr>() &&
          "A JIT method does not have an instantiation id?");
   int Cnt = FD->getAttr<JITFuncInstantiationAttr>()->getId();
-
-  if (!CmdLineStr) {
-    auto &CmdArgs = CGF.CGM.getCodeGenOpts().CmdArgs;
-    CmdLineStr =
-      CGF.Builder.CreateGlobalStringPtr(std::string(CmdArgs.begin(),
-                                                    CmdArgs.end()),
-                                        "__clang_jit_cmdline");
-    CmdLineStrLen = llvm::ConstantInt::get(CGF.Int32Ty, CmdArgs.size());
-
-    ASTData =
-      CGF.Builder.CreateGlobalStringPtr(CGF.getContext().ASTBufferForJIT,
-                                        "__clang_jit_ast");
-    ASTDataLen =
-      llvm::ConstantInt::get(CGF.Int64Ty,
-                             CGF.getContext().ASTBufferForJIT.size());
-  }
 
   auto &C = CGF.getContext();
   RecordDecl *RD =
@@ -2481,7 +2462,7 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
 
   // Emit call to __clang_jit(const char *CmdArgs, void *AST, void *Params)
   llvm::Type *TypeParams[] =
-    {CGF.Int8PtrTy, CGF.Int32Ty, CGF.VoidPtrTy, CGF.Int64Ty,
+    {CGF.Int8PtrTy, CGF.Int32Ty, CGF.VoidPtrTy, CGF.SizeTy,
      CGF.VoidPtrTy, CGF.Int32Ty};
   auto *RetFTy = CGF.getTypes().GetFunctionType(GlobalDecl(FD));
 
@@ -2497,12 +2478,13 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
   auto RTLFn = CGF.CGM.CreateRuntimeFunction(FnTy, "__clang_jit", ReadOnlyAttr);
 
   llvm::Value *Args[] = {
-      CmdLineStr, CmdLineStrLen, ASTData, ASTDataLen,
+      llvm::Constant::getNullValue(CGF.Int8PtrTy),
+      llvm::Constant::getNullValue(CGF.Int32Ty),
+      llvm::Constant::getNullValue(CGF.VoidPtrTy),
+      llvm::Constant::getNullValue(CGF.SizeTy),
       CGF.Builder.CreatePointerCast(AI.getPointer(), CGF.VoidPtrTy),
       CGF.Builder.getInt32(Cnt)
   };
-
-  ++Cnt;
 
   return CGF.EmitRuntimeCall(RTLFn, Args);
 }

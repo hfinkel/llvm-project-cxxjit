@@ -14,6 +14,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclGroup.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticIDs.h"
 #include "clang/Basic/DiagnosticOptions.h"
@@ -198,6 +199,22 @@ void fatal() {
 
 llvm::sys::SmartMutex<false> Mutex;
 
+class JFIMapDeclVisitor : public RecursiveASTVisitor<JFIMapDeclVisitor> {
+  DenseMap<unsigned, FunctionDecl *> &Map;
+
+public:
+  explicit JFIMapDeclVisitor(DenseMap<unsigned, FunctionDecl *> &M)
+    : Map(M) { }
+
+  bool shouldVisitTemplateInstantiations() const { return true; }
+
+  bool VisitFunctionDecl(const FunctionDecl *D) {
+    if (auto *A = D->getAttr<JITFuncInstantiationAttr>())
+      Map[A->getId()] = const_cast<FunctionDecl *>(D);
+    return true;
+  }
+};
+
 struct CompilerData {
   std::unique_ptr<CompilerInvocation>     Invocation;
   std::unique_ptr<llvm::opt::OptTable>    Opts;
@@ -220,6 +237,8 @@ struct CompilerData {
   std::unique_ptr<ASTConsumer>            Consumer;
   std::unique_ptr<Sema>                   S;
   TrivialModuleLoader                     ModuleLoader;
+
+  DenseMap<unsigned, FunctionDecl *>      FuncMap;
 
   CompilerData(const void *CmdArgs, unsigned CmdArgsLen,
                const void *ASTBuffer, size_t ASTBufferSize) {
@@ -329,7 +348,16 @@ struct CompilerData {
     // Tell the diagnostic client that we have started a source file.
     Diagnostics->getClient()->BeginSourceFile(PP->getLangOpts(), PP.get());
 
-    Ctx->getTranslationUnitDecl()->dump();
+    JFIMapDeclVisitor(FuncMap).TraverseAST(*Ctx);
+  }
+
+  void *resolveFunction(const void *NTTPValues, unsigned Idx) {
+    FunctionDecl *F = FuncMap[Idx];
+    if (!F)
+      fatal();
+
+
+    return 0;
   }
 };
 
@@ -355,6 +383,6 @@ void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
     CD = TUCDI->second.get();
   }
 
-  return 0;
+  return CD->resolveFunction(NTTPValues, Idx);
 }
 
