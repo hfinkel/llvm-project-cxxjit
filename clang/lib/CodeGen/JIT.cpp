@@ -352,9 +352,48 @@ struct CompilerData {
   }
 
   void *resolveFunction(const void *NTTPValues, unsigned Idx) {
-    FunctionDecl *F = FuncMap[Idx];
-    if (!F)
+    FunctionDecl *FD = FuncMap[Idx];
+    if (!FD)
       fatal();
+
+    RecordDecl *RD =
+      Ctx->buildImplicitRecord(llvm::Twine("__clang_jit_args_")
+                               .concat(llvm::Twine(Idx))
+                               .concat(llvm::Twine("_t"))
+                               .str());
+
+    RD->startDefinition();
+
+    auto *FTSI = FD->getTemplateSpecializationInfo();
+    for (auto &TA : FTSI->TemplateArguments->asArray()) {
+      QualType FieldTy;
+      switch (TA.getKind()) {
+      case TemplateArgument::Null:
+      case TemplateArgument::Type:
+      case TemplateArgument::Template:
+      case TemplateArgument::TemplateExpansion:
+      case TemplateArgument::Pack:
+      case TemplateArgument::Declaration:
+        continue;
+      case TemplateArgument::Integral:
+      case TemplateArgument::Expression:
+      case TemplateArgument::NullPtr:
+        FieldTy = TA.getNonTypeTemplateArgumentType();
+        break;
+      }
+
+      auto *Field = FieldDecl::Create(
+          *Ctx, RD, SourceLocation(), SourceLocation(), /*Id=*/nullptr,
+          FieldTy, Ctx->getTrivialTypeSourceInfo(FieldTy, SourceLocation()),
+          /*BW=*/nullptr, /*Mutable=*/false, /*InitStyle=*/ICIS_NoInit);
+      Field->setAccess(AS_public);
+      RD->addDecl(Field);
+    }
+
+    RD->completeDefinition();
+
+    QualType RDTy = Ctx->getRecordType(RD);
+    auto Fields = cast<RecordDecl>(RDTy->getAsTagDecl())->field_begin();
 
 
     return 0;
