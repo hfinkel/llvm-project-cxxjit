@@ -2380,7 +2380,7 @@ ASTReader::ReadControlBlock(ModuleFile &F,
       // system input files reside at [NumUserInputs, NumInputs). For explicitly
       // loaded module files, ignore missing inputs.
       if (!DisableValidation && F.Kind != MK_ExplicitModule &&
-          F.Kind != MK_PrebuiltModule) {
+          F.Kind != MK_PrebuiltModule && !ReadingForJIT) {
         bool Complain = (ClientLoadCapabilities & ARR_OutOfDate) == 0;
 
         // If we are reading a module, we will create a verification timestamp,

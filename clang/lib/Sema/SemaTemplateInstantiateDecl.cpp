@@ -1896,6 +1896,11 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
       PrincipalDecl->isInIdentifierNamespace(Decl::IDNS_Ordinary))
     PrincipalDecl->setNonMemberOperator();
 
+  if (SemaRef.getLangOpts().isJITEnabled() &&
+      FunctionTemplate && Function->hasAttr<JITFuncAttr>())
+    Function->addAttr(JITFuncInstantiationAttr::CreateImplicit(SemaRef.Context,
+                                                               SemaRef.NextJITFuncId++));
+
   assert(!D->isDefaulted() && "only methods should be defaulted");
   return Function;
 }
@@ -2157,6 +2162,11 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     SemaRef.SetDeclDefaulted(Method, Method->getLocation());
   if (D->isDeletedAsWritten())
     SemaRef.SetDeclDeleted(Method, Method->getLocation());
+
+  if (SemaRef.getLangOpts().isJITEnabled() &&
+      FunctionTemplate && Method->hasAttr<JITFuncAttr>())
+    Method->addAttr(JITFuncInstantiationAttr::CreateImplicit(SemaRef.Context,
+                                                             SemaRef.NextJITFuncId++));
 
   // If there's a function template, let our caller handle it.
   if (FunctionTemplate) {
@@ -4133,8 +4143,12 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
       return;
 
     StmtResult Body;
-    if (PatternDecl->hasSkippedBody() ||
-        (getLangOpts().isJITEnabled() && PatternDecl->hasAttr<JITFuncAttr>())) {
+    if (getLangOpts().isJITEnabled() && PatternDecl->hasAttr<JITFuncAttr>()) {
+      assert(Function->hasAttr<JITFuncInstantiationAttr>() &&
+             "No instantiation id for a template we should skip for JIT!");
+      ActOnSkippedFunctionBody(Function);
+      Body = nullptr;
+    } else if (PatternDecl->hasSkippedBody()) {
       ActOnSkippedFunctionBody(Function);
       Body = nullptr;
     } else {

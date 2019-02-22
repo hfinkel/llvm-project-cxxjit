@@ -2385,7 +2385,10 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
 
   static llvm::Value *CmdLineStr = nullptr, *CmdLineStrLen = nullptr,
                      *ASTData = nullptr, *ASTDataLen = nullptr;
-  static int Cnt = 0;
+
+  assert(FD->hasAttr<JITFuncInstantiationAttr>() &&
+         "A JIT method does not have an instantiation id?");
+  int Cnt = FD->getAttr<JITFuncInstantiationAttr>()->getId();
 
   if (!CmdLineStr) {
     auto &CmdArgs = CGF.CGM.getCodeGenOpts().CmdArgs;
@@ -2532,7 +2535,8 @@ static LValue EmitFunctionDeclLValue(CodeGenFunction &CGF,
                                      const Expr *E, const FunctionDecl *FD) {
   llvm::Value *V;
 
-  if (CGF.getLangOpts().isJITEnabled() && FD->hasAttr<JITFuncAttr>())
+  if (CGF.getLangOpts().isJITEnabled() &&
+      FD->hasAttr<JITFuncInstantiationAttr>())
     V = EmitJITStubCall(CGF, FD);
   else
     V = EmitFunctionDeclPointer(CGF.CGM, FD);
@@ -4514,7 +4518,8 @@ static CGCallee EmitDirectCallee(CodeGenFunction &CGF, const FunctionDecl *FD) {
     return CGCallee::forBuiltin(builtinID, FD);
   }
 
-  if (CGF.getLangOpts().isJITEnabled() && FD->hasAttr<JITFuncAttr>()) {
+  if (CGF.getLangOpts().isJITEnabled() &&
+      FD->hasAttr<JITFuncInstantiationAttr>()) {
     llvm::Value *calleePtr = EmitJITStubCall(CGF, FD);
     CGCallee callee(CGCalleeInfo(), calleePtr);
     return callee;

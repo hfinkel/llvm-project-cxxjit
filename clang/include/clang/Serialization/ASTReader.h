@@ -1022,6 +1022,9 @@ private:
   /// passing decls to consumer.
   bool PassingDeclsToConsumer = false;
 
+  /// Reading as part of a JIT engine.
+  bool ReadingForJIT = false;
+
   /// The set of identifiers that were read while the AST reader was
   /// (recursively) loading declarations.
   ///
@@ -1583,6 +1586,10 @@ public:
       L = llvm::make_unique<ChainedASTReaderListener>(std::move(L),
                                                       std::move(Listener));
     Listener = std::move(L);
+  }
+
+  void setReadingForJIT(bool FJ = true) {
+    ReadingForJIT = FJ;
   }
 
   /// RAII object to temporarily add an AST callback listener.

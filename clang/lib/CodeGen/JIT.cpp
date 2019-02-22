@@ -296,17 +296,18 @@ struct CompilerData {
     Reader->setListener(llvm::make_unique<ASTInfoCollector>(
       *PP, Ctx.get(), *HSOpts, *PPOpts, *Invocation->getLangOpts(),
       TargetOpts, Target, Counter));
+    Reader->setReadingForJIT();
 
     Ctx->setExternalSource(Reader);
 
     switch (Reader->ReadAST(Filename, serialization::MK_MainFile,
                             SourceLocation(), ASTReader::ARR_OutOfDate)) {
     case ASTReader::Success:
-    case ASTReader::OutOfDate:
       break;
 
     case ASTReader::Failure:
     case ASTReader::Missing:
+    case ASTReader::OutOfDate:
     case ASTReader::VersionMismatch:
     case ASTReader::ConfigurationMismatch:
     case ASTReader::HadErrors:
@@ -327,6 +328,8 @@ struct CompilerData {
 
     // Tell the diagnostic client that we have started a source file.
     Diagnostics->getClient()->BeginSourceFile(PP->getLangOpts(), PP.get());
+
+    Ctx->getTranslationUnitDecl()->dump();
   }
 };
 

@@ -1227,6 +1227,8 @@ public:
   /// currently being copy-initialized. Can be empty.
   llvm::SmallVector<QualType, 4> CurrentParameterCopyTypes;
 
+  unsigned NextJITFuncId;
+
   void ReadMethodPool(Selector Sel);
   void updateOutOfDateSelector(Selector Sel);
 
