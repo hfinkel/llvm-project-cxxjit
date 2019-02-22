@@ -45,6 +45,7 @@
 #include "clang/Lex/PreprocessorOptions.h"
 #include "clang/Sema/Sema.h"
 #include "clang/Sema/Template.h"
+#include "clang/Sema/TemplateDeduction.h"
 #include "clang/Serialization/ASTReader.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
@@ -456,6 +457,7 @@ struct CompilerData {
       }
     }
 
+    SourceLocation Loc = FTSI->getPointOfInstantiation();
     auto *NewTAL = TemplateArgumentList::CreateCopy(*Ctx, Builder);
     MultiLevelTemplateArgumentList SubstArgs(*NewTAL);
 
@@ -464,15 +466,23 @@ struct CompilerData {
     if (FunctionTemplate->getFriendObjectKind())
       Owner = FunctionTemplate->getLexicalDeclContext();
 
-    auto *Specialization = cast_or_null<FunctionDecl>(
-      S->SubstDecl(FunctionTemplate->getTemplatedDecl(), Owner, SubstArgs));
-    if (!Specialization || Specialization->isInvalidDecl())
-      fatal();
+    FunctionTemplateDecl *FTD = FTSI->getTemplate();
+    sema::TemplateDeductionInfo Info(Loc);
+    {
+      Sema::InstantiatingTemplate Inst(
+        *S, Loc, FTD, NewTAL->asArray(),
+        Sema::CodeSynthesisContext::ExplicitTemplateArgumentSubstitution, Info);
 
-    S->InstantiateFunctionDefinition(FTSI->getPointOfInstantiation(),
-                                     Specialization, true, true, true);
+      auto *Specialization = cast_or_null<FunctionDecl>(
+        S->SubstDecl(FunctionTemplate->getTemplatedDecl(), Owner, SubstArgs));
+      if (!Specialization || Specialization->isInvalidDecl())
+        fatal();
 
-    Specialization->dump();
+      S->InstantiateFunctionDefinition(Loc, Specialization, true, true, true);
+
+      Specialization->dump();
+llvm::errs() << "here!\n";
+    }
 
     return 0;
   }
