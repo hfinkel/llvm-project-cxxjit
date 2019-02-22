@@ -6277,7 +6277,10 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
 
   // If we're going to JIT this function template, then this expression might
   // be anything.
-  if (IsForJIT) {
+  // FIXME: We can't handle dynamic member-pointer types because, at runtime,
+  // can we figure out which member it is (without ABI-specific logic in the
+  // runtime library)?
+  if (IsForJIT && !ParamType->isMemberPointerType()) {
     Converted = TemplateArgument(Arg);
     return Arg;
   }
@@ -6287,7 +6290,10 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
   EnterExpressionEvaluationContext ConstantEvaluated(
       *this, Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
-  if (getLangOpts().CPlusPlus17) {
+  // If we're inside the JIT engine, always use the more relaxed C++17 rules
+  // even in earlier language modes (this make it easier to figure out later
+  // which non-integer parameters need runtime specialization).
+  if (getLangOpts().CPlusPlus17 || getLangOpts().isInJIT()) {
     // C++17 [temp.arg.nontype]p1:
     //   A template-argument for a non-type template parameter shall be
     //   a converted constant expression of the type of the template-parameter.

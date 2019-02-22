@@ -2387,6 +2387,8 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
          "A JIT method does not have an instantiation id?");
   int Cnt = FD->getAttr<JITFuncInstantiationAttr>()->getId();
 
+  SmallVector<TemplateArgument, 8> RDTArgs;
+
   auto &C = CGF.getContext();
   RecordDecl *RD =
     C.buildImplicitRecord(llvm::Twine("__clang_jit_args_")
@@ -2397,28 +2399,26 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
 
   auto *FTSI = FD->getTemplateSpecializationInfo();
   for (auto &TA : FTSI->TemplateArguments->asArray()) {
-    QualType FieldTy;
-    switch (TA.getKind()) {
-    case TemplateArgument::Null:
-    case TemplateArgument::Type:
-    case TemplateArgument::Template:
-    case TemplateArgument::TemplateExpansion:
-    case TemplateArgument::Pack:
-    case TemplateArgument::Declaration:
+    if (TA.getKind() != TemplateArgument::Expression)
       continue;
-    case TemplateArgument::Integral:
-    case TemplateArgument::Expression:
-    case TemplateArgument::NullPtr:
-      FieldTy = TA.getNonTypeTemplateArgumentType();
-      break;
-    }
 
+    // Using C++17 rules, this check should be sufficient.
+    SmallVector<PartialDiagnosticAt, 8> Notes;
+    Expr::EvalResult Eval;
+    Eval.Diag = &Notes;
+    if (TA.getAsExpr()->
+          EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, C))
+      continue;
+
+    QualType FieldTy = TA.getNonTypeTemplateArgumentType();
     auto *Field = FieldDecl::Create(
         C, RD, SourceLocation(), SourceLocation(), /*Id=*/nullptr,
         FieldTy, C.getTrivialTypeSourceInfo(FieldTy, SourceLocation()),
         /*BW=*/nullptr, /*Mutable=*/false, /*InitStyle=*/ICIS_NoInit);
     Field->setAccess(AS_public);
     RD->addDecl(Field);
+
+    RDTArgs.push_back(TA);
   }
 
   RD->completeDefinition();
@@ -2428,36 +2428,14 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
   LValue Base = CGF.MakeAddrLValue(AI, RDTy);
   auto Fields = cast<RecordDecl>(RDTy->getAsTagDecl())->field_begin();
 
-  for (auto &TA : FTSI->TemplateArguments->asArray()) {
-    switch (TA.getKind()) {
-    case TemplateArgument::Null:
-    case TemplateArgument::Type:
-    case TemplateArgument::Template:
-    case TemplateArgument::TemplateExpansion:
-    case TemplateArgument::Pack:
-    case TemplateArgument::Declaration:
-      continue;
-    case TemplateArgument::Integral: {
-      LValue FieldLV = CGF.EmitLValueForField(Base, *Fields++);
-      CGF.EmitStoreOfScalar(
-        llvm::ConstantInt::get(CGF.ConvertType(TA.getIntegralType()),
-                               TA.getAsIntegral()), FieldLV);
-      break;
-    }
-    case TemplateArgument::NullPtr: {
-      LValue FieldLV = CGF.EmitLValueForField(Base, *Fields++);
-      CGF.EmitStoreOfScalar(llvm::Constant::getNullValue(CGF.VoidPtrTy),
-                            FieldLV);
-      break;
-    }
-    case TemplateArgument::Expression: {
-      LValue FieldLV = CGF.EmitLValueForField(Base, *Fields++);
-      RValue RV = RValue::get(CGF.EmitScalarExpr(TA.getAsExpr(),
-                                                 /*Ignore*/ false));
-      CGF.EmitStoreThroughLValue(RV, FieldLV);
-      break;
-    }
-    }
+  for (auto &TA : RDTArgs) {
+    assert(TA.getKind() == TemplateArgument::Expression &&
+           "Only expressions template arguments handled here");
+
+    LValue FieldLV = CGF.EmitLValueForField(Base, *Fields++);
+    RValue RV = RValue::get(CGF.EmitScalarExpr(TA.getAsExpr(),
+                                               /*Ignore*/ false));
+    CGF.EmitStoreThroughLValue(RV, FieldLV);
   }
 
   // Emit call to __clang_jit(const char *CmdArgs, void *AST, void *Params)

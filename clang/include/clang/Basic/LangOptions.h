@@ -315,6 +315,10 @@ public:
   bool isJITEnabled() const {
     return CPlusPlusJIT == JM_Enabled;
   }
+
+  bool isInJIT() const {
+    return CPlusPlusJIT == JM_IsJIT;
+  }
 };
 
 /// Floating point control options

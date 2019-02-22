@@ -44,6 +44,7 @@
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Lex/PreprocessorOptions.h"
 #include "clang/Sema/Sema.h"
+#include "clang/Sema/Template.h"
 #include "clang/Serialization/ASTReader.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
@@ -69,6 +70,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Host.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Mutex.h"
 #include "llvm/Support/MutexGuard.h"
@@ -356,6 +358,11 @@ struct CompilerData {
     if (!FD)
       fatal();
 
+    // FIXME: Relying on all of this Clang logic to see if we already have
+    // generated this has high overhead. We should record enough identifying
+    // information in the structure that hashing it will be all that is
+    // necessary to lookup a previously-generated pointer!
+
     RecordDecl *RD =
       Ctx->buildImplicitRecord(llvm::Twine("__clang_jit_args_")
                                .concat(llvm::Twine(Idx))
@@ -364,37 +371,108 @@ struct CompilerData {
 
     RD->startDefinition();
 
+    SmallVector<bool, 8> TAIsSaved;
+
     auto *FTSI = FD->getTemplateSpecializationInfo();
     for (auto &TA : FTSI->TemplateArguments->asArray()) {
-      QualType FieldTy;
-      switch (TA.getKind()) {
-      case TemplateArgument::Null:
-      case TemplateArgument::Type:
-      case TemplateArgument::Template:
-      case TemplateArgument::TemplateExpansion:
-      case TemplateArgument::Pack:
-      case TemplateArgument::Declaration:
+      if (TA.getKind() != TemplateArgument::Expression) {
+        TAIsSaved.push_back(false);
         continue;
-      case TemplateArgument::Integral:
-      case TemplateArgument::Expression:
-      case TemplateArgument::NullPtr:
-        FieldTy = TA.getNonTypeTemplateArgumentType();
-        break;
       }
 
+      SmallVector<PartialDiagnosticAt, 8> Notes;
+      Expr::EvalResult Eval;
+      Eval.Diag = &Notes;
+      if (TA.getAsExpr()->
+            EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, *Ctx)) {
+        TAIsSaved.push_back(false);
+        continue;
+      }
+
+      QualType FieldTy = TA.getNonTypeTemplateArgumentType();
       auto *Field = FieldDecl::Create(
           *Ctx, RD, SourceLocation(), SourceLocation(), /*Id=*/nullptr,
           FieldTy, Ctx->getTrivialTypeSourceInfo(FieldTy, SourceLocation()),
           /*BW=*/nullptr, /*Mutable=*/false, /*InitStyle=*/ICIS_NoInit);
       Field->setAccess(AS_public);
       RD->addDecl(Field);
+
+      TAIsSaved.push_back(true);
     }
 
     RD->completeDefinition();
 
+    const ASTRecordLayout &RLayout = Ctx->getASTRecordLayout(RD);
+    assert(Ctx->getCharWidth() == 8 && "char is not 8 bits!");
+
     QualType RDTy = Ctx->getRecordType(RD);
     auto Fields = cast<RecordDecl>(RDTy->getAsTagDecl())->field_begin();
 
+    SmallVector<TemplateArgument, 8> Builder;
+
+    unsigned TAIdx = 0;
+    for (auto &TA : FTSI->TemplateArguments->asArray()) {
+      if (!TAIsSaved[TAIdx++]) {
+        Builder.push_back(TA);
+        continue;
+      }
+
+      assert(TA.getKind() == TemplateArgument::Expression &&
+             "Only expressions template arguments handled here");
+
+      QualType FieldTy = TA.getNonTypeTemplateArgumentType();
+
+      assert(!FieldTy->isMemberPointerType() &&
+             "Can't handle member pointers here without ABI knowledge");
+
+      auto *Fld = *Fields++;
+      unsigned Offset = RLayout.getFieldOffset(Fld->getFieldIndex()) / 8;
+      unsigned Size = Ctx->getTypeSizeInChars(FieldTy).getQuantity();
+
+      unsigned NumIntWords = llvm::alignTo<8>(Size);
+      SmallVector<uint64_t, 2> IntWords(NumIntWords, 0);
+      std::memcpy((char *) IntWords.data(),
+                  ((const char *) NTTPValues) + Offset, Size);
+      llvm::APInt IntVal(Size*8, IntWords);
+
+      QualType CanonFieldTy = Ctx->getCanonicalType(FieldTy);
+
+      if (FieldTy->isIntegralOrEnumerationType()) {
+        llvm::APSInt SIntVal(IntVal,
+                             FieldTy->isUnsignedIntegerOrEnumerationType());
+        Builder.push_back(TemplateArgument(*Ctx, SIntVal, CanonFieldTy));
+      } else {
+        assert(FieldTy->isPointerType() || FieldTy->isReferenceType() ||
+               FieldTy->isNullPtrType());
+        if (IntVal.isNullValue()) {
+          Builder.push_back(TemplateArgument(CanonFieldTy, /*isNullPtr*/true));
+        } else {
+	  // FIXME: If this is a global that already exists, we should use it
+	  // instead of making a new global here.
+          // We need to lookup function pointers too.
+          assert(true && "Not done yet"); 
+          fatal();
+        }
+      }
+    }
+
+    auto *NewTAL = TemplateArgumentList::CreateCopy(*Ctx, Builder);
+    MultiLevelTemplateArgumentList SubstArgs(*NewTAL);
+
+    auto *FunctionTemplate = FTSI->getTemplate();
+    DeclContext *Owner = FunctionTemplate->getDeclContext();
+    if (FunctionTemplate->getFriendObjectKind())
+      Owner = FunctionTemplate->getLexicalDeclContext();
+
+    auto *Specialization = cast_or_null<FunctionDecl>(
+      S->SubstDecl(FunctionTemplate->getTemplatedDecl(), Owner, SubstArgs));
+    if (!Specialization || Specialization->isInvalidDecl())
+      fatal();
+
+    S->InstantiateFunctionDefinition(FTSI->getPointOfInstantiation(),
+                                     Specialization, true, true, true);
+
+    Specialization->dump();
 
     return 0;
   }
