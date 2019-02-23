@@ -569,7 +569,8 @@ struct CompilerData {
       *llvm::MemoryBuffer::getMemBufferCopy(IRBufferSR), Err, *LCtx);
 
     for (auto &F : RunningMod->functions())
-      F.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
+      if (!F.isDeclaration())
+        F.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
 
     for (auto &GV : RunningMod->global_values())
       GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
@@ -738,7 +739,8 @@ struct CompilerData {
     CJ->addModule(std::move(ToRunMod));
 
     for (auto &F : Consumer->getModule()->functions())
-      F.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
+      if (!F.isDeclaration())
+        F.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
 
     for (auto &GV : Consumer->getModule()->global_values())
       GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
