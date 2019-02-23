@@ -95,6 +95,7 @@
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/YAMLTraits.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/IPO/Internalize.h"
 
 #include <cassert>
@@ -104,6 +105,7 @@
 #include <system_error>
 #include <utility>
 #include <vector>
+#include <unordered_map>
 using namespace clang;
 using namespace llvm;
 
@@ -304,8 +306,17 @@ class BackendConsumer : public ASTConsumer {
   const LangOptions &LangOpts;
   std::unique_ptr<raw_pwrite_stream> AsmOutStream;
   ASTContext *Context;
+  std::string InFile;
+  const PreprocessorOptions &PPOpts;
+  LLVMContext &C;
+  CoverageSourceInfo *CoverageInfo;
 
   std::unique_ptr<CodeGenerator> Gen;
+
+  void replaceGenerator() {
+    Gen.reset(CreateLLVMCodeGen(Diags, InFile, HeaderSearchOpts, PPOpts,
+                                CodeGenOpts, C, CoverageInfo));
+  }
 
 public:
   BackendConsumer(BackendAction Action, DiagnosticsEngine &Diags,
@@ -319,9 +330,9 @@ public:
                   CoverageSourceInfo *CoverageInfo = nullptr)
       : Diags(Diags), Action(Action), HeaderSearchOpts(HeaderSearchOpts),
         CodeGenOpts(CodeGenOpts), TargetOpts(TargetOpts), LangOpts(LangOpts),
-        AsmOutStream(std::move(OS)), Context(nullptr),
-        Gen(CreateLLVMCodeGen(Diags, InFile, HeaderSearchOpts, PPOpts,
-                              CodeGenOpts, C, CoverageInfo)) { }
+        AsmOutStream(std::move(OS)), Context(nullptr), InFile(InFile),
+        PPOpts(PPOpts), C(C), CoverageInfo(CoverageInfo) { }
+
   llvm::Module *getModule() const { return Gen->GetModule(); }
   std::unique_ptr<llvm::Module> takeModule() {
     return std::unique_ptr<llvm::Module>(Gen->ReleaseModule());
@@ -334,13 +345,12 @@ public:
   }
 
   void Initialize(ASTContext &Ctx) override {
-    assert(!Context && "initialized multiple times");
+    replaceGenerator();
     Context = &Ctx;
     Gen->Initialize(Ctx);
   }
 
   bool HandleTopLevelDecl(DeclGroupRef D) override {
-llvm::errs() << "G 1\n";
     Gen->HandleTopLevelDecl(D);
     return true;
   }
@@ -427,11 +437,13 @@ struct CompilerData {
   std::unique_ptr<BackendConsumer>        Consumer;
   std::unique_ptr<Sema>                   S;
   TrivialModuleLoader                     ModuleLoader;
+  std::unique_ptr<llvm::Module>           RunningMod;
 
   DenseMap<unsigned, FunctionDecl *>      FuncMap;
 
   CompilerData(const void *CmdArgs, unsigned CmdArgsLen,
-               const void *ASTBuffer, size_t ASTBufferSize) {
+               const void *ASTBuffer, size_t ASTBufferSize,
+               const void *IRBuffer, size_t IRBufferSize) {
     StringRef CombinedArgv((const char *) CmdArgs, CmdArgsLen);
     SmallVector<StringRef, 32> Argv;
     CombinedArgv.split(Argv, '\0', /*MaxSplit*/ -1, false);
@@ -530,6 +542,9 @@ struct CompilerData {
     // Now that we've read the language options from the AST file, change the JIT mode.
     Invocation->getLangOpts()->setCPlusPlusJIT(LangOptions::JITMode::JM_IsJIT);
 
+    // Keep externally available functions, etc.
+    Invocation->getCodeGenOpts().PrepareForLTO = true;
+
     BackendAction BA = Backend_EmitNothing;
     std::unique_ptr<raw_pwrite_stream> OS(new llvm::raw_null_ostream);
     Consumer.reset(new BackendConsumer(
@@ -548,11 +563,19 @@ struct CompilerData {
 
     JFIMapDeclVisitor(FuncMap).TraverseAST(*Ctx);
 
+    llvm::SMDiagnostic Err;
+    StringRef IRBufferSR((const char *) IRBuffer, IRBufferSize);
+    RunningMod = parseIR(
+      *llvm::MemoryBuffer::getMemBufferCopy(IRBufferSR), Err, *LCtx);
+
+    for (auto &F : RunningMod->functions())
+      F.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
+
+    for (auto &GV : RunningMod->global_values())
+      GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
+
     Consumer->Initialize(*Ctx);
     Invocation->getLangOpts()->EmitAllDecls = true;
-
-llvm::errs() << "here 1\n";
-Consumer->getModule()->dump();
   }
 
   void *resolveFunction(const void *NTTPValues, unsigned Idx) {
@@ -603,6 +626,7 @@ Consumer->getModule()->dump();
     }
 
     RD->completeDefinition();
+    RD->addAttr(PackedAttr::CreateImplicit(*Ctx));
 
     const ASTRecordLayout &RLayout = Ctx->getASTRecordLayout(RD);
     assert(Ctx->getCharWidth() == 8 && "char is not 8 bits!");
@@ -667,6 +691,7 @@ Consumer->getModule()->dump();
     if (FunctionTemplate->getFriendObjectKind())
       Owner = FunctionTemplate->getLexicalDeclContext();
 
+    std::string SMName;
     FunctionTemplateDecl *FTD = FTSI->getTemplate();
     sema::TemplateDeductionInfo Info(Loc);
     {
@@ -683,24 +708,63 @@ Consumer->getModule()->dump();
       Specialization->setTemplateSpecializationKind(TSK_ExplicitInstantiationDefinition, Loc);
       S->InstantiateFunctionDefinition(Loc, Specialization, true, true, true);
 
-      Specialization->dump();
+      SMName = Consumer->getCodeGenerator()->CGM().getMangledName(Specialization);
     }
 
     if (Diagnostics->hasErrorOccurred())
       fatal();
 
-    // Consumer->HandleTranslationUnit(*Ctx);
+    Consumer->HandleTranslationUnit(*Ctx);
 
-llvm::errs() << "here 2\n";
-Consumer->getModule()->dump();
+    // llvm::Function *F = Consumer->getModule()->getFunction(SMName);
+    for (auto &F : Consumer->getModule()->functions()) {
+      F.setLinkage(llvm::GlobalValue::ExternalLinkage);
+      F.setComdat(nullptr);
+    }
 
-    return 0;
+    for (auto &GV : Consumer->getModule()->global_values()) {
+      GV.setLinkage(llvm::GlobalValue::ExternalLinkage);
+      if (auto *GO = dyn_cast<llvm::GlobalObject>(&GV))
+        GO->setComdat(nullptr);
+    }
+
+    std::unique_ptr<llvm::Module> ToRunMod =
+      llvm::CloneModule(*Consumer->getModule());
+
+    if (Linker::linkModules(*ToRunMod, llvm::CloneModule(*RunningMod),
+                            Linker::Flags::OverrideFromSrc))
+      fatal();
+
+    CJ->addModule(std::move(ToRunMod));
+
+    for (auto &F : Consumer->getModule()->functions())
+      F.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
+
+    for (auto &GV : Consumer->getModule()->global_values())
+      GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
+
+    if (Linker::linkModules(*RunningMod, Consumer->takeModule(),
+                            Linker::Flags::None))
+      fatal();
+
+    Consumer->Initialize(*Ctx);
+
+    auto SpecSymbol = CJ->findSymbol(SMName);
+    assert(SpecSymbol && "Can't find the specialization just generated?");
+
+    if (!SpecSymbol.getAddress())
+      fatal();
+
+    return (void *) llvm::cantFail(SpecSymbol.getAddress());
   }
 };
 
 llvm::sys::SmartMutex<false> Mutex;
 bool InitializedTarget = false;
 llvm::DenseMap<const void *, std::unique_ptr<CompilerData>> TUCompilerData;
+
+llvm::sys::SmartMutex<false> IMutex;
+std::unordered_map<std::string, void *> Instantiations;
 
 } // anonymous namespace
 
@@ -710,7 +774,22 @@ __declspec(dllexport)
 #endif
 void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
                   const void *ASTBuffer, size_t ASTBufferSize,
-                  const void *NTTPValues, unsigned Idx) {
+                  const void *IRBuffer, size_t IRBufferSize,
+                  const void *NTTPValues, unsigned NTTPValuesSize,
+                  unsigned Idx) {
+  // FIXME: Use a DenseSet instead of unordered_map, use a SmallVector to hold data.
+  const char *KPtr = ((const char *) ASTBuffer) + Idx;
+  std::string Key((const char *) &KPtr, ((const char *) &KPtr) + sizeof(KPtr));
+  Key +=std::string((const char *) NTTPValues,
+                                   ((const char *) NTTPValues) +
+                                     NTTPValuesSize);
+  {
+    llvm::MutexGuard Guard(IMutex);
+    auto II = Instantiations.find(Key);
+    if (II != Instantiations.end())
+      return II->second;
+  }
+
   llvm::MutexGuard Guard(Mutex);
 
   if (!InitializedTarget) {
@@ -727,12 +806,20 @@ void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
   CompilerData *CD;
   auto TUCDI = TUCompilerData.find(ASTBuffer);
   if (TUCDI == TUCompilerData.end()) {
-    CD = new CompilerData(CmdArgs, CmdArgsLen, ASTBuffer, ASTBufferSize);
+    CD = new CompilerData(CmdArgs, CmdArgsLen, ASTBuffer, ASTBufferSize,
+                          IRBuffer, IRBufferSize);
     TUCompilerData[ASTBuffer].reset(CD);
   } else {
     CD = TUCDI->second.get();
   }
 
-  return CD->resolveFunction(NTTPValues, Idx);
+  void *FPtr = CD->resolveFunction(NTTPValues, Idx);
+
+  {
+    llvm::MutexGuard Guard(IMutex);
+    Instantiations[Key] = FPtr;
+  }
+
+  return FPtr;
 }
 

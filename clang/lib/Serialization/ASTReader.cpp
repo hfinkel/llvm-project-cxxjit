@@ -5706,6 +5706,9 @@ void ASTReader::ReadPragmaDiagnosticMappings(DiagnosticsEngine &Diag) {
   using DiagState = DiagnosticsEngine::DiagState;
   SmallVector<DiagState *, 32> DiagStates;
 
+  if (ReadingForJIT)
+    return;
+
   for (ModuleFile &F : ModuleMgr) {
     unsigned Idx = 0;
     auto &Record = F.PragmaDiagMappings;

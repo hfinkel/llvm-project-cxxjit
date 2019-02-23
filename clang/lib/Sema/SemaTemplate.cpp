@@ -6281,8 +6281,15 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
   // can we figure out which member it is (without ABI-specific logic in the
   // runtime library)?
   if (IsForJIT && !ParamType->isMemberPointerType()) {
-    Converted = TemplateArgument(Arg);
-    return Arg;
+    SmallVector<PartialDiagnosticAt, 8> Notes;
+    Expr::EvalResult Eval;
+    Eval.Diag = &Notes;
+    if (!Arg->
+          EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, Context) ||
+          !Notes.empty()) {
+      Converted = TemplateArgument(Arg);
+      return Arg;
+    }
   }
 
   // The initialization of the parameter from the argument is
