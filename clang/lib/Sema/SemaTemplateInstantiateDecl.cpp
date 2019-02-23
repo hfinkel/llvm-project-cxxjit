@@ -3986,10 +3986,10 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
     return;
 
   // Never instantiate an explicit specialization except if it is a class scope
-  // explicit specialization.
+  // explicit specialization. We also do this during JIT.
   TemplateSpecializationKind TSK = Function->getTemplateSpecializationKind();
   if (TSK == TSK_ExplicitSpecialization &&
-      !Function->getClassScopeSpecializationPattern())
+      !Function->getClassScopeSpecializationPattern() && !LangOpts.isInJIT())
     return;
 
   // Find the function body that we'll be substituting.

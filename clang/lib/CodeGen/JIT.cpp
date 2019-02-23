@@ -253,8 +253,6 @@ struct CompilerData {
     for (auto &ArgStr : Argv)
       CC1Args.push_back(ArgStr.begin());
 
-    CC1Args.push_back("-fis-jit");
-
     unsigned MissingArgIndex, MissingArgCount;
     Opts = driver::createDriverOptTable();
     llvm::opt::InputArgList ParsedArgs = Opts->ParseArgs(
@@ -268,12 +266,14 @@ struct CompilerData {
       IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs()), &*DiagOpts,
       DiagnosticPrinter.get(), false);
 
+    // Note that LangOpts, TargetOpts can also be read from the AST, but
+    // CodeGenOpts need to come from the stored command line.
+
     Invocation.reset(new CompilerInvocation);
     CompilerInvocation::CreateFromArgs(*Invocation,
                                  const_cast<const char **>(CC1Args.data()),
                                  const_cast<const char **>(CC1Args.data()) +
                                  CC1Args.size(), *Diagnostics);
-
     Invocation->getFrontendOpts().DisableFree = false;
     Invocation->getCodeGenOpts().DisableFree = false;
 
@@ -339,6 +339,9 @@ struct CompilerData {
     }
 
     PP->setCounterValue(Counter);
+
+    // Now that we've read the language options from the AST file, change the JIT mode.
+    Invocation->getLangOpts()->setCPlusPlusJIT(LangOptions::JITMode::JM_IsJIT);
 
     // TODO: Make a use consumer...
     Consumer.reset(new ASTConsumer);
@@ -482,7 +485,6 @@ struct CompilerData {
       S->InstantiateFunctionDefinition(Loc, Specialization, true, true, true);
 
       Specialization->dump();
-llvm::errs() << "here!\n";
     }
 
     return 0;

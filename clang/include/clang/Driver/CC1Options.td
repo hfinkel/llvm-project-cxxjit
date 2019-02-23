@@ -526,9 +526,6 @@ def ftest_module_file_extension_EQ :
 def fconcepts_ts : Flag<["-"], "fconcepts-ts">,
   HelpText<"Enable C++ Extensions for Concepts.">;
 
-def fis_jit : Flag<["-"], "fis-jit">,
-  HelpText<"Run as part of the C++ JIT engine">;
-
 let Group = Action_Group in {
 
 def Eonly : Flag<["-"], "Eonly">,

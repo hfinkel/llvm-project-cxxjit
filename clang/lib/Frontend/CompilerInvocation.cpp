@@ -2993,9 +2993,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
 
   Opts.RegisterStaticDestructors = !Args.hasArg(OPT_fno_cxx_static_destructors);
 
-  if (Args.hasArg(OPT_fis_jit))
-    Opts.setCPlusPlusJIT(LangOptions::JITMode::JM_IsJIT);
-  else if (Args.hasArg(OPT_fjit))
+  if (Args.hasArg(OPT_fjit))
     Opts.setCPlusPlusJIT(LangOptions::JITMode::JM_Enabled);
 
   if (Arg *A = Args.getLastArg(OPT_fclang_abi_compat_EQ)) {
