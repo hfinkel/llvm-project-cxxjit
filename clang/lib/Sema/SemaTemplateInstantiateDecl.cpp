@@ -1454,12 +1454,7 @@ TemplateDeclInstantiator::VisitFunctionTemplateDecl(FunctionTemplateDecl *D) {
 
   FunctionDecl *Instantiated = nullptr;
 
-  // If we're going to JIT this function template, then don't actually
-  // instantiate it now.
-  if (SemaRef.getLangOpts().isJITEnabled() &&
-      D->getTemplatedDecl()->hasAttr<JITFuncAttr>())
-    Instantiated = D->getTemplatedDecl();
-  else if (CXXMethodDecl *DMethod = dyn_cast<CXXMethodDecl>(
+  if (CXXMethodDecl *DMethod = dyn_cast<CXXMethodDecl>(
                                                           D->getTemplatedDecl()))
     Instantiated = cast_or_null<FunctionDecl>(VisitCXXMethodDecl(DMethod,
                                                                  InstParams));
