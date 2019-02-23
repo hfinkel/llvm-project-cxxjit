@@ -295,6 +295,97 @@ private:
   std::vector<llvm::orc::VModuleKey> ModuleKeys;
 };
 
+class BackendConsumer : public ASTConsumer {
+  DiagnosticsEngine &Diags;
+  BackendAction Action;
+  const HeaderSearchOptions &HeaderSearchOpts;
+  const CodeGenOptions &CodeGenOpts;
+  const clang::TargetOptions &TargetOpts;
+  const LangOptions &LangOpts;
+  std::unique_ptr<raw_pwrite_stream> AsmOutStream;
+  ASTContext *Context;
+
+  std::unique_ptr<CodeGenerator> Gen;
+
+public:
+  BackendConsumer(BackendAction Action, DiagnosticsEngine &Diags,
+                  const HeaderSearchOptions &HeaderSearchOpts,
+                  const PreprocessorOptions &PPOpts,
+                  const CodeGenOptions &CodeGenOpts,
+                  const clang::TargetOptions &TargetOpts,
+                  const LangOptions &LangOpts, bool TimePasses,
+                  const std::string &InFile,
+                  std::unique_ptr<raw_pwrite_stream> OS, LLVMContext &C,
+                  CoverageSourceInfo *CoverageInfo = nullptr)
+      : Diags(Diags), Action(Action), HeaderSearchOpts(HeaderSearchOpts),
+        CodeGenOpts(CodeGenOpts), TargetOpts(TargetOpts), LangOpts(LangOpts),
+        AsmOutStream(std::move(OS)), Context(nullptr),
+        Gen(CreateLLVMCodeGen(Diags, InFile, HeaderSearchOpts, PPOpts,
+                              CodeGenOpts, C, CoverageInfo)) { }
+  llvm::Module *getModule() const { return Gen->GetModule(); }
+  std::unique_ptr<llvm::Module> takeModule() {
+    return std::unique_ptr<llvm::Module>(Gen->ReleaseModule());
+  }
+
+  CodeGenerator *getCodeGenerator() { return Gen.get(); }
+
+  void HandleCXXStaticMemberVarInstantiation(VarDecl *VD) override {
+    Gen->HandleCXXStaticMemberVarInstantiation(VD);
+  }
+
+  void Initialize(ASTContext &Ctx) override {
+    assert(!Context && "initialized multiple times");
+    Context = &Ctx;
+    Gen->Initialize(Ctx);
+  }
+
+  bool HandleTopLevelDecl(DeclGroupRef D) override {
+llvm::errs() << "G 1\n";
+    Gen->HandleTopLevelDecl(D);
+    return true;
+  }
+
+  void HandleInlineFunctionDefinition(FunctionDecl *D) override {
+    Gen->HandleInlineFunctionDefinition(D);
+  }
+
+  void HandleInterestingDecl(DeclGroupRef D) override {
+    HandleTopLevelDecl(D);
+  }
+
+  void HandleTranslationUnit(ASTContext &C) override {
+      Gen->HandleTranslationUnit(C);
+
+    // Silently ignore if we weren't initialized for some reason.
+    if (!getModule())
+      return;
+
+    EmitBackendOutput(Diags, HeaderSearchOpts, CodeGenOpts, TargetOpts,
+                      LangOpts, C.getTargetInfo().getDataLayout(),
+                      getModule(), Action, std::move(AsmOutStream));
+  }
+
+  void HandleTagDeclDefinition(TagDecl *D) override {
+    Gen->HandleTagDeclDefinition(D);
+  }
+
+  void HandleTagDeclRequiredDefinition(const TagDecl *D) override {
+    Gen->HandleTagDeclRequiredDefinition(D);
+  }
+
+  void CompleteTentativeDefinition(VarDecl *D) override {
+    Gen->CompleteTentativeDefinition(D);
+  }
+
+  void AssignInheritanceModel(CXXRecordDecl *RD) override {
+    Gen->AssignInheritanceModel(RD);
+  }
+
+  void HandleVTable(CXXRecordDecl *RD) override {
+    Gen->HandleVTable(RD);
+  }
+};
+
 class JFIMapDeclVisitor : public RecursiveASTVisitor<JFIMapDeclVisitor> {
   DenseMap<unsigned, FunctionDecl *> &Map;
 
@@ -312,6 +403,7 @@ public:
 };
 
 std::unique_ptr<ClangJIT> CJ;
+std::unique_ptr<llvm::LLVMContext> LCtx;
 
 struct CompilerData {
   std::unique_ptr<CompilerInvocation>     Invocation;
@@ -332,7 +424,7 @@ struct CompilerData {
   std::shared_ptr<HeaderSearchOptions>    HSOpts;
   std::shared_ptr<PreprocessorOptions>    PPOpts;
   IntrusiveRefCntPtr<ASTReader>           Reader;
-  std::unique_ptr<ASTConsumer>            Consumer;
+  std::unique_ptr<BackendConsumer>        Consumer;
   std::unique_ptr<Sema>                   S;
   TrivialModuleLoader                     ModuleLoader;
 
@@ -438,8 +530,13 @@ struct CompilerData {
     // Now that we've read the language options from the AST file, change the JIT mode.
     Invocation->getLangOpts()->setCPlusPlusJIT(LangOptions::JITMode::JM_IsJIT);
 
-    // TODO: Make a use consumer...
-    Consumer.reset(new ASTConsumer);
+    BackendAction BA = Backend_EmitNothing;
+    std::unique_ptr<raw_pwrite_stream> OS(new llvm::raw_null_ostream);
+    Consumer.reset(new BackendConsumer(
+        BA, *Diagnostics, Invocation->getHeaderSearchOpts(),
+        Invocation->getPreprocessorOpts(), Invocation->getCodeGenOpts(),
+        Invocation->getTargetOpts(), *Invocation->getLangOpts(), false, Filename,
+        std::move(OS), *LCtx));
 
     // Create a semantic analysis object and tell the AST reader about it.
     S.reset(new Sema(*PP, *Ctx, *Consumer));
@@ -450,6 +547,12 @@ struct CompilerData {
     Diagnostics->getClient()->BeginSourceFile(PP->getLangOpts(), PP.get());
 
     JFIMapDeclVisitor(FuncMap).TraverseAST(*Ctx);
+
+    Consumer->Initialize(*Ctx);
+    Invocation->getLangOpts()->EmitAllDecls = true;
+
+llvm::errs() << "here 1\n";
+Consumer->getModule()->dump();
   }
 
   void *resolveFunction(const void *NTTPValues, unsigned Idx) {
@@ -577,10 +680,19 @@ struct CompilerData {
       if (!Specialization || Specialization->isInvalidDecl())
         fatal();
 
+      Specialization->setTemplateSpecializationKind(TSK_ExplicitInstantiationDefinition, Loc);
       S->InstantiateFunctionDefinition(Loc, Specialization, true, true, true);
 
       Specialization->dump();
     }
+
+    if (Diagnostics->hasErrorOccurred())
+      fatal();
+
+    // Consumer->HandleTranslationUnit(*Ctx);
+
+llvm::errs() << "here 2\n";
+Consumer->getModule()->dump();
 
     return 0;
   }
@@ -606,6 +718,7 @@ void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
 
+    LCtx.reset(new LLVMContext);
     CJ = llvm::make_unique<ClangJIT>();
 
     InitializedTarget = true;

@@ -2134,7 +2134,7 @@ InputFile ASTReader::getInputFile(ModuleFile &F, unsigned ID, bool Complain) {
     File = FileMgr.getVirtualFile(Filename, StoredSize, StoredTime);
 
   if (File == nullptr) {
-    if (Complain) {
+    if (Complain && !ReadingForJIT) {
       std::string ErrorStr = "could not find file '";
       ErrorStr += Filename;
       ErrorStr += "' referenced by AST file '";
