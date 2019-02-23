@@ -23,7 +23,6 @@
 #include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/Bitcode/BitcodeReader.h"
-#include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/CodeGen/MachineOptimizationRemarkEmitter.h"
 #include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -257,26 +256,11 @@ namespace clang {
         llvm::ConstantInt::get(Gen->CGM().SizeTy,
                                C.ASTBufferForJIT.size());
 
-      std::string Data;
-      llvm::raw_string_ostream OS(Data);
-      llvm::WriteBitcodeToFile(*getModule(), OS,
-                               /* ShouldPreserveUseListOrder */ true);
-      OS.flush();
-
-      llvm::Value *IRData =
-        Builder.CreateGlobalStringPtr(Data,
-                                      "__clang_jit_bc");
-      llvm::Value *IRDataLen =
-        llvm::ConstantInt::get(Gen->CGM().SizeTy,
-                               Data.size());
-
       for (auto *JCI : JCalls) {
         JCI->setArgOperand(0, CmdLineStr);
         JCI->setArgOperand(1, CmdLineStrLen);
         JCI->setArgOperand(2, ASTData);
         JCI->setArgOperand(3, ASTDataLen);
-        JCI->setArgOperand(4, IRData);
-        JCI->setArgOperand(5, IRDataLen);
       }
     }
 

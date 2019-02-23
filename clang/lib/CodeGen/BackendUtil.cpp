@@ -27,6 +27,7 @@
 #include "llvm/CodeGen/SchedulerRegistry.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/IRPrintingPasses.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
@@ -144,6 +145,8 @@ public:
 
   void EmitAssemblyWithNewPassManager(BackendAction Action,
                                       std::unique_ptr<raw_pwrite_stream> OS);
+
+  void FinalizeForJIT();
 };
 
 // We need this wrapper to access LangOpts and CGOpts from extension functions
@@ -517,6 +520,42 @@ static Optional<GCOVOptions> getGCOVOptions(const CodeGenOptions &CodeGenOpts) {
   return Options;
 }
 
+void EmitAssemblyHelper::FinalizeForJIT() {
+  if (!LangOpts.isJITEnabled())
+    return;
+
+  SmallVector<llvm::CallInst *, 10> JCalls;
+  for (auto &F : TheModule->functions())
+  for (auto &BB : F)
+  for (auto &I : BB)
+    if (auto *CI = dyn_cast<llvm::CallInst>(&I))
+      if (auto *Callee = CI->getCalledFunction())
+        if (Callee->getName() == "__clang_jit")
+          JCalls.push_back(CI);
+
+  if (JCalls.empty())
+    return;
+
+  llvm::IRBuilder<> Builder(JCalls[0]->getParent());
+  std::string Data;
+  llvm::raw_string_ostream OS(Data);
+  llvm::WriteBitcodeToFile(*TheModule, OS,
+                           /* ShouldPreserveUseListOrder */ true);
+  OS.flush();
+
+  llvm::Value *IRData =
+    Builder.CreateGlobalStringPtr(Data,
+                                  "__clang_jit_bc");
+  llvm::Value *IRDataLen =
+    llvm::ConstantInt::get(JCalls[0]->getArgOperand(5)->getType(),
+                           Data.size());
+
+  for (auto *JCI : JCalls) {
+    JCI->setArgOperand(4, IRData);
+    JCI->setArgOperand(5, IRDataLen);
+  }
+}
+
 void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
                                       legacy::FunctionPassManager &FPM) {
   // Handle disabling of all LLVM passes, where we want to preserve the
@@ -879,6 +918,8 @@ void EmitAssemblyHelper::EmitAssembly(BackendAction Action,
     PerModulePasses.run(*TheModule);
   }
 
+  FinalizeForJIT();
+
   {
     PrettyStackTraceString CrashInfo("Code generation");
     CodeGenPasses.run(*TheModule);
@@ -1179,6 +1220,8 @@ void EmitAssemblyHelper::EmitAssemblyWithNewPassManager(
     PrettyStackTraceString CrashInfo("Optimizer");
     MPM.run(*TheModule, MAM);
   }
+
+  FinalizeForJIT();
 
   // Now if needed, run the legacy PM for codegen.
   if (NeedCodeGen) {
