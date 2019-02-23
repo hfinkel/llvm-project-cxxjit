@@ -3,6 +3,7 @@ set(LLVM_LINK_COMPONENTS
   BitReader
   BitWriter
   Core
+  CodeGen
   Coroutines
   Coverage
   IPO
@@ -16,15 +17,18 @@ set(LLVM_LINK_COMPONENTS
   ObjCARCOpts
   Object
   Option
+  OrcJIT
   Passes
   ProfileData
+  RuntimeDyld
   ScalarOpts
   Support
   Target
   TransformUtils
+  Vectorize
   ExecutionEngine
   Interpreter
-  nativecodegen
+  native
   )
 
 # In a standard Clang+LLVM build, we need to generate intrinsics before

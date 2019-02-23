@@ -54,11 +54,21 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/CodeGen/MachineOptimizationRemarkEmitter.h"
+#include "llvm/ExecutionEngine/ExecutionEngine.h"
+#include "llvm/ExecutionEngine/JITSymbol.h"
+#include "llvm/ExecutionEngine/Orc/CompileUtils.h"
+#include "llvm/ExecutionEngine/Orc/IRCompileLayer.h"
+#include "llvm/ExecutionEngine/Orc/LambdaResolver.h"
+#include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
+#include "llvm/ExecutionEngine/RTDyldMemoryManager.h"
+#include "llvm/ExecutionEngine/SectionMemoryManager.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/DiagnosticPrinter.h"
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Mangler.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Linker/Linker.h"
@@ -68,6 +78,7 @@
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Host.h"
@@ -79,9 +90,11 @@
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/YAMLTraits.h"
+#include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/IPO/Internalize.h"
 
 #include <cassert>
@@ -200,7 +213,87 @@ void fatal() {
   report_fatal_error("Clang JIT failed!");
 }
 
-llvm::sys::SmartMutex<false> Mutex;
+class ClangJIT {
+public:
+  using ObjLayerT = llvm::orc::LegacyRTDyldObjectLinkingLayer;
+  using CompileLayerT = llvm::orc::LegacyIRCompileLayer<ObjLayerT, llvm::orc::SimpleCompiler>;
+
+  ClangJIT()
+      : Resolver(createLegacyLookupResolver(
+            ES,
+            [this](const std::string &Name) {
+              return ObjectLayer.findSymbol(Name, true);
+            },
+            [](Error Err) { cantFail(std::move(Err), "lookupFlags failed"); })),
+        TM(EngineBuilder().selectTarget()), DL(TM->createDataLayout()),
+        ObjectLayer(ES,
+                    [this](llvm::orc::VModuleKey) {
+                      return ObjLayerT::Resources{
+                          std::make_shared<SectionMemoryManager>(), Resolver};
+                    }),
+        CompileLayer(ObjectLayer, llvm::orc::SimpleCompiler(*TM)) {
+    llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
+  }
+
+  llvm::TargetMachine &getTargetMachine() { return *TM; }
+
+  llvm::orc::VModuleKey addModule(std::unique_ptr<llvm::Module> M) {
+    auto K = ES.allocateVModule();
+    cantFail(CompileLayer.addModule(K, std::move(M)));
+    ModuleKeys.push_back(K);
+    return K;
+  }
+
+  void removeModule(llvm::orc::VModuleKey K) {
+    ModuleKeys.erase(find(ModuleKeys, K));
+    cantFail(CompileLayer.removeModule(K));
+  }
+
+  llvm::JITSymbol findSymbol(const std::string Name) {
+    return findMangledSymbol(mangle(Name));
+  }
+
+private:
+  std::string mangle(const std::string &Name) {
+    std::string MangledName;
+    {
+      llvm::raw_string_ostream MangledNameStream(MangledName);
+      llvm::Mangler::getNameWithPrefix(MangledNameStream, Name, DL);
+    }
+    return MangledName;
+  }
+
+  llvm::JITSymbol findMangledSymbol(const std::string &Name) {
+    for (auto H : make_range(ModuleKeys.rbegin(), ModuleKeys.rend()))
+      if (auto Sym = CompileLayer.findSymbolIn(H, Name,
+                                               /*ExportedSymbolsOnly*/ false))
+        return Sym;
+
+    // If we can't find the symbol in the JIT, try looking in the host process.
+    if (auto SymAddr = RTDyldMemoryManager::getSymbolAddressInProcess(Name))
+      return llvm::JITSymbol(SymAddr, llvm::JITSymbolFlags::Exported);
+
+#ifdef _WIN32
+    // For Windows retry without "_" at beginning, as RTDyldMemoryManager uses
+    // GetProcAddress and standard libraries like msvcrt.dll use names
+    // with and without "_" (for example "_itoa" but "sin").
+    if (Name.length() > 2 && Name[0] == '_')
+      if (auto SymAddr =
+              RTDyldMemoryManager::getSymbolAddressInProcess(Name.substr(1)))
+        return llvm::JITSymbol(SymAddr, llvm::JITSymbolFlags::Exported);
+#endif
+
+    return nullptr;
+  }
+
+  llvm::orc::ExecutionSession ES;
+  std::shared_ptr<llvm::orc::SymbolResolver> Resolver;
+  std::unique_ptr<llvm::TargetMachine> TM;
+  const llvm::DataLayout DL;
+  ObjLayerT ObjectLayer;
+  CompileLayerT CompileLayer;
+  std::vector<llvm::orc::VModuleKey> ModuleKeys;
+};
 
 class JFIMapDeclVisitor : public RecursiveASTVisitor<JFIMapDeclVisitor> {
   DenseMap<unsigned, FunctionDecl *> &Map;
@@ -217,6 +310,8 @@ public:
     return true;
   }
 };
+
+std::unique_ptr<ClangJIT> CJ;
 
 struct CompilerData {
   std::unique_ptr<CompilerInvocation>     Invocation;
@@ -491,6 +586,8 @@ struct CompilerData {
   }
 };
 
+llvm::sys::SmartMutex<false> Mutex;
+bool InitializedTarget = false;
 llvm::DenseMap<const void *, std::unique_ptr<CompilerData>> TUCompilerData;
 
 } // anonymous namespace
@@ -503,6 +600,16 @@ void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
                   const void *ASTBuffer, size_t ASTBufferSize,
                   const void *NTTPValues, unsigned Idx) {
   llvm::MutexGuard Guard(Mutex);
+
+  if (!InitializedTarget) {
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+    llvm::InitializeNativeTargetAsmParser();
+
+    CJ = llvm::make_unique<ClangJIT>();
+
+    InitializedTarget = true;
+  }
 
   CompilerData *CD;
   auto TUCDI = TUCompilerData.find(ASTBuffer);
