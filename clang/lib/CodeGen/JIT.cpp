@@ -412,6 +412,7 @@ public:
   }
 };
 
+unsigned LastUnique = 0;
 std::unique_ptr<ClangJIT> CJ;
 std::unique_ptr<llvm::LLVMContext> LCtx;
 
@@ -718,7 +719,11 @@ struct CompilerData {
 
     Consumer->HandleTranslationUnit(*Ctx);
 
-    // llvm::Function *F = Consumer->getModule()->getFunction(SMName);
+    // First, mark everything we've newly generated with external linkage. When
+    // we generate additional modules, we'll mark these functions as available
+    // externally, and so we're likely to inline them, but if not, we'll need
+    // to link with the ones generated here.
+
     for (auto &F : Consumer->getModule()->functions()) {
       F.setLinkage(llvm::GlobalValue::ExternalLinkage);
       F.setComdat(nullptr);
@@ -733,11 +738,46 @@ struct CompilerData {
     std::unique_ptr<llvm::Module> ToRunMod =
       llvm::CloneModule(*Consumer->getModule());
 
+    // Here we link our previous cache of definitions, etc. into this module.
+    // This includes all of our previously-generated functions (marked as
+    // available externally). We prefer our previously-generated versions to
+    // our current versions should both modules contain the same entities (as
+    // the previously-generated versions have already been optimized).
+
+    // We need to be specifically careful about constants in our module,
+    // however. Clang will generate all string literals as .str (plus a
+    // number), and these from previously-generated code will conflict with the
+    // names chosen for string literals in this module.
+
+    for (auto &GV : ToRunMod->global_values()) {
+      auto *GVar = dyn_cast<llvm::GlobalVariable>(&GV);
+      if (!GVar || !GVar->isConstant())
+        continue;
+
+      if (!RunningMod->getNamedValue(GV.getName()))
+        continue;
+
+      llvm::SmallString<16> UniqueName(GV.getName());
+      unsigned BaseSize = UniqueName.size();
+      do {
+        // Trim any suffix off and append the next number.
+        UniqueName.resize(BaseSize);
+        llvm::raw_svector_ostream S(UniqueName);
+        S << "." << ++LastUnique;
+      } while (RunningMod->getNamedValue(UniqueName));
+
+      GV.setName(UniqueName);
+    }
+
     if (Linker::linkModules(*ToRunMod, llvm::CloneModule(*RunningMod),
                             Linker::Flags::OverrideFromSrc))
       fatal();
 
     CJ->addModule(std::move(ToRunMod));
+
+    // Now that we've generated code for this module, take them optimized code
+    // and mark the definitions as available externally. We'll link them into
+    // future modules this way so that they can be inlined.
 
     for (auto &F : Consumer->getModule()->functions())
       if (!F.isDeclaration())
