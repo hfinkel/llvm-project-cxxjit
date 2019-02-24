@@ -345,7 +345,7 @@ namespace clang {
       PtrsGbl->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
 
       llvm::Value *PtrsCnt =
-        llvm::ConstantInt::get(Gen->CGM().Int32Ty, LocalPtrs.size());
+        llvm::ConstantInt::get(Gen->CGM().Int32Ty, LocalPtrs.size()/2);
 
       for (auto *JCI : JCalls) {
         JCI->setArgOperand(0, CmdLineStr);

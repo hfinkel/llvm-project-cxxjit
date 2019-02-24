@@ -590,7 +590,7 @@ struct CompilerData {
     Consumer->Initialize(*Ctx);
     Invocation->getLangOpts()->EmitAllDecls = true;
 
-    for (unsigned Idx = 0; Idx < LocalPtrsCnt; Idx += 2) {
+    for (unsigned Idx = 0; Idx < 2*LocalPtrsCnt; Idx += 2) {
       const char *Name = (const char *) LocalPtrs[Idx];
       const void *Ptr = LocalPtrs[Idx+1];
       LocalSymAddrs[Name] = Ptr;
