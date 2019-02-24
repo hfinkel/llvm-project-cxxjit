@@ -14,6 +14,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclGroup.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TargetInfo.h"
@@ -75,6 +76,62 @@ namespace clang {
   private:
     const CodeGenOptions &CodeGenOpts;
     BackendConsumer *BackendCon;
+  };
+
+  class JITLocalCollector : public RecursiveASTVisitor<JITLocalCollector> {
+    llvm::SetVector<StringRef> &Names;
+    CodeGen::CodeGenModule &CGM;
+
+    class NameCollector : public RecursiveASTVisitor<NameCollector> {
+      JITLocalCollector &Collector;
+
+    public:
+      explicit NameCollector(JITLocalCollector &C)
+        : Collector(C) { }
+
+      bool shouldVisitTemplateInstantiations() const { return true; }
+
+      bool VisitDeclRefExpr(DeclRefExpr *E) {
+        auto &CGM = Collector.CGM;
+
+        if (auto *FD = dyn_cast<FunctionDecl>(E->getDecl())) {
+          GlobalDecl GD;
+          if (const auto *D = dyn_cast<CXXConstructorDecl>(FD))
+            GD = GlobalDecl(D, Ctor_Complete);
+          else if (const auto *D = dyn_cast<CXXDestructorDecl>(FD))
+            GD = GlobalDecl(D, Dtor_Complete);
+          else
+            GD = GlobalDecl(FD);
+
+          if (llvm::GlobalValue::isLocalLinkage(CGM.getFunctionLinkage(GD)))
+            Collector.Names.insert(CGM.getMangledName(GD));
+        } else if (auto *VD = dyn_cast<VarDecl>(E->getDecl())) {
+          if (llvm::GlobalValue::isLocalLinkage(CGM.getLLVMLinkageVarDefinition(
+                                                  VD, CGM.isTypeConstant(
+                                                        VD->getType(), false))))
+            Collector.Names.insert(CGM.getMangledName(GlobalDecl(VD)));
+        }
+
+        return true;
+      }
+    };
+
+  public:
+    explicit JITLocalCollector(llvm::SetVector<StringRef> &N,
+                               CodeGen::CodeGenModule &CGM)
+      : Names(N), CGM(CGM) { }
+
+    bool shouldVisitTemplateInstantiations() const { return true; }
+
+    bool VisitFunctionDecl(const FunctionDecl *D) {
+      if (D->hasAttr<JITFuncAttr>()) {
+        if (D->getTemplateSpecializationKind() != TSK_ExplicitSpecialization)
+          NameCollector(*this)
+            .TraverseFunctionDecl(const_cast<FunctionDecl *>(D));
+      }
+
+      return true;
+    }
   };
 
   class BackendConsumer : public ASTConsumer {
@@ -256,11 +313,49 @@ namespace clang {
         llvm::ConstantInt::get(Gen->CGM().SizeTy,
                                C.ASTBufferForJIT.size());
 
+      // Collect the local variables and functions here to pass to the JIT.
+      // Sadly, we need to take their addresses here, instead of after
+      // optimization, because otherwise argument promotion, global-variable
+      // mutations, and other transformations might render them incompatible
+      // with JIT-generated modules later.
+
+      llvm::SetVector<StringRef> LocalNames;
+      JITLocalCollector(LocalNames, Gen->CGM()).TraverseAST(C);
+
+      llvm::SmallVector<llvm::Constant *, 32> LocalPtrs;
+      for (auto &LocalName : LocalNames) {
+        llvm::Constant *ObjPtr = getModule()->getNamedValue(LocalName);
+        if (!ObjPtr)
+          continue;
+
+        llvm::Constant *Name = Builder.CreateGlobalStringPtr(LocalName,
+                                                             ".cjl.str");
+        LocalPtrs.push_back(Name);
+        LocalPtrs.push_back(
+          llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(
+                                ObjPtr, Gen->CGM().VoidPtrTy));
+      }
+
+      auto *LNAType = llvm::ArrayType::get(Gen->CGM().VoidPtrTy, LocalPtrs.size());
+      auto *LNAValue = ConstantArray::get(LNAType, LocalPtrs);
+
+      auto *PtrsGbl = new llvm::GlobalVariable(
+        *getModule(), LNAType, true, llvm::GlobalValue::PrivateLinkage, LNAValue,
+        "__clang_jit_locals");
+      PtrsGbl->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+
+      llvm::Value *PtrsCnt =
+        llvm::ConstantInt::get(Gen->CGM().Int32Ty, LocalPtrs.size());
+
       for (auto *JCI : JCalls) {
         JCI->setArgOperand(0, CmdLineStr);
         JCI->setArgOperand(1, CmdLineStrLen);
         JCI->setArgOperand(2, ASTData);
         JCI->setArgOperand(3, ASTDataLen);
+        JCI->setArgOperand(6,
+          llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(
+            PtrsGbl, Gen->CGM().VoidPtrPtrTy));
+        JCI->setArgOperand(7, PtrsCnt);
       }
     }
 

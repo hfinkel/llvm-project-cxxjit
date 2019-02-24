@@ -220,8 +220,9 @@ public:
   using ObjLayerT = llvm::orc::LegacyRTDyldObjectLinkingLayer;
   using CompileLayerT = llvm::orc::LegacyIRCompileLayer<ObjLayerT, llvm::orc::SimpleCompiler>;
 
-  ClangJIT()
-      : Resolver(createLegacyLookupResolver(
+  ClangJIT(DenseMap<StringRef, const void *> &LocalSymAddrs)
+      : LocalSymAddrs(LocalSymAddrs),
+        Resolver(createLegacyLookupResolver(
             ES,
             [this](const std::string &Name) {
               return findSymbol(Name);
@@ -271,6 +272,11 @@ private:
                                                /*ExportedSymbolsOnly*/ false))
         return Sym;
 
+    auto LSAI = LocalSymAddrs.find(Name);
+    if (LSAI != LocalSymAddrs.end())
+      return llvm::JITSymbol(llvm::pointerToJITTargetAddress(LSAI->second),
+                             llvm::JITSymbolFlags::Exported);
+
     // If we can't find the symbol in the JIT, try looking in the host process.
     if (auto SymAddr = RTDyldMemoryManager::getSymbolAddressInProcess(Name))
       return llvm::JITSymbol(SymAddr, llvm::JITSymbolFlags::Exported);
@@ -288,6 +294,7 @@ private:
     return nullptr;
   }
 
+  DenseMap<StringRef, const void *> &LocalSymAddrs; 
   llvm::orc::ExecutionSession ES;
   std::shared_ptr<llvm::orc::SymbolResolver> Resolver;
   std::unique_ptr<llvm::TargetMachine> TM;
@@ -413,7 +420,6 @@ public:
 };
 
 unsigned LastUnique = 0;
-std::unique_ptr<ClangJIT> CJ;
 std::unique_ptr<llvm::LLVMContext> LCtx;
 
 struct CompilerData {
@@ -440,11 +446,15 @@ struct CompilerData {
   TrivialModuleLoader                     ModuleLoader;
   std::unique_ptr<llvm::Module>           RunningMod;
 
+  DenseMap<StringRef, const void *>       LocalSymAddrs;
+  std::unique_ptr<ClangJIT>               CJ;
+
   DenseMap<unsigned, FunctionDecl *>      FuncMap;
 
   CompilerData(const void *CmdArgs, unsigned CmdArgsLen,
                const void *ASTBuffer, size_t ASTBufferSize,
-               const void *IRBuffer, size_t IRBufferSize) {
+               const void *IRBuffer, size_t IRBufferSize,
+               const void **LocalPtrs, unsigned LocalPtrsCnt) {
     StringRef CombinedArgv((const char *) CmdArgs, CmdArgsLen);
     SmallVector<StringRef, 32> Argv;
     CombinedArgv.split(Argv, '\0', /*MaxSplit*/ -1, false);
@@ -579,6 +589,14 @@ struct CompilerData {
 
     Consumer->Initialize(*Ctx);
     Invocation->getLangOpts()->EmitAllDecls = true;
+
+    for (unsigned Idx = 0; Idx < LocalPtrsCnt; Idx += 2) {
+      const char *Name = (const char *) LocalPtrs[Idx];
+      const void *Ptr = LocalPtrs[Idx+1];
+      LocalSymAddrs[Name] = Ptr;
+    }
+
+    CJ = llvm::make_unique<ClangJIT>(LocalSymAddrs);
   }
 
   void *resolveFunction(const void *NTTPValues, unsigned Idx) {
@@ -729,7 +747,21 @@ struct CompilerData {
       F.setComdat(nullptr);
     }
 
+    auto IsLocalUnnamedConst = [](llvm::GlobalValue &GV) {
+      if (!GV.hasAtLeastLocalUnnamedAddr() || !GV.hasLocalLinkage())
+        return false;
+
+      auto *GVar = dyn_cast<llvm::GlobalVariable>(&GV);
+      if (!GVar || !GVar->isConstant())
+        return false;
+
+      return true;
+    };
+
     for (auto &GV : Consumer->getModule()->global_values()) {
+      if (IsLocalUnnamedConst(GV))
+        continue;
+
       GV.setLinkage(llvm::GlobalValue::ExternalLinkage);
       if (auto *GO = dyn_cast<llvm::GlobalObject>(&GV))
         GO->setComdat(nullptr);
@@ -750,8 +782,7 @@ struct CompilerData {
     // names chosen for string literals in this module.
 
     for (auto &GV : ToRunMod->global_values()) {
-      auto *GVar = dyn_cast<llvm::GlobalVariable>(&GV);
-      if (!GVar || !GVar->isConstant())
+      if (!IsLocalUnnamedConst(GV))
         continue;
 
       if (!RunningMod->getNamedValue(GV.getName()))
@@ -819,6 +850,7 @@ __declspec(dllexport)
 void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
                   const void *ASTBuffer, size_t ASTBufferSize,
                   const void *IRBuffer, size_t IRBufferSize,
+                  const void **LocalPtrs, unsigned LocalPtrsCnt,
                   const void *NTTPValues, unsigned NTTPValuesSize,
                   unsigned Idx) {
   // FIXME: Use a DenseSet instead of unordered_map, use a SmallVector to hold data.
@@ -842,7 +874,6 @@ void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
     llvm::InitializeNativeTargetAsmParser();
 
     LCtx.reset(new LLVMContext);
-    CJ = llvm::make_unique<ClangJIT>();
 
     InitializedTarget = true;
   }
@@ -851,7 +882,7 @@ void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
   auto TUCDI = TUCompilerData.find(ASTBuffer);
   if (TUCDI == TUCompilerData.end()) {
     CD = new CompilerData(CmdArgs, CmdArgsLen, ASTBuffer, ASTBufferSize,
-                          IRBuffer, IRBufferSize);
+                          IRBuffer, IRBufferSize, LocalPtrs, LocalPtrsCnt);
     TUCompilerData[ASTBuffer].reset(CD);
   } else {
     CD = TUCDI->second.get();

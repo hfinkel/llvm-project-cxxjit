@@ -2446,7 +2446,8 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
   // Emit call to __clang_jit(const char *CmdArgs, void *AST, void *Params)
   llvm::Type *TypeParams[] =
     {CGF.Int8PtrTy, CGF.Int32Ty, CGF.VoidPtrTy, CGF.SizeTy,
-     CGF.VoidPtrTy, CGF.SizeTy, CGF.VoidPtrTy, CGF.Int32Ty, CGF.Int32Ty};
+     CGF.VoidPtrTy, CGF.SizeTy, CGF.VoidPtrPtrTy, CGF.Int32Ty, CGF.VoidPtrTy,
+     CGF.Int32Ty, CGF.Int32Ty};
   auto *RetFTy = CGF.getTypes().GetFunctionType(GlobalDecl(FD));
 
   // This function is marked as readonly to allow the optimizer to remove it if
@@ -2467,6 +2468,8 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
       llvm::Constant::getNullValue(CGF.SizeTy),
       llvm::Constant::getNullValue(CGF.VoidPtrTy),
       llvm::Constant::getNullValue(CGF.SizeTy),
+      llvm::Constant::getNullValue(CGF.VoidPtrPtrTy),
+      llvm::Constant::getNullValue(CGF.Int32Ty),
       CGF.Builder.CreatePointerCast(AI.getPointer(), CGF.VoidPtrTy),
       CGF.Builder.getInt32(C.getTypeSizeInChars(RDTy).getQuantity()),
       CGF.Builder.getInt32(Cnt)
