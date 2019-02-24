@@ -393,6 +393,11 @@ DerivedArgList *Driver::TranslateInputArgs(const InputArgList &Args) const {
   if (Args.hasFlag(options::OPT_miamcu, options::OPT_mno_iamcu, false))
     DAL->AddFlagArg(0, Opts->getOption(options::OPT_static));
 
+  // For JIT, always use -rdynamic. This allows the JIT to find external
+  // symbols in objects in the main executable.
+  if (Args.hasFlag(options::OPT_fjit, options::OPT_fno_jit, false))
+    DAL->AddFlagArg(0, Opts->getOption(options::OPT_rdynamic));
+
 // Add a default value of -mlinker-version=, if one was given and the user
 // didn't specify one.
 #if defined(HOST_LINK_VERSION)
