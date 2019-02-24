@@ -573,7 +573,8 @@ struct CompilerData {
         F.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
 
     for (auto &GV : RunningMod->global_values())
-      GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
+      if (!GV.isDeclaration())
+        GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
 
     Consumer->Initialize(*Ctx);
     Invocation->getLangOpts()->EmitAllDecls = true;
@@ -743,7 +744,8 @@ struct CompilerData {
         F.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
 
     for (auto &GV : Consumer->getModule()->global_values())
-      GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
+      if (!GV.isDeclaration())
+        GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
 
     if (Linker::linkModules(*RunningMod, Consumer->takeModule(),
                             Linker::Flags::None))

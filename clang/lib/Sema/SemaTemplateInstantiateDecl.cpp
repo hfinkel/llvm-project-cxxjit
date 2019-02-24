@@ -1617,6 +1617,11 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
     FunctionDecl *SpecFunc
       = FunctionTemplate->findSpecialization(Innermost, InsertPos);
 
+    // If we're in the JIT, then ignore the placeholder (it won't have a body).
+    if (SpecFunc && SemaRef.getLangOpts().isInJIT() &&
+        SpecFunc->hasAttr<JITFuncInstantiationAttr>())
+      SpecFunc = nullptr;
+
     // If we already have a function template specialization, return it.
     if (SpecFunc)
       return SpecFunc;
@@ -1914,6 +1919,11 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     void *InsertPos = nullptr;
     FunctionDecl *SpecFunc
       = FunctionTemplate->findSpecialization(Innermost, InsertPos);
+
+    // If we're in the JIT, then ignore the placeholder (it won't have a body).
+    if (SpecFunc && SemaRef.getLangOpts().isInJIT() &&
+        SpecFunc->hasAttr<JITFuncInstantiationAttr>())
+      SpecFunc = nullptr;
 
     // If we already have a function template specialization, return it.
     if (SpecFunc)

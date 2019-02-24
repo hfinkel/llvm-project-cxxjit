@@ -6277,7 +6277,7 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
 
   // If we're going to JIT this function template, then this expression might
   // be anything.
-  // FIXME: We can't handle dynamic member-pointer types because, at runtime,
+  // Note: We can't handle dynamic member-pointer types because, at runtime,
   // can we figure out which member it is (without ABI-specific logic in the
   // runtime library)?
   if (IsForJIT && !ParamType->isMemberPointerType()) {
