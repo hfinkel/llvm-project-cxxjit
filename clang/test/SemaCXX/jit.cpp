@@ -30,3 +30,18 @@ void test1(int argc) {
   u2<bar<int, 10>>();
 }
 
+#ifdef __cpp_decltype_auto
+
+template <typename T, int I>
+[[clang::jit]] decltype(auto) bara() { return I; } // expected-note{{'bara<int, argc + 2>' declared here}}
+
+template <>
+decltype(auto) bara<int, 10>() { return 5; }
+
+void test2(int argc) {
+  auto x = bara<int, argc+2>(); // expected-error{{function 'bara<int, argc + 2>' with deduced return type cannot be used before it is defined}}
+
+  auto y = bara<int, 10>();
+}
+
+#endif // __cpp_decltype_auto
