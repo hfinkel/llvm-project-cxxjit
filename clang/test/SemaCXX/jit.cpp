@@ -45,3 +45,16 @@ void test2(int argc) {
 }
 
 #endif // __cpp_decltype_auto
+
+#ifdef 	__cpp_nontype_template_parameter_auto
+
+template <typename T, auto I>
+[[clang::jit]] void barat() { }
+
+void test3(int argc) {
+  u1<decltype(barat<int, argc+2>)>();
+  barat<int, argc+2>();
+}
+
+#endif // __cpp_nontype_template_parameter_auto
+
