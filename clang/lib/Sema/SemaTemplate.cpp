@@ -5957,6 +5957,16 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
   }
 
   if (Func) {
+    // We cannot use a function type that will not be known until runtime as
+    // part of a compile-time type.
+    if (S.getLangOpts().isJITEnabled() &&
+        Func->hasAttr<JITFuncInstantiationAttr>()) {
+      S.Diag(AddrOpLoc, diag::err_template_arg_is_jit_func)
+        << ParamType;
+      S.Diag(Param->getLocation(), diag::note_template_param_here);
+      return true;
+    }
+
     // If the template parameter has pointer type, the function decays.
     if (ParamType->isPointerType() && !AddressTaken)
       ArgType = S.Context.getPointerType(Func->getType());
