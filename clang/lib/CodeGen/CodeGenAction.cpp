@@ -298,7 +298,7 @@ namespace clang {
         return;
 
       llvm::IRBuilder<> Builder(JCalls[0]->getParent());
-      auto &CmdArgs = CodeGenOpts.CmdArgs;
+      auto &CmdArgs = CodeGenOpts.CmdArgsForJIT;
       llvm::Value *CmdLineStr =
         Builder.CreateGlobalStringPtr(std::string(CmdArgs.begin(),
                                                   CmdArgs.end()),

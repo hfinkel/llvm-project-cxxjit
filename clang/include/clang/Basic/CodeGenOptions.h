@@ -272,6 +272,11 @@ public:
   /// List of backend command-line options for -fembed-bitcode.
   std::vector<uint8_t> CmdArgs;
 
+  /// List of backend command-line options for JIT. This needs to include some
+  /// options specifically excluded from the command-line options saved with
+  /// -fembed-bitcode.
+  std::vector<uint8_t> CmdArgsForJIT;
+
   /// A list of all -fno-builtin-* function names (e.g., memset).
   std::vector<std::string> NoBuiltinFuncs;
 

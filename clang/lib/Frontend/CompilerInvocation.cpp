@@ -979,8 +979,7 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   // FIXME: For backend options that are not yet recorded as function
   // attributes in the IR, keep track of them so we can embed them in a
   // separate data section and use them when building the bitcode.
-  if (Opts.getEmbedBitcode() == CodeGenOptions::Embed_All ||
-      Args.hasArg(OPT_fjit)) {
+  if (Opts.getEmbedBitcode() == CodeGenOptions::Embed_All) {
     for (const auto &A : Args) {
       // Do not encode output and input.
       if (A->getOption().getID() == options::OPT_o ||
@@ -997,6 +996,21 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
         Opts.CmdArgs.insert(Opts.CmdArgs.end(), ArgStr.begin(), ArgStr.end());
         // using \00 to separate each commandline options.
         Opts.CmdArgs.push_back('\0');
+      }
+    }
+  }
+
+  // For the JIT engine, we need to keep command-line arguments. Unlike for
+  // -fembed-bitcode, we keep all options for the JIT.
+  if (Args.hasArg(OPT_fjit)) {
+    for (const auto &A : Args) {
+      ArgStringList ASL;
+      A->render(Args, ASL);
+      for (const auto &arg : ASL) {
+        StringRef ArgStr(arg);
+        Opts.CmdArgsForJIT.insert(Opts.CmdArgsForJIT.end(),
+                                  ArgStr.begin(), ArgStr.end());
+        Opts.CmdArgsForJIT.push_back('\0');
       }
     }
   }
