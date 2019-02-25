@@ -2411,7 +2411,8 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
     Expr::EvalResult Eval;
     Eval.Diag = &Notes;
     if (TA.getAsExpr()->
-          EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, C))
+          EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, C) &&
+        Notes.empty())
       continue;
 
     QualType FieldTy = TA.getNonTypeTemplateArgumentType();

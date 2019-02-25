@@ -6296,7 +6296,7 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
     Eval.Diag = &Notes;
     if (!Arg->
           EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, Context) ||
-          !Notes.empty()) {
+        !Notes.empty()) {
       Converted = TemplateArgument(Arg);
       return Arg;
     }
