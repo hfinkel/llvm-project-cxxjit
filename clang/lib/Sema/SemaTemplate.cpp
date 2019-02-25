@@ -6394,6 +6394,19 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
              "null reference should not be a constant expression");
       assert((!VD || !ParamType->isNullPtrType()) &&
              "non-null value of type nullptr_t?");
+
+      if (auto *Func = dyn_cast_or_null<FunctionDecl>(VD)) {
+        // We cannot use a function type that will not be known until runtime as
+        // part of a compile-time type.
+        if (getLangOpts().isJITEnabled() &&
+            Func->hasAttr<JITFuncInstantiationAttr>()) {
+          Diag(Arg->getBeginLoc(), diag::err_template_arg_is_jit_func)
+            << ParamType;
+          Diag(Param->getLocation(), diag::note_template_param_here);
+          return ExprError(); 
+        }
+      }
+
       Converted = VD ? TemplateArgument(VD, CanonParamType)
                      : TemplateArgument(CanonParamType, /*isNullPtr*/true);
       break;

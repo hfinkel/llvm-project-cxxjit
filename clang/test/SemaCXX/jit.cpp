@@ -1,4 +1,7 @@
 // RUN: %clang_cc1 -triple x86_64-linux-gnu -verify -fsyntax-only -std=c++11 -fjit %s
+// RUN: %clang_cc1 -triple x86_64-linux-gnu -verify -fsyntax-only -std=c++14 -fjit %s
+// RUN: %clang_cc1 -triple x86_64-linux-gnu -verify -fsyntax-only -std=c++17 -fjit %s
+// RUN: %clang_cc1 -triple x86_64-linux-gnu -verify -fsyntax-only -std=c++2a -fjit %s
 
 #if !__has_feature(clang_cxx_jit)
 #error "Missing __has_feature"
