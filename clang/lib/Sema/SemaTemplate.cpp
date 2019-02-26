@@ -22,6 +22,7 @@
 #include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Sema/DeclSpec.h"
+#include "clang/Sema/Initialization.h"
 #include "clang/Sema/Lookup.h"
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/Scope.h"
@@ -4341,7 +4342,8 @@ TemplateNameKind Sema::ActOnDependentTemplateName(Scope *S,
 
 bool Sema::CheckTemplateTypeArgument(TemplateTypeParmDecl *Param,
                                      TemplateArgumentLoc &AL,
-                          SmallVectorImpl<TemplateArgument> &Converted) {
+                          SmallVectorImpl<TemplateArgument> &Converted,
+                          bool IsForJIT) {
   const TemplateArgument &Arg = AL.getArgument();
   QualType ArgType;
   TypeSourceInfo *TSI = nullptr;
@@ -4365,6 +4367,32 @@ bool Sema::CheckTemplateTypeArgument(TemplateTypeParmDecl *Param,
     return true;
   }
   case TemplateArgument::Expression: {
+    // If this is a JIT-enabled template, this might be a string which will
+    // provide the type at runtime.
+    if (IsForJIT) {
+      const QualType &ConstCharPtrTy =
+        Context.getPointerType(Context.CharTy.withConst());
+
+      ImplicitConversionSequence ICS =
+          TryImplicitConversion(Arg.getAsExpr(), ConstCharPtrTy,
+                                /*SuppressUserConversions=*/false,
+                                /*AllowExplicit=*/false,
+                                /*InOverloadResolution=*/false,
+                                /*CStyle=*/false,
+                                /*AllowObjCWritebackConversion=*/false);
+
+      if (!ICS.isFailure()) {
+        ExprResult E = PerformImplicitConversion(Arg.getAsExpr(), ConstCharPtrTy,
+                                            ICS, AA_Assigning);
+        SourceLocation Loc = AL.getSourceRange().getBegin();
+        ArgType = BuildJITFromStringType(E.get(), Loc);
+        TSI = Context.getTrivialTypeSourceInfo(ArgType, Loc);
+        break;
+      }
+
+      // TODO: Also check for a c_str() member and call it.
+    }
+
     // We have a template type parameter but the template argument is an
     // expression; see if maybe it is missing the "typename" keyword.
     CXXScopeSpec SS;
@@ -4757,9 +4785,14 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
                                  unsigned ArgumentPackIndex,
                             SmallVectorImpl<TemplateArgument> &Converted,
                                  CheckTemplateArgumentKind CTAK) {
+  bool IsForJIT = false;
+  if (getLangOpts().isJITEnabled())
+    if (auto *FT = dyn_cast<FunctionTemplateDecl>(Template))
+      IsForJIT = FT->getTemplatedDecl()->hasAttr<JITFuncAttr>();
+
   // Check template type parameters.
   if (TemplateTypeParmDecl *TTP = dyn_cast<TemplateTypeParmDecl>(Param))
-    return CheckTemplateTypeArgument(TTP, Arg, Converted);
+    return CheckTemplateTypeArgument(TTP, Arg, Converted, IsForJIT);
 
   // Check non-type template parameters.
   if (NonTypeTemplateParmDecl *NTTP =dyn_cast<NonTypeTemplateParmDecl>(Param)) {
@@ -4804,11 +4837,6 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
     case TemplateArgument::Expression: {
       TemplateArgument Result;
       unsigned CurSFINAEErrors = NumSFINAEErrors;
-
-      bool IsForJIT = false;
-      if (getLangOpts().isJITEnabled())
-        if (auto *FT = dyn_cast<FunctionTemplateDecl>(Template))
-          IsForJIT = FT->getTemplatedDecl()->hasAttr<JITFuncAttr>();
 
       ExprResult Res =
         CheckTemplateArgument(NTTP, NTTPType, Arg.getArgument().getAsExpr(),

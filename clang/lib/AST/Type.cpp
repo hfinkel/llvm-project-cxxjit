@@ -3227,8 +3227,8 @@ DependentUnaryTransformType::DependentUnaryTransformType(const ASTContext &C,
 
 JITFromStringType::JITFromStringType(Expr *E, QualType can)
     : Type(JITFromString, can, E->isInstantiationDependent(),
-           E->isInstantiationDependent(),
-           E->getType()->isVariablyModifiedType(),
+           true /*E->isInstantiationDependent()*/,
+           /*VariablyModified=*/false,
            E->containsUnexpandedParameterPack()),
       E(E) {}
 

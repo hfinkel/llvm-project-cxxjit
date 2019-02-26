@@ -6539,7 +6539,8 @@ public:
 
   bool CheckTemplateTypeArgument(TemplateTypeParmDecl *Param,
                                  TemplateArgumentLoc &Arg,
-                           SmallVectorImpl<TemplateArgument> &Converted);
+                           SmallVectorImpl<TemplateArgument> &Converted,
+                           bool IsForJIT = false);
 
   bool CheckTemplateArgument(TemplateTypeParmDecl *Param,
                              TypeSourceInfo *Arg);
