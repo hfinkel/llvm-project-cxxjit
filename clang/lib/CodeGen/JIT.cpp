@@ -9,6 +9,7 @@
 #include "clang/CodeGen/CodeGenAction.h"
 #include "CodeGenModule.h"
 #include "CoverageMappingGen.h"
+#include "CGCXXABI.h"
 #include "MacroPPCallbacks.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
@@ -447,6 +448,7 @@ struct CompilerData {
   std::unique_ptr<llvm::Module>           RunningMod;
 
   DenseMap<StringRef, const void *>       LocalSymAddrs;
+  DenseMap<StringRef, ValueDecl *>        NewLocalSymDecls;
   std::unique_ptr<ClangJIT>               CJ;
 
   DenseMap<unsigned, FunctionDecl *>      FuncMap;
@@ -694,11 +696,72 @@ struct CompilerData {
         if (IntVal.isNullValue()) {
           Builder.push_back(TemplateArgument(CanonFieldTy, /*isNullPtr*/true));
         } else {
-	  // FIXME: If this is a global that already exists, we should use it
-	  // instead of making a new global here.
-          // We need to lookup function pointers too.
-          assert(true && "Not done yet"); 
-          fatal();
+	  // Note: We always generate a new global for pointer values here.
+	  // This provides a new potential way to introduce an ODR violation:
+	  // If you also generate an instantiation using the same pointer value
+	  // using some other symbol name, this will generate a different
+	  // instantiation.
+
+	  // As we guarantee that the template parameters are not allowed to
+	  // point to subobjects, this is useful for optimization because each
+	  // of these resolve to distinct underlying objects.
+
+          llvm::SmallString<256> GlobalName("__clang_jit_symbol_");
+          IntVal.toString(GlobalName, 16, false);
+
+	  // To this base name we add the mangled type. Stack/heap addresses
+	  // can be reused with variables of different type, and these should
+	  // have different names even if they share the same address;
+          auto &CGM = Consumer->getCodeGenerator()->CGM();
+          llvm::raw_svector_ostream MOut(GlobalName);
+          CGM.getCXXABI().getMangleContext().mangleTypeName(CanonFieldTy, MOut);
+
+          auto NLDSI = NewLocalSymDecls.find(GlobalName);
+          if (NLDSI != NewLocalSymDecls.end()) {
+              Builder.push_back(TemplateArgument(NLDSI->second, CanonFieldTy));
+          } else {
+            Sema::ContextRAII TUContext(*S, Ctx->getTranslationUnitDecl());
+            SourceLocation Loc = FTSI->getPointOfInstantiation();
+
+            QualType STy = CanonFieldTy->getPointeeType();
+            auto &II = PP->getIdentifierTable().get(GlobalName);
+
+            if (STy->isFunctionType()) {
+              auto *TAFD =
+                FunctionDecl::Create(*Ctx, S->CurContext, Loc, Loc, &II,
+                                     STy, /*TInfo=*/nullptr, SC_Extern, false,
+                                     STy->isFunctionProtoType());
+              TAFD->setImplicit();
+
+              if (const FunctionProtoType *FT = dyn_cast<FunctionProtoType>(STy)) {
+                SmallVector<ParmVarDecl*, 16> Params;
+                for (unsigned i = 0, e = FT->getNumParams(); i != e; ++i) {
+                  ParmVarDecl *Parm =
+                    ParmVarDecl::Create(*Ctx, TAFD, SourceLocation(), SourceLocation(),
+                                        nullptr, FT->getParamType(i), /*TInfo=*/nullptr,
+                                        SC_None, nullptr);
+                  Parm->setScopeInfo(0, i);
+                  Params.push_back(Parm);
+                }
+
+                TAFD->setParams(Params);
+              }
+
+              NewLocalSymDecls[II.getName()] = TAFD;
+              Builder.push_back(TemplateArgument(TAFD, CanonFieldTy));
+            } else {
+              auto *TAVD =
+                VarDecl::Create(*Ctx, S->CurContext, Loc, Loc, &II,
+                                STy, Ctx->getTrivialTypeSourceInfo(STy, Loc),
+                                SC_Extern);
+              TAVD->setImplicit();
+
+              NewLocalSymDecls[II.getName()] = TAVD;
+              Builder.push_back(TemplateArgument(TAVD, CanonFieldTy));
+            }
+
+            LocalSymAddrs[II.getName()] = (const void *) IntVal.getZExtValue();
+          }
         }
       }
     }

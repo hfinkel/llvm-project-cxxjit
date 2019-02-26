@@ -58,3 +58,10 @@ void test3(int argc) {
 
 #endif // __cpp_nontype_template_parameter_auto
 
+template <int *X>
+[[clang::jit]] void par() { }
+
+void test4(int argc) {
+  par<&argc>();
+}
+
