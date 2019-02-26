@@ -3227,9 +3227,9 @@ DependentUnaryTransformType::DependentUnaryTransformType(const ASTContext &C,
 
 JITFromStringType::JITFromStringType(Expr *E, QualType can)
     : Type(JITFromString, can, E->isInstantiationDependent(),
-           true /*E->isInstantiationDependent()*/,
+           E->isInstantiationDependent(),
            /*VariablyModified=*/false,
-           E->containsUnexpandedParameterPack()),
+           /*ContainsUnexpandedParameterPack*/false),
       E(E) {}
 
 DependentJITFromStringType::DependentJITFromStringType(const ASTContext &Context, Expr *E)
@@ -3608,6 +3608,10 @@ static CachedProperties computeCachedProperties(const Type *T) {
     // here in error recovery.
     return CachedProperties(ExternalLinkage, false);
 
+  // JIT from-string types act like dependent types.
+  case Type::JITFromString:
+    return CachedProperties(ExternalLinkage, false);
+
   case Type::Builtin:
     // C++ [basic.link]p8:
     //   A type is said to have linkage if and only if:
@@ -3710,6 +3714,9 @@ LinkageInfo LinkageComputer::computeTypeLinkageInfo(const Type *T) {
 
   case Type::Auto:
   case Type::DeducedTemplateSpecialization:
+    return LinkageInfo::external();
+
+  case Type::JITFromString:
     return LinkageInfo::external();
 
   case Type::Record:

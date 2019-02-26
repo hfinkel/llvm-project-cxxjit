@@ -1765,6 +1765,7 @@ TypeInfo ASTContext::getTypeInfoImpl(const Type *T) const {
   assert(!T->isDependentType() && "should not see dependent types here");      \
   return getTypeInfo(cast<Class##Type>(T)->desugar().getTypePtr());
 #include "clang/AST/TypeNodes.def"
+  case Type::JITFromString:
     llvm_unreachable("Should not see dependent types");
 
   case Type::FunctionNoProto:
@@ -7038,6 +7039,7 @@ void ASTContext::getObjCEncodingForTypeImpl(QualType T, std::string& S,
 #define NON_CANONICAL_UNLESS_DEPENDENT_TYPE(KIND, BASE) \
   case Type::KIND:
 #include "clang/AST/TypeNodes.def"
+  case Type::JITFromString:
     llvm_unreachable("@encode for dependent type!");
   }
   llvm_unreachable("bad type kind!");
@@ -8841,6 +8843,7 @@ QualType ASTContext::mergeTypes(QualType LHS, QualType RHS,
   case Type::LValueReference:
   case Type::RValueReference:
   case Type::MemberPointer:
+  case Type::JITFromString:
     llvm_unreachable("C++ should never be in mergeTypes");
 
   case Type::ObjCInterface:

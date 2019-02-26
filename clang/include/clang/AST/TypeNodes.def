@@ -110,7 +110,7 @@ TYPE(ObjCInterface, ObjCObjectType)
 TYPE(ObjCObjectPointer, Type)
 TYPE(Pipe, Type)
 TYPE(Atomic, Type)
-NON_CANONICAL_UNLESS_DEPENDENT_TYPE(JITFromString, Type)
+TYPE(JITFromString, Type)
 
 #ifdef LAST_TYPE
 LAST_TYPE(Atomic)

@@ -1090,8 +1090,11 @@ void TypePrinter::printPipeAfter(const PipeType *T, raw_ostream &OS) {}
 
 void TypePrinter::printJITFromStringBefore(const JITFromStringType *T,
                                            raw_ostream &OS) {
+  OS << "<JITFromString>(";
   if (T->getUnderlyingExpr())
     T->getUnderlyingExpr()->printPretty(OS, nullptr, Policy);
+  OS << ')';
+  spaceBeforePlaceHolder(OS);
 }
 
 void TypePrinter::printJITFromStringAfter(const JITFromStringType *T,

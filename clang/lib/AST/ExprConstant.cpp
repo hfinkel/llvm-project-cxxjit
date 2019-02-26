@@ -7666,6 +7666,7 @@ EvaluateBuiltinClassifyType(QualType T, const LangOptions &LangOpts) {
 #include "clang/AST/TypeNodes.def"
   case Type::Auto:
   case Type::DeducedTemplateSpecialization:
+  case Type::JITFromString:
       llvm_unreachable("unexpected non-canonical or dependent type");
 
   case Type::Builtin:
