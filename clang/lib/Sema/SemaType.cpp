@@ -2052,6 +2052,11 @@ QualType Sema::BuildWritePipeType(QualType T, SourceLocation Loc) {
   return Context.getWritePipeType(T);
 }
 
+/// Build a JIT from-string type.
+QualType Sema::BuildJITFromStringType(Expr *E, SourceLocation Loc) {
+  return Context.getJITFromStringType(E);
+}
+
 /// Check whether the specified array size makes the array type a VLA.  If so,
 /// return true, if not, return the size of the array in SizeVal.
 static bool isArraySizeVLA(Sema &S, Expr *ArraySize, llvm::APSInt &SizeVal) {

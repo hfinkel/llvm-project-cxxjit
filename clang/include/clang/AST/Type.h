@@ -2052,6 +2052,8 @@ public:
   bool isPipeType() const;                      // OpenCL pipe type
   bool isOpenCLSpecificType() const;            // Any OpenCL specific type
 
+  bool isJITFromStringType() const;             // JIT runtime type
+
   /// Determines if this type, which must satisfy
   /// isObjCLifetimeType(), is implicitly __unsafe_unretained rather
   /// than implicitly __strong.
@@ -6040,6 +6042,47 @@ public:
   bool isReadOnly() const { return isRead; }
 };
 
+/// Represents the type given by a string at runtime (C++ JIT Extensions).
+class JITFromStringType : public Type {
+  Expr *E;
+
+protected:
+  friend class ASTContext; // ASTContext creates these.
+
+  JITFromStringType(Expr *E, QualType can = QualType());
+
+public:
+  Expr *getUnderlyingExpr() const { return E; }
+
+  /// Remove a single level of sugar.
+  QualType desugar() const { return QualType(this, 0); }
+
+  /// Returns whether this type directly provides sugar.
+  bool isSugared() const { return false; }
+
+  static bool classof(const Type *T) { return T->getTypeClass() == JITFromString; }
+};
+
+/// Internal representation of canonical, dependent
+/// JIT from-string types.
+///
+/// This class is used internally by the ASTContext to manage
+/// canonical, dependent types, only. Clients will only see instances
+/// of this class via JITFromStringType nodes.
+class DependentJITFromStringType : public JITFromStringType, public llvm::FoldingSetNode {
+  const ASTContext &Context;
+
+public:
+  DependentJITFromStringType(const ASTContext &Context, Expr *E);
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    Profile(ID, Context, getUnderlyingExpr());
+  }
+
+  static void Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
+                      Expr *E);
+};
+
 /// A qualifier set is used to build a set of qualifiers.
 class QualifierCollector : public Qualifiers {
 public:
@@ -6511,6 +6554,10 @@ inline bool Type::isOCLExtOpaqueType() const {
 inline bool Type::isOpenCLSpecificType() const {
   return isSamplerT() || isEventT() || isImageType() || isClkEventT() ||
          isQueueT() || isReserveIDT() || isPipeType() || isOCLExtOpaqueType();
+}
+
+inline bool Type::isJITFromStringType() const {
+  return isa<JITFromStringType>(CanonicalType);
 }
 
 inline bool Type::isTemplateTypeParmType() const {

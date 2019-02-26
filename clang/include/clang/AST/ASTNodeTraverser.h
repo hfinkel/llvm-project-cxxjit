@@ -321,6 +321,10 @@ public:
   // FIXME: ElaboratedType, DependentNameType,
   // DependentTemplateSpecializationType, ObjCObjectType
 
+  void VisitJITFromStringType(const JITFromStringType *T) {
+    Visit(T->getUnderlyingExpr());
+  }
+
   void VisitTypedefDecl(const TypedefDecl *D) { Visit(D->getUnderlyingType()); }
 
   void VisitEnumConstantDecl(const EnumConstantDecl *D) {

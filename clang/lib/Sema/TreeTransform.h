@@ -1146,6 +1146,9 @@ public:
   QualType RebuildPipeType(QualType ValueType, SourceLocation KWLoc,
                            bool isReadPipe);
 
+  /// Build a new JIT from-string type.
+  QualType RebuildJITFromStringType(Expr *Underlying, SourceLocation Loc);
+
   /// Build a new template name given a nested name specifier, a flag
   /// indicating whether the "template" keyword was provided, and the template
   /// that the template name refers to.
@@ -5857,6 +5860,30 @@ QualType TreeTransform<Derived>::TransformPipeType(TypeLocBuilder &TLB,
 
   PipeTypeLoc NewTL = TLB.push<PipeTypeLoc>(Result);
   NewTL.setKWLoc(TL.getKWLoc());
+
+  return Result;
+}
+
+template<typename Derived>
+QualType TreeTransform<Derived>::TransformJITFromStringType(TypeLocBuilder &TLB,
+                                                            JITFromStringTypeLoc TL) {
+  const JITFromStringType *T = TL.getTypePtr();
+
+  ExprResult E = getDerived().TransformExpr(T->getUnderlyingExpr());
+  if (E.isInvalid())
+    return QualType();
+
+  QualType Result = TL.getType();
+  if (getDerived().AlwaysRebuild() ||
+      E.get() != T->getUnderlyingExpr()) {
+    Result = getDerived().RebuildJITFromStringType(E.get(), TL.getNameLoc());
+    if (Result.isNull())
+      return QualType();
+  }
+  else E.get();
+
+  JITFromStringTypeLoc NewTL = TLB.push<JITFromStringTypeLoc>(Result);
+  NewTL.setNameLoc(TL.getNameLoc());
 
   return Result;
 }
@@ -12681,6 +12708,12 @@ QualType TreeTransform<Derived>::RebuildPipeType(QualType ValueType,
                                                  bool isReadPipe) {
   return isReadPipe ? SemaRef.BuildReadPipeType(ValueType, KWLoc)
                     : SemaRef.BuildWritePipeType(ValueType, KWLoc);
+}
+
+template<typename Derived>
+QualType TreeTransform<Derived>::RebuildJITFromStringType(Expr *E,
+                                                          SourceLocation Loc) {
+  return SemaRef.BuildJITFromStringType(E, Loc);
 }
 
 template<typename Derived>

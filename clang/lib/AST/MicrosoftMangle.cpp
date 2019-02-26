@@ -2899,6 +2899,11 @@ void MicrosoftCXXNameMangler::mangleType(const PipeType *T, Qualifiers,
     << Range;
 }
 
+void MicrosoftCXXNameMangler::mangleType(const JITFromStringType *T, Qualifiers,
+                                         SourceRange Range) {
+  llvm_unreachable("Cannot mangle JIT from-string type.");
+}
+
 void MicrosoftMangleContextImpl::mangleCXXName(const NamedDecl *D,
                                                raw_ostream &Out) {
   assert((isa<FunctionDecl>(D) || isa<VarDecl>(D)) &&

@@ -1501,6 +1501,8 @@ public:
   QualType BuildWritePipeType(QualType T,
                          SourceLocation Loc);
 
+  QualType BuildJITFromStringType(Expr *E, SourceLocation Loc);
+
   TypeSourceInfo *GetTypeForDeclarator(Declarator &D, Scope *S);
   TypeSourceInfo *GetTypeForDeclaratorCast(Declarator &D, QualType FromTy);
 

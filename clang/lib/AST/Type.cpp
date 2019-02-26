@@ -3225,6 +3225,21 @@ DependentUnaryTransformType::DependentUnaryTransformType(const ASTContext &C,
                                                          UTTKind UKind)
      : UnaryTransformType(BaseType, C.DependentTy, UKind, QualType()) {}
 
+JITFromStringType::JITFromStringType(Expr *E, QualType can)
+    : Type(JITFromString, can, E->isInstantiationDependent(),
+           E->isInstantiationDependent(),
+           E->getType()->isVariablyModifiedType(),
+           E->containsUnexpandedParameterPack()),
+      E(E) {}
+
+DependentJITFromStringType::DependentJITFromStringType(const ASTContext &Context, Expr *E)
+    : JITFromStringType(E), Context(Context) {}
+
+void DependentJITFromStringType::Profile(llvm::FoldingSetNodeID &ID,
+                                    const ASTContext &Context, Expr *E) {
+  E->Profile(ID, Context, true);
+}
+
 TagType::TagType(TypeClass TC, const TagDecl *D, QualType can)
     : Type(TC, can, D->isDependentType(),
            /*InstantiationDependent=*/D->isDependentType(),
@@ -3893,6 +3908,7 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::ObjCInterface:
   case Type::Atomic:
   case Type::Pipe:
+  case Type::JITFromString:
     return false;
   }
   llvm_unreachable("bad type kind!");

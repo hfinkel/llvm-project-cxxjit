@@ -219,6 +219,8 @@ private:
   mutable llvm::FoldingSet<AtomicType> AtomicTypes;
   llvm::FoldingSet<AttributedType> AttributedTypes;
   mutable llvm::FoldingSet<PipeType> PipeTypes;
+  mutable llvm::FoldingSet<DependentJITFromStringType>
+    DependentJITFromStringTypes;
 
   mutable llvm::FoldingSet<QualifiedTemplateName> QualifiedTemplateNames;
   mutable llvm::FoldingSet<DependentTemplateName> DependentTemplateNames;
@@ -1263,6 +1265,9 @@ public:
 
   /// Return a write_only pipe type for the specified type.
   QualType getWritePipeType(QualType T) const;
+
+  /// JIT from-string type.
+  QualType getJITFromStringType(Expr *e) const;
 
   /// Gets the struct used to keep track of the extended descriptor for
   /// pointer to blocks.

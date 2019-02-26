@@ -6370,6 +6370,10 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
     return Context.getPipeType(ElementType, ReadOnly);
   }
 
+  case TYPE_JIT_FROM_STRING: {
+    return Context.getJITFromStringType(ReadExpr(*Loc.F));
+  }
+
   case TYPE_DEPENDENT_SIZED_VECTOR: {
     unsigned Idx = 0;
     QualType ElementType = readType(*Loc.F, Record, Idx);
@@ -6750,6 +6754,10 @@ void TypeLocReader::VisitAtomicTypeLoc(AtomicTypeLoc TL) {
 
 void TypeLocReader::VisitPipeTypeLoc(PipeTypeLoc TL) {
   TL.setKWLoc(ReadSourceLocation());
+}
+
+void TypeLocReader::VisitJITFromStringTypeLoc(JITFromStringTypeLoc TL) {
+  TL.setNameLoc(ReadSourceLocation());
 }
 
 void ASTReader::ReadTypeLoc(ModuleFile &F, const ASTReader::RecordData &Record,
