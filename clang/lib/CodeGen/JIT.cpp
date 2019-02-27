@@ -44,6 +44,7 @@
 #include "clang/Lex/HeaderSearchOptions.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Lex/PreprocessorOptions.h"
+#include "clang/Parse/Parser.h"
 #include "clang/Sema/Sema.h"
 #include "clang/Sema/Template.h"
 #include "clang/Sema/TemplateDeduction.h"
@@ -518,6 +519,11 @@ struct CompilerData {
         /*IILookup=*/nullptr,
         /*OwnsHeaderSearch=*/false);
 
+    // For parsing type names in strings later, we'll need to have Preprocessor
+    // keep the Lexer around even after it hits the end of the each file (used
+    // for each type name).
+    PP->enableIncrementalProcessing();
+
     Ctx = new ASTContext(*Invocation->getLangOpts(), *SourceMgr,
                          PP->getIdentifierTable(), PP->getSelectorTable(),
                          PP->getBuiltinInfo());
@@ -601,7 +607,8 @@ struct CompilerData {
     CJ = llvm::make_unique<ClangJIT>(LocalSymAddrs);
   }
 
-  void *resolveFunction(const void *NTTPValues, unsigned Idx) {
+  void *resolveFunction(const void *NTTPValues, const char **TypeStrings,
+                        unsigned Idx) {
     FunctionDecl *FD = FuncMap[Idx];
     if (!FD)
       fatal();
@@ -619,12 +626,24 @@ struct CompilerData {
 
     RD->startDefinition();
 
-    SmallVector<bool, 8> TAIsSaved;
+    enum TASaveKind {
+      TASK_None,
+      TASK_Type,
+      TASK_Value
+    };
+
+    SmallVector<TASaveKind, 8> TAIsSaved;
 
     auto *FTSI = FD->getTemplateSpecializationInfo();
     for (auto &TA : FTSI->TemplateArguments->asArray()) {
+      if (TA.getKind() == TemplateArgument::Type)
+        if (TA.getAsType()->isJITFromStringType()) {
+          TAIsSaved.push_back(TASK_Type);
+          continue;
+        }
+
       if (TA.getKind() != TemplateArgument::Expression) {
-        TAIsSaved.push_back(false);
+        TAIsSaved.push_back(TASK_None);
         continue;
       }
 
@@ -633,7 +652,7 @@ struct CompilerData {
       Eval.Diag = &Notes;
       if (TA.getAsExpr()->
             EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, *Ctx)) {
-        TAIsSaved.push_back(false);
+        TAIsSaved.push_back(TASK_None);
         continue;
       }
 
@@ -645,7 +664,7 @@ struct CompilerData {
       Field->setAccess(AS_public);
       RD->addDecl(Field);
 
-      TAIsSaved.push_back(true);
+      TAIsSaved.push_back(TASK_Value);
     }
 
     RD->completeDefinition();
@@ -659,9 +678,47 @@ struct CompilerData {
 
     SmallVector<TemplateArgument, 8> Builder;
 
-    unsigned TAIdx = 0;
+    unsigned TAIdx = 0, TSIdx = 0;
     for (auto &TA : FTSI->TemplateArguments->asArray()) {
-      if (!TAIsSaved[TAIdx++]) {
+      if (TAIsSaved[TAIdx] == TASK_Type) {
+        Sema::ContextRAII TUContext(*S, Ctx->getTranslationUnitDecl());
+
+        // NOTE: The "model file" support currently does what we need. In the
+        // future, we might require a dedicated mode.
+        PP->InitializeForModelFile();
+
+        PP->setPredefines(TypeStrings[TSIdx]);
+        PP->EnterMainSourceFile();
+
+        {
+          Parser P(*PP, *S, /*SkipFunctionBodies*/true);
+
+          // FIXME: Parser::Initialize wants to set the current context in Sema,
+          // and this won't work as it is already set. We've saved it above using
+          // the ContextRAII anyway, so we can unset it now, however this is a
+          // hack that we should clean up later.
+          S->CurContext = nullptr;
+
+          P.Initialize();
+
+          QualType TypeFromString =
+            Sema::GetTypeFromParser(P.ParseTypeName().get());
+          TypeFromString = Ctx->getCanonicalType(TypeFromString);
+
+          Builder.push_back(TemplateArgument(TypeFromString));
+        }
+
+        // NOTE: This must be called *after* the Parser above is destroyed.
+        // This is because the parser calls resetPragmaHandlers() upon
+        // destruction, and this can't happen after FinalizeForModelFile tries
+        // to swap back in the original pragma handlers.
+        PP->FinalizeForModelFile();
+
+        ++TSIdx;
+        continue;
+      }
+
+      if (TAIsSaved[TAIdx++] != TASK_Value) {
         Builder.push_back(TA);
         continue;
       }
@@ -961,13 +1018,16 @@ void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
                   const void *IRBuffer, size_t IRBufferSize,
                   const void **LocalPtrs, unsigned LocalPtrsCnt,
                   const void *NTTPValues, unsigned NTTPValuesSize,
+                  const char **TypeStrings, unsigned TypeStringsCnt,
                   unsigned Idx) {
   // FIXME: Use a DenseSet instead of unordered_map, use a SmallVector to hold data.
   const char *KPtr = ((const char *) ASTBuffer) + Idx;
   std::string Key((const char *) &KPtr, ((const char *) &KPtr) + sizeof(KPtr));
-  Key +=std::string((const char *) NTTPValues,
-                                   ((const char *) NTTPValues) +
-                                     NTTPValuesSize);
+  Key += std::string((const char *) NTTPValues,
+                     ((const char *) NTTPValues) + NTTPValuesSize);
+  for (unsigned i = 0, e = TypeStringsCnt; i != e; ++i)
+    Key += TypeStrings[i];
+
   {
     llvm::MutexGuard Guard(IMutex);
     auto II = Instantiations.find(Key);
@@ -997,7 +1057,7 @@ void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
     CD = TUCDI->second.get();
   }
 
-  void *FPtr = CD->resolveFunction(NTTPValues, Idx);
+  void *FPtr = CD->resolveFunction(NTTPValues, TypeStrings, Idx);
 
   {
     llvm::MutexGuard Guard(IMutex);

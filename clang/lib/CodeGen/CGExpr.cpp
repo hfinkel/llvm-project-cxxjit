@@ -2391,6 +2391,7 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
   // specific to identify the instantiation, as that key should ignore the AST
   // identity of the dynamic parameters.
 
+  SmallVector<llvm::Value *, 8> TypeStrings;
   SmallVector<TemplateArgument, 8> RDTArgs;
 
   auto &C = CGF.getContext();
@@ -2403,6 +2404,13 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
 
   auto *FTSI = FD->getTemplateSpecializationInfo();
   for (auto &TA : FTSI->TemplateArguments->asArray()) {
+    if (TA.getKind() == TemplateArgument::Type) {
+      if (auto *JFST = TA.getAsType()->getAs<JITFromStringType>())
+        TypeStrings.push_back(CGF.EmitScalarExpr(
+                                JFST->getUnderlyingExpr()));
+      continue;
+    }
+
     if (TA.getKind() != TemplateArgument::Expression)
       continue;
 
@@ -2444,11 +2452,21 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
     CGF.EmitStoreThroughLValue(RV, FieldLV);
   }
 
+  auto *TypeStrsArrayType =
+    llvm::ArrayType::get(CGF.Int8PtrTy, TypeStrings.size());
+  Address STAI = CGF.CreateDefaultAlignTempAlloca(TypeStrsArrayType,
+                                                  "__clang_jit_type_args");
+
+  for (unsigned i = 0, e = TypeStrings.size(); i != e; ++i)
+    CGF.Builder.CreateStore(TypeStrings[i],
+      CGF.Builder.CreateConstArrayGEP(STAI, i, "tsidx"));
+
   // Emit call to __clang_jit(const char *CmdArgs, void *AST, void *Params)
   llvm::Type *TypeParams[] =
     {CGF.Int8PtrTy, CGF.Int32Ty, CGF.VoidPtrTy, CGF.SizeTy,
-     CGF.VoidPtrTy, CGF.SizeTy, CGF.VoidPtrPtrTy, CGF.Int32Ty, CGF.VoidPtrTy,
-     CGF.Int32Ty, CGF.Int32Ty};
+     CGF.VoidPtrTy, CGF.SizeTy, CGF.VoidPtrPtrTy, CGF.Int32Ty,
+     CGF.VoidPtrTy, CGF.Int32Ty, CGF.Int8PtrPtrTy, CGF.Int32Ty,
+     CGF.Int32Ty};
   auto *RetFTy = CGF.getTypes().GetFunctionType(GlobalDecl(FD));
 
   // This function is marked as readonly to allow the optimizer to remove it if
@@ -2462,6 +2480,9 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
                               /*isVarArg*/ false);
   auto RTLFn = CGF.CGM.CreateRuntimeFunction(FnTy, "__clang_jit", ReadOnlyAttr);
 
+  // TODO: If either the values or type strings are empty, don't emit a
+  // zero-length alloca, but instead, pass a null pointer.
+
   llvm::Value *Args[] = {
       llvm::Constant::getNullValue(CGF.Int8PtrTy),
       llvm::Constant::getNullValue(CGF.Int32Ty),
@@ -2472,7 +2493,9 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
       llvm::Constant::getNullValue(CGF.VoidPtrPtrTy),
       llvm::Constant::getNullValue(CGF.Int32Ty),
       CGF.Builder.CreatePointerCast(AI.getPointer(), CGF.VoidPtrTy),
-      CGF.Builder.getInt32(C.getTypeSizeInChars(RDTy).getQuantity()),
+      CGF.Builder.getInt32(RDTArgs.empty() ? 0 : C.getTypeSizeInChars(RDTy).getQuantity()),
+      CGF.Builder.CreatePointerCast(STAI.getPointer(), CGF.Int8PtrPtrTy),
+      CGF.Builder.getInt32(TypeStrings.size()),
       CGF.Builder.getInt32(Cnt)
   };
 
