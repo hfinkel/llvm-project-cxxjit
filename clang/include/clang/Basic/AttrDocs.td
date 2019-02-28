@@ -4102,9 +4102,9 @@ def JITFuncDocs : Documentation {
 The ``jit`` attribute can be applied to function templates. When such a
 template is instantiated, this is deferred until program execution using
 just-in-time (JIT) compilation. Non-type template parameters of such
-template instantiation may be non-constant expressions. The type of such
-an instantiation, and the return type if dependent, is not available for
-further type deduction.
+template instantiation may be non-constant expressions. The instantiation
+itself cannot be used as a template parameter and its return type
+cannot be deduced.
   }];
 }
 

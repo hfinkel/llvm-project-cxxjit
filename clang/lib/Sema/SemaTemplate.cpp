@@ -4372,25 +4372,72 @@ bool Sema::CheckTemplateTypeArgument(TemplateTypeParmDecl *Param,
     if (IsForJIT) {
       const QualType &ConstCharPtrTy =
         Context.getPointerType(Context.CharTy.withConst());
+      SourceLocation Loc = AL.getSourceRange().getBegin();
 
-      ImplicitConversionSequence ICS =
-          TryImplicitConversion(Arg.getAsExpr(), ConstCharPtrTy,
-                                /*SuppressUserConversions=*/false,
-                                /*AllowExplicit=*/false,
-                                /*InOverloadResolution=*/false,
-                                /*CStyle=*/false,
-                                /*AllowObjCWritebackConversion=*/false);
+      auto TryConstCharConversion = [&](Expr *ArgE) {
+        ImplicitConversionSequence ICS =
+            TryImplicitConversion(ArgE, ConstCharPtrTy,
+                                  /*SuppressUserConversions=*/false,
+                                  /*AllowExplicit=*/false,
+                                  /*InOverloadResolution=*/false,
+                                  /*CStyle=*/false,
+                                  /*AllowObjCWritebackConversion=*/false);
 
-      if (!ICS.isFailure()) {
-        ExprResult E = PerformImplicitConversion(Arg.getAsExpr(), ConstCharPtrTy,
-                                            ICS, AA_Assigning);
-        SourceLocation Loc = AL.getSourceRange().getBegin();
+        if (ICS.isFailure())
+          return false;
+
+        ExprResult E = PerformImplicitConversion(ArgE, ConstCharPtrTy,
+                                                 ICS, AA_Assigning);
         ArgType = BuildJITFromStringType(E.get(), Loc);
         TSI = Context.getTrivialTypeSourceInfo(ArgType, Loc);
-        break;
-      }
 
-      // TODO: Also check for a c_str() member and call it.
+        return true;
+      };
+
+      if (TryConstCharConversion(Arg.getAsExpr()))
+        break;
+
+      // Next, check if this is an object with a c_str() member, and if so,
+      // call it to get the string.
+      auto GetFromCStr = [&]() {
+        DeclarationNameInfo CStrNameInfo(
+          &PP.getIdentifierTable().get("c_str"), Loc);
+        LookupResult CStrMemberLookup(*this, CStrNameInfo,
+                                      Sema::LookupMemberName);
+
+        Expr *StrObj = Arg.getAsExpr();
+        QualType StrObjType = StrObj->getType();
+
+        CXXRecordDecl *RD = StrObjType->getAsCXXRecordDecl();
+        if (!RD)
+          return false;
+
+        LookupQualifiedName(CStrMemberLookup, RD);
+        if (CStrMemberLookup.isAmbiguous() || CStrMemberLookup.empty())
+          return false;
+
+        ExprResult MemberRef =
+          BuildMemberReferenceExpr(StrObj, StrObjType, Loc,
+                                   /*IsPtr=*/false, CXXScopeSpec(),
+                                   /*TemplateKWLoc=*/SourceLocation(),
+                                   /*FirstQualifierInScope=*/nullptr,
+                                   CStrMemberLookup,
+                                   /*TemplateArgs=*/nullptr,
+                                   /*Scope=*/nullptr);
+        if (MemberRef.isInvalid())
+          return false;
+
+        ExprResult CallE =
+          ActOnCallExpr(/*Scope=*/nullptr, MemberRef.get(), Loc, None, Loc,
+                        nullptr);
+        if (CallE.isInvalid())
+          return false;
+
+        return TryConstCharConversion(CallE.get());
+      };
+
+      if (GetFromCStr())
+        break;
     }
 
     // We have a template type parameter but the template argument is an
