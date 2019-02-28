@@ -16,6 +16,7 @@
 #include "clang/Basic/DebugInfoOptions.h"
 #include "clang/Basic/Sanitizers.h"
 #include "clang/Basic/XRayInstr.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/Regex.h"
 #include "llvm/Target/TargetOptions.h"
@@ -276,6 +277,9 @@ public:
   /// options specifically excluded from the command-line options saved with
   /// -fembed-bitcode.
   std::vector<uint8_t> CmdArgsForJIT;
+
+  /// When needed for JIT, the buffer into which to save the AST.
+  mutable SmallString<128> ASTBufferForJIT;
 
   /// A list of all -fno-builtin-* function names (e.g., memset).
   std::vector<std::string> NoBuiltinFuncs;

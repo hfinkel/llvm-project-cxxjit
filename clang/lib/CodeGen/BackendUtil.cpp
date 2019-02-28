@@ -537,6 +537,7 @@ void EmitAssemblyHelper::FinalizeForJIT() {
     return;
 
   llvm::IRBuilder<> Builder(JCalls[0]->getParent());
+
   std::string Data;
   llvm::raw_string_ostream OS(Data);
   llvm::WriteBitcodeToFile(*TheModule, OS,
@@ -550,7 +551,29 @@ void EmitAssemblyHelper::FinalizeForJIT() {
     llvm::ConstantInt::get(JCalls[0]->getArgOperand(5)->getType(),
                            Data.size());
 
+  // Now that we've serialized the base IR module, add the AST and other
+  // information to it.
+
+  auto &CmdArgs = CodeGenOpts.CmdArgsForJIT;
+  llvm::Value *CmdLineStr =
+    Builder.CreateGlobalStringPtr(std::string(CmdArgs.begin(), CmdArgs.end()),
+                                  "__clang_jit_cmdline");
+  llvm::Value *CmdLineStrLen =
+    llvm::ConstantInt::get(JCalls[0]->getArgOperand(1)->getType(),
+                           CmdArgs.size());
+
+  auto &ASTBuffer = CodeGenOpts.ASTBufferForJIT;
+  llvm::Value *ASTData =
+    Builder.CreateGlobalStringPtr(ASTBuffer, "__clang_jit_ast");
+  llvm::Value *ASTDataLen =
+    llvm::ConstantInt::get(JCalls[0]->getArgOperand(3)->getType(),
+                           ASTBuffer.size());
+
   for (auto *JCI : JCalls) {
+    JCI->setArgOperand(0, CmdLineStr);
+    JCI->setArgOperand(1, CmdLineStrLen);
+    JCI->setArgOperand(2, ASTData);
+    JCI->setArgOperand(3, ASTDataLen);
     JCI->setArgOperand(4, IRData);
     JCI->setArgOperand(5, IRDataLen);
   }

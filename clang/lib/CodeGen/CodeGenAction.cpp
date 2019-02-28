@@ -297,21 +297,11 @@ namespace clang {
       if (JCalls.empty())
         return;
 
-      llvm::IRBuilder<> Builder(JCalls[0]->getParent());
-      auto &CmdArgs = CodeGenOpts.CmdArgsForJIT;
-      llvm::Value *CmdLineStr =
-        Builder.CreateGlobalStringPtr(std::string(CmdArgs.begin(),
-                                                  CmdArgs.end()),
-                                      "__clang_jit_cmdline");
-      llvm::Value *CmdLineStrLen = llvm::ConstantInt::get(Gen->CGM().Int32Ty,
-                                                          CmdArgs.size());
+      // Now that we have access to both objects, move the AST buffer from the
+      // ASTContext to CodeGenOpts (from where it will be accessed later).
+      C.ASTBufferForJIT.swap(CodeGenOpts.ASTBufferForJIT);
 
-      llvm::Value *ASTData =
-        Builder.CreateGlobalStringPtr(C.ASTBufferForJIT,
-                                      "__clang_jit_ast");
-      llvm::Value *ASTDataLen =
-        llvm::ConstantInt::get(Gen->CGM().SizeTy,
-                               C.ASTBufferForJIT.size());
+      llvm::IRBuilder<> Builder(JCalls[0]->getParent());
 
       // Collect the local variables and functions here to pass to the JIT.
       // Sadly, we need to take their addresses here, instead of after
@@ -348,10 +338,6 @@ namespace clang {
         llvm::ConstantInt::get(Gen->CGM().Int32Ty, LocalPtrs.size()/2);
 
       for (auto *JCI : JCalls) {
-        JCI->setArgOperand(0, CmdLineStr);
-        JCI->setArgOperand(1, CmdLineStrLen);
-        JCI->setArgOperand(2, ASTData);
-        JCI->setArgOperand(3, ASTDataLen);
         JCI->setArgOperand(6,
           llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(
             PtrsGbl, Gen->CGM().VoidPtrPtrTy));
