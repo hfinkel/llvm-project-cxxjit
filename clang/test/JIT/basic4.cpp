@@ -6,14 +6,14 @@
 class F {
 public:
   static void p() {
-    printf("type: F\n");
+    std::printf("type: F\n");
   }
 };
 
 class G {
 public:
   static void p() {
-    printf("type: G\n");
+    std::printf("type: G\n");
   }
 };
 

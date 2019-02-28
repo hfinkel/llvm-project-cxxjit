@@ -421,6 +421,38 @@ public:
   }
 };
 
+class JFICSMapDeclVisitor : public RecursiveASTVisitor<JFICSMapDeclVisitor> {
+  DenseMap<unsigned, FunctionDecl *> &Map;
+  SmallVector<FunctionDecl *, 1> CurrentFD;
+
+public:
+  explicit JFICSMapDeclVisitor(DenseMap<unsigned, FunctionDecl *> &M)
+    : Map(M) { }
+
+  bool TraverseFunctionDecl(FunctionDecl *FD) {
+    CurrentFD.push_back(FD);
+    bool Continue =
+      RecursiveASTVisitor<JFICSMapDeclVisitor>::TraverseFunctionDecl(FD);
+    CurrentFD.pop_back();
+
+    return Continue;
+  }
+
+  bool VisitDeclRefExpr(DeclRefExpr *E) {
+    auto *FD = dyn_cast<FunctionDecl>(E->getDecl());
+    if (!FD)
+      return true;
+
+    auto *A = FD->getAttr<JITFuncInstantiationAttr>();
+    if (!A)
+      return true;
+
+    Map[A->getId()] = CurrentFD.back();
+
+    return true;
+  }
+};
+
 unsigned LastUnique = 0;
 std::unique_ptr<llvm::LLVMContext> LCtx;
 
@@ -453,6 +485,11 @@ struct CompilerData {
   std::unique_ptr<ClangJIT>               CJ;
 
   DenseMap<unsigned, FunctionDecl *>      FuncMap;
+
+  // A map of each instantiation to the containing function. These might not be
+  // unique, but should be unique for any place where it matters
+  // (instantiations with from-string types).
+  DenseMap<unsigned, FunctionDecl *>      CSFuncMap;
 
   CompilerData(const void *CmdArgs, unsigned CmdArgsLen,
                const void *ASTBuffer, size_t ASTBufferSize,
@@ -581,6 +618,7 @@ struct CompilerData {
     Diagnostics->getClient()->BeginSourceFile(PP->getLangOpts(), PP.get());
 
     JFIMapDeclVisitor(FuncMap).TraverseAST(*Ctx);
+    JFICSMapDeclVisitor(CSFuncMap).TraverseAST(*Ctx);
 
     llvm::SMDiagnostic Err;
     StringRef IRBufferSR((const char *) IRBuffer, IRBufferSize);
@@ -605,6 +643,38 @@ struct CompilerData {
     }
 
     CJ = llvm::make_unique<ClangJIT>(LocalSymAddrs);
+  }
+
+  void restoreFuncDeclContext(FunctionDecl *FunD) {
+    // NOTE: This mirrors the corresponding code in
+    // Parser::ParseLateTemplatedFuncDef (which is used to late parse a C++
+    // function template in Microsoft mode).
+
+    struct ContainingDC {
+      ContainingDC(DeclContext *DC, bool ShouldPush) : Pair(DC, ShouldPush) {}
+      llvm::PointerIntPair<DeclContext *, 1, bool> Pair;
+      DeclContext *getDC() { return Pair.getPointer(); }
+      bool shouldPushDC() { return Pair.getInt(); }
+    };
+
+    SmallVector<ContainingDC, 4> DeclContextsToReenter;
+    DeclContext *DD = FunD;
+    DeclContext *NextContaining = S->getContainingDC(DD);
+    while (DD && !DD->isTranslationUnit()) {
+      bool ShouldPush = DD == NextContaining;
+      DeclContextsToReenter.push_back({DD, ShouldPush});
+      if (ShouldPush)
+        NextContaining = S->getContainingDC(DD);
+      DD = DD->getLexicalParent();
+    }
+
+    // Reenter template scopes from outermost to innermost.
+    for (ContainingDC CDC : reverse(DeclContextsToReenter)) {
+      (void) S->ActOnReenterTemplateScope(S->getCurScope(),
+                                           cast<Decl>(CDC.getDC()));
+      if (CDC.shouldPushDC())
+        S->PushDeclContext(S->getCurScope(), CDC.getDC());
+    }
   }
 
   void *resolveFunction(const void *NTTPValues, const char **TypeStrings,
@@ -681,38 +751,40 @@ struct CompilerData {
     unsigned TAIdx = 0, TSIdx = 0;
     for (auto &TA : FTSI->TemplateArguments->asArray()) {
       if (TAIsSaved[TAIdx] == TASK_Type) {
-        Sema::ContextRAII TUContext(*S, Ctx->getTranslationUnitDecl());
-
-        // NOTE: The "model file" support currently does what we need. In the
-        // future, we might require a dedicated mode.
-        PP->InitializeForModelFile();
+        PP->ResetForJITTypes();
 
         PP->setPredefines(TypeStrings[TSIdx]);
         PP->EnterMainSourceFile();
 
-        {
-          Parser P(*PP, *S, /*SkipFunctionBodies*/true);
+        Parser P(*PP, *S, /*SkipFunctionBodies*/true, /*JITTypes*/true);
 
-          // FIXME: Parser::Initialize wants to set the current context in Sema,
-          // and this won't work as it is already set. We've saved it above using
-          // the ContextRAII anyway, so we can unset it now, however this is a
-          // hack that we should clean up later.
-          S->CurContext = nullptr;
+	// Reset this to nullptr so that when we call
+	// Parser::Initialize it has the clean slate it expects.
+        S->CurContext = nullptr;
 
-          P.Initialize();
+        P.Initialize();
 
-          QualType TypeFromString =
-            Sema::GetTypeFromParser(P.ParseTypeName().get());
-          TypeFromString = Ctx->getCanonicalType(TypeFromString);
+        Sema::ContextRAII TUContext(*S, Ctx->getTranslationUnitDecl());
 
-          Builder.push_back(TemplateArgument(TypeFromString));
+        auto CSFMI = CSFuncMap.find(Idx);
+        if (CSFMI != CSFuncMap.end()) {
+	  // Note that this restores the context of the function in which the
+	  // template was instantiated, but not the state *within* the
+	  // function, so local types will remain unavailable.
+
+          auto *FunD = CSFMI->second;
+          restoreFuncDeclContext(FunD);
+          S->CurContext = S->getContainingDC(FunD);
         }
 
-        // NOTE: This must be called *after* the Parser above is destroyed.
-        // This is because the parser calls resetPragmaHandlers() upon
-        // destruction, and this can't happen after FinalizeForModelFile tries
-        // to swap back in the original pragma handlers.
-        PP->FinalizeForModelFile();
+        TypeResult TSTy = P.ParseTypeName();
+        if (TSTy.isInvalid())
+          fatal();
+
+        QualType TypeFromString = Sema::GetTypeFromParser(TSTy.get());
+        TypeFromString = Ctx->getCanonicalType(TypeFromString);
+
+        Builder.push_back(TemplateArgument(TypeFromString));
 
         ++TSIdx;
         continue;

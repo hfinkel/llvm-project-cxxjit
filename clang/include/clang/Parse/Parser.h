@@ -386,8 +386,12 @@ class Parser : public CodeCompletionHandler {
   /// a statement expression and builds a suitable expression statement.
   StmtResult handleExprStmt(ExprResult E, ParsedStmtContext StmtCtx);
 
+  /// Does this parser instance parse types for the JIT runtime.
+  bool IsParsingTypesForJIT = false;
+
 public:
-  Parser(Preprocessor &PP, Sema &Actions, bool SkipFunctionBodies);
+  Parser(Preprocessor &PP, Sema &Actions, bool SkipFunctionBodies,
+         bool IsParsingTypesForJIT = false);
   ~Parser() override;
 
   const LangOptions &getLangOpts() const { return PP.getLangOpts(); }
