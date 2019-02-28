@@ -683,11 +683,6 @@ struct CompilerData {
     if (!FD)
       fatal();
 
-    // FIXME: Relying on all of this Clang logic to see if we already have
-    // generated this has high overhead. We should record enough identifying
-    // information in the structure that hashing it will be all that is
-    // necessary to lookup a previously-generated pointer!
-
     RecordDecl *RD =
       Ctx->buildImplicitRecord(llvm::Twine("__clang_jit_args_")
                                .concat(llvm::Twine(Idx))
