@@ -782,6 +782,7 @@ struct CompilerData {
         Builder.push_back(TemplateArgument(TypeFromString));
 
         ++TSIdx;
+        ++TAIdx;
         continue;
       }
 
