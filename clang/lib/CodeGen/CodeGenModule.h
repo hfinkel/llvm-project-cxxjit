@@ -1231,6 +1231,24 @@ public:
     DeferredVTables.push_back(RD);
   }
 
+  /// Given some GlobalDecl predicate, emit all deferred decls now.
+  template <typename Pred>
+  void EmitAllDeferred(const Pred &P) {
+    DeferredDeclsToEmit.erase(
+      std::remove_if(DeferredDeclsToEmit.begin(), DeferredDeclsToEmit.end(), P),
+      DeferredDeclsToEmit.end());
+
+    do {
+      for (auto &DInfo : DeferredDecls)
+        if (!P(DInfo.second))
+          DeferredDeclsToEmit.push_back(DInfo.second);
+
+      DeferredDecls.clear();
+
+      EmitDeferred();
+    } while (!DeferredDecls.empty());
+  }
+
   /// Emit code for a single global function or var decl. Forward declarations
   /// are emitted lazily.
   void EmitGlobal(GlobalDecl D);

@@ -634,7 +634,6 @@ struct CompilerData {
         GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
 
     Consumer->Initialize(*Ctx);
-    Invocation->getLangOpts()->EmitAllDecls = true;
 
     for (unsigned Idx = 0; Idx < 2*LocalPtrsCnt; Idx += 2) {
       const char *Name = (const char *) LocalPtrs[Idx];
@@ -935,39 +934,46 @@ struct CompilerData {
     // template), and this is why we merge the running module into the new one
     // with the running-module overriding new entities.
 
-    for (auto &F : Consumer->getModule()->functions()) {
-      if (!F.isDeclaration() || RunningMod->getNamedValue(F.getName()))
-        continue;
+    SmallSet<StringRef, 16> LastDeclNames;
+    bool Changed;
+    do {
+      Changed = false;
 
-      auto &CGM = Consumer->getCodeGenerator()->CGM();
-      if (auto *FD = dyn_cast_or_null<FunctionDecl>(const_cast<Decl *>(Consumer->
-            getCodeGenerator()->GetDeclForMangledName(F.getName())))) {
-        GlobalDecl GD;
-        if (const auto *D = dyn_cast<CXXConstructorDecl>(FD))
-          GD = GlobalDecl(D, Ctor_Complete);
-        else if (const auto *D = dyn_cast<CXXDestructorDecl>(FD))
-          GD = GlobalDecl(D, Dtor_Complete);
-        else
-          GD = GlobalDecl(FD);
+      Consumer->getCodeGenerator()->CGM().EmitAllDeferred([&](GlobalDecl GD) {
+        auto MName = Consumer->getCodeGenerator()->CGM().getMangledName(GD);
+        if (!CJ->findSymbol(MName)) {
+          Changed = true;
+          return false;
+        }
 
-        if (llvm::GlobalValue::isLocalLinkage(CGM.getFunctionLinkage(GD)))
-          Consumer->HandleInterestingDecl(DeclGroupRef(FD));
+        return true;
+      });
+
+      SmallSet<StringRef, 16> DeclNames;
+      for (auto &F : Consumer->getModule()->functions())
+        if (F.isDeclaration() && !F.isIntrinsic())
+          if (!LastDeclNames.count(F.getName()))
+            DeclNames.insert(F.getName());
+
+      for (auto &GV : Consumer->getModule()->global_values())
+        if (GV.isDeclaration())
+          if (!LastDeclNames.count(GV.getName()))
+            DeclNames.insert(GV.getName());
+
+      for (auto &DeclName : DeclNames) {
+        if (CJ->findSymbol(DeclName))
+          continue;
+
+        Decl *D = const_cast<Decl *>(Consumer->getCodeGenerator()->
+                                       GetDeclForMangledName(DeclName));
+        if (!D)
+          continue;
+
+        Consumer->HandleInterestingDecl(DeclGroupRef(D));
+        LastDeclNames.insert(DeclName);
+        Changed = true;
       }
-    }
-
-    for (auto &GV : Consumer->getModule()->global_values()) {
-      if (!GV.isDeclaration() || RunningMod->getNamedValue(GV.getName()))
-        continue;
-
-      auto &CGM = Consumer->getCodeGenerator()->CGM();
-      if (auto *VD = dyn_cast_or_null<VarDecl>(const_cast<Decl *>(Consumer->
-            getCodeGenerator()->GetDeclForMangledName(GV.getName())))) {
-        if (llvm::GlobalValue::isLocalLinkage(CGM.getLLVMLinkageVarDefinition(
-                                                VD, CGM.isTypeConstant(
-                                                      VD->getType(), false))))
-        Consumer->HandleInterestingDecl(DeclGroupRef(VD));
-      }
-    }
+    } while (Changed);
 
     Consumer->HandleTranslationUnit(*Ctx);
 
