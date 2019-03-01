@@ -395,7 +395,8 @@ DerivedArgList *Driver::TranslateInputArgs(const InputArgList &Args) const {
 
   // For JIT, always use -rdynamic. This allows the JIT to find external
   // symbols in objects in the main executable.
-  if (Args.hasFlag(options::OPT_fjit, options::OPT_fno_jit, false))
+  if (Args.hasFlag(options::OPT_fjit, options::OPT_fno_jit, false) &&
+      getFinalPhase(*DAL) == phases::Link)
     DAL->AddFlagArg(0, Opts->getOption(options::OPT_rdynamic));
 
 // Add a default value of -mlinker-version=, if one was given and the user
