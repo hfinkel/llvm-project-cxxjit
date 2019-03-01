@@ -79,7 +79,7 @@ namespace clang {
   };
 
   class JITLocalCollector : public RecursiveASTVisitor<JITLocalCollector> {
-    llvm::SetVector<StringRef> &Names;
+    llvm::SetVector<llvm::GlobalValue *> &Locals;
     CodeGen::CodeGenModule &CGM;
 
     class NameCollector : public RecursiveASTVisitor<NameCollector> {
@@ -94,6 +94,20 @@ namespace clang {
       bool VisitDeclRefExpr(DeclRefExpr *E) {
         auto &CGM = Collector.CGM;
 
+        if (auto *ND = dyn_cast<NamedDecl>(E->getDecl())) {
+          if (!ND->hasLinkage())
+            return true;
+        } else {
+          return true;
+        }
+
+        // In theory, we could call getLLVMLinkageVarDefinition to determine
+        // the linkage here. In practice, there are cases where
+        // CodeGenModule::EmitGlobalVarDefinition modifies the linkage before
+        // emission. Thus, we need to check the linkage of the variables at the
+        // IR level. The same technique should work for functions.
+
+        StringRef Name;
         if (auto *FD = dyn_cast<FunctionDecl>(E->getDecl())) {
           GlobalDecl GD;
           if (const auto *D = dyn_cast<CXXConstructorDecl>(FD))
@@ -103,13 +117,15 @@ namespace clang {
           else
             GD = GlobalDecl(FD);
 
-          if (llvm::GlobalValue::isLocalLinkage(CGM.getFunctionLinkage(GD)))
-            Collector.Names.insert(CGM.getMangledName(GD));
+          Name = CGM.getMangledName(GD);
         } else if (auto *VD = dyn_cast<VarDecl>(E->getDecl())) {
-          if (llvm::GlobalValue::isLocalLinkage(CGM.getLLVMLinkageVarDefinition(
-                                                  VD, CGM.isTypeConstant(
-                                                        VD->getType(), false))))
-            Collector.Names.insert(CGM.getMangledName(GlobalDecl(VD)));
+          Name = CGM.getMangledName(GlobalDecl(VD));
+        }
+
+        if (!Name.empty()) {
+          auto *GV = CGM.getModule().getNamedValue(Name);
+          if (GV)
+            Collector.Locals.insert(GV);
         }
 
         return true;
@@ -117,9 +133,9 @@ namespace clang {
     };
 
   public:
-    explicit JITLocalCollector(llvm::SetVector<StringRef> &N,
+    explicit JITLocalCollector(llvm::SetVector<GlobalValue *> &L,
                                CodeGen::CodeGenModule &CGM)
-      : Names(N), CGM(CGM) { }
+      : Locals(L), CGM(CGM) { }
 
     bool shouldVisitTemplateInstantiations() const { return true; }
 
@@ -309,21 +325,17 @@ namespace clang {
       // mutations, and other transformations might render them incompatible
       // with JIT-generated modules later.
 
-      llvm::SetVector<StringRef> LocalNames;
-      JITLocalCollector(LocalNames, Gen->CGM()).TraverseAST(C);
+      llvm::SetVector<GlobalValue *> Locals;
+      JITLocalCollector(Locals, Gen->CGM()).TraverseAST(C);
 
       llvm::SmallVector<llvm::Constant *, 32> LocalPtrs;
-      for (auto &LocalName : LocalNames) {
-        llvm::Constant *ObjPtr = getModule()->getNamedValue(LocalName);
-        if (!ObjPtr)
-          continue;
-
-        llvm::Constant *Name = Builder.CreateGlobalStringPtr(LocalName,
-                                                             ".cjl.str");
+      for (auto &Local : Locals) {
+        llvm::Constant *Name =
+          Builder.CreateGlobalStringPtr(Local->getName(), ".cjl.str");
         LocalPtrs.push_back(Name);
         LocalPtrs.push_back(
           llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(
-                                ObjPtr, Gen->CGM().VoidPtrTy));
+                                Local, Gen->CGM().VoidPtrTy));
       }
 
       auto *LNAType = llvm::ArrayType::get(Gen->CGM().VoidPtrTy, LocalPtrs.size());
