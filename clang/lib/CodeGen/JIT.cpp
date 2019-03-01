@@ -573,7 +573,6 @@ struct CompilerData {
     Reader->setListener(llvm::make_unique<ASTInfoCollector>(
       *PP, Ctx.get(), *HSOpts, *PPOpts, *Invocation->getLangOpts(),
       TargetOpts, Target, Counter));
-    Reader->setReadingForJIT();
 
     Ctx->setExternalSource(Reader);
 
