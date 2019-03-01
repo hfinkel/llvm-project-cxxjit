@@ -173,7 +173,9 @@ void clang::ParseAST(Sema &S, bool PrintStats, bool SkipFunctionBodies) {
   if (S.getLangOpts().isJITEnabled()) {
     llvm::BitstreamWriter Stream(S.getASTContext().ASTBufferForJIT);
     MemoryBufferCache PCMCache;
-    ASTWriter Writer(Stream, S.getASTContext().ASTBufferForJIT, PCMCache, {});
+    ASTWriter Writer(Stream, S.getASTContext().ASTBufferForJIT, PCMCache, {},
+                     /*IncludeTimestamps*/true,
+                     /*TreatAllFilesAsTransient*/true);
     Writer.WriteAST(S, std::string(), nullptr, "", /*hasErrors*/ false);
   }
 

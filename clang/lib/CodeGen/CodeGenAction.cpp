@@ -285,14 +285,14 @@ namespace clang {
       if (!LangOpts.isJITEnabled())
         return;
 
-      SmallVector<llvm::CallInst *, 10> JCalls;
+      SmallVector<llvm::CallSite, 10> JCalls;
       for (auto &F : getModule()->functions())
       for (auto &BB : F)
       for (auto &I : BB)
-        if (auto *CI = dyn_cast<llvm::CallInst>(&I))
-          if (auto *Callee = CI->getCalledFunction())
+        if (auto CS = CallSite(&I))
+          if (auto *Callee = CS.getCalledFunction())
             if (Callee->getName() == "__clang_jit")
-              JCalls.push_back(CI);
+              JCalls.push_back(CS);
 
       if (JCalls.empty())
         return;
@@ -301,7 +301,7 @@ namespace clang {
       // ASTContext to CodeGenOpts (from where it will be accessed later).
       C.ASTBufferForJIT.swap(CodeGenOpts.ASTBufferForJIT);
 
-      llvm::IRBuilder<> Builder(JCalls[0]->getParent());
+      llvm::IRBuilder<> Builder(JCalls[0].getParent());
 
       // Collect the local variables and functions here to pass to the JIT.
       // Sadly, we need to take their addresses here, instead of after
@@ -337,11 +337,11 @@ namespace clang {
       llvm::Value *PtrsCnt =
         llvm::ConstantInt::get(Gen->CGM().Int32Ty, LocalPtrs.size()/2);
 
-      for (auto *JCI : JCalls) {
-        JCI->setArgOperand(6,
+      for (auto &JCS : JCalls) {
+        JCS.setArgument(6,
           llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(
             PtrsGbl, Gen->CGM().VoidPtrPtrTy));
-        JCI->setArgOperand(7, PtrsCnt);
+        JCS.setArgument(7, PtrsCnt);
       }
     }
 

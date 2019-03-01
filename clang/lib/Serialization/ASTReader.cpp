@@ -2134,7 +2134,7 @@ InputFile ASTReader::getInputFile(ModuleFile &F, unsigned ID, bool Complain) {
     File = FileMgr.getVirtualFile(Filename, StoredSize, StoredTime);
 
   if (File == nullptr) {
-    if (Complain && !ReadingForJIT) {
+    if (Complain) {
       std::string ErrorStr = "could not find file '";
       ErrorStr += Filename;
       ErrorStr += "' referenced by AST file '";
@@ -2380,7 +2380,7 @@ ASTReader::ReadControlBlock(ModuleFile &F,
       // system input files reside at [NumUserInputs, NumInputs). For explicitly
       // loaded module files, ignore missing inputs.
       if (!DisableValidation && F.Kind != MK_ExplicitModule &&
-          F.Kind != MK_PrebuiltModule && !ReadingForJIT) {
+          F.Kind != MK_PrebuiltModule) {
         bool Complain = (ClientLoadCapabilities & ARR_OutOfDate) == 0;
 
         // If we are reading a module, we will create a verification timestamp,
@@ -5705,9 +5705,6 @@ HeaderFileInfo ASTReader::GetHeaderFileInfo(const FileEntry *FE) {
 void ASTReader::ReadPragmaDiagnosticMappings(DiagnosticsEngine &Diag) {
   using DiagState = DiagnosticsEngine::DiagState;
   SmallVector<DiagState *, 32> DiagStates;
-
-  if (ReadingForJIT)
-    return;
 
   for (ModuleFile &F : ModuleMgr) {
     unsigned Idx = 0;

@@ -578,7 +578,7 @@ struct CompilerData {
     Ctx->setExternalSource(Reader);
 
     switch (Reader->ReadAST(Filename, serialization::MK_MainFile,
-                            SourceLocation(), ASTReader::ARR_OutOfDate)) {
+                            SourceLocation(), ASTReader::ARR_None)) {
     case ASTReader::Success:
       break;
 

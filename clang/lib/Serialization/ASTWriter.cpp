@@ -1801,7 +1801,7 @@ void ASTWriter::WriteInputFiles(SourceManager &SourceMgr,
     InputFileEntry Entry;
     Entry.File = Cache->OrigEntry;
     Entry.IsSystemFile = Cache->IsSystemFile;
-    Entry.IsTransient = Cache->IsTransient;
+    Entry.IsTransient = Cache->IsTransient || TreatAllFilesAsTransient;
     Entry.BufferOverridden = Cache->BufferOverridden;
     Entry.IsTopLevelModuleMap = isModuleMap(File.getFileCharacteristic()) &&
                                 File.getIncludeLoc().isInvalid();
@@ -2301,7 +2301,8 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
 
         Stream.EmitRecordWithAbbrev(SLocFileAbbrv, Record);
 
-        if (Content->BufferOverridden || Content->IsTransient)
+        if (Content->BufferOverridden || Content->IsTransient ||
+            TreatAllFilesAsTransient)
           EmitBlob = true;
       } else {
         // The source location entry is a buffer. The blob associated
@@ -4578,9 +4579,10 @@ void ASTWriter::SetSelectorOffset(Selector Sel, uint32_t Offset) {
 ASTWriter::ASTWriter(llvm::BitstreamWriter &Stream,
                      SmallVectorImpl<char> &Buffer, MemoryBufferCache &PCMCache,
                      ArrayRef<std::shared_ptr<ModuleFileExtension>> Extensions,
-                     bool IncludeTimestamps)
+                     bool IncludeTimestamps, bool TreatAllFilesAsTransient)
     : Stream(Stream), Buffer(Buffer), PCMCache(PCMCache),
-      IncludeTimestamps(IncludeTimestamps) {
+      IncludeTimestamps(IncludeTimestamps),
+      TreatAllFilesAsTransient(TreatAllFilesAsTransient) {
   for (const auto &Ext : Extensions) {
     if (auto Writer = Ext->createExtensionWriter(*this))
       ModuleFileExtensionWriters.push_back(std::move(Writer));

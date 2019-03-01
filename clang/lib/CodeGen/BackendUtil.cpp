@@ -524,19 +524,19 @@ void EmitAssemblyHelper::FinalizeForJIT() {
   if (!LangOpts.isJITEnabled())
     return;
 
-  SmallVector<llvm::CallInst *, 10> JCalls;
+  SmallVector<llvm::CallSite, 10> JCalls;
   for (auto &F : TheModule->functions())
   for (auto &BB : F)
   for (auto &I : BB)
-    if (auto *CI = dyn_cast<llvm::CallInst>(&I))
-      if (auto *Callee = CI->getCalledFunction())
+    if (auto CS = CallSite(&I))
+      if (auto *Callee = CS.getCalledFunction())
         if (Callee->getName() == "__clang_jit")
-          JCalls.push_back(CI);
+          JCalls.push_back(CS);
 
   if (JCalls.empty())
     return;
 
-  llvm::IRBuilder<> Builder(JCalls[0]->getParent());
+  llvm::IRBuilder<> Builder(JCalls[0].getParent());
 
   std::string Data;
   llvm::raw_string_ostream OS(Data);
@@ -548,7 +548,7 @@ void EmitAssemblyHelper::FinalizeForJIT() {
     Builder.CreateGlobalStringPtr(Data,
                                   "__clang_jit_bc");
   llvm::Value *IRDataLen =
-    llvm::ConstantInt::get(JCalls[0]->getArgOperand(5)->getType(),
+    llvm::ConstantInt::get(JCalls[0].getArgument(5)->getType(),
                            Data.size());
 
   // Now that we've serialized the base IR module, add the AST and other
@@ -559,23 +559,23 @@ void EmitAssemblyHelper::FinalizeForJIT() {
     Builder.CreateGlobalStringPtr(std::string(CmdArgs.begin(), CmdArgs.end()),
                                   "__clang_jit_cmdline");
   llvm::Value *CmdLineStrLen =
-    llvm::ConstantInt::get(JCalls[0]->getArgOperand(1)->getType(),
+    llvm::ConstantInt::get(JCalls[0].getArgument(1)->getType(),
                            CmdArgs.size());
 
   auto &ASTBuffer = CodeGenOpts.ASTBufferForJIT;
   llvm::Value *ASTData =
     Builder.CreateGlobalStringPtr(ASTBuffer, "__clang_jit_ast");
   llvm::Value *ASTDataLen =
-    llvm::ConstantInt::get(JCalls[0]->getArgOperand(3)->getType(),
+    llvm::ConstantInt::get(JCalls[0].getArgument(3)->getType(),
                            ASTBuffer.size());
 
-  for (auto *JCI : JCalls) {
-    JCI->setArgOperand(0, CmdLineStr);
-    JCI->setArgOperand(1, CmdLineStrLen);
-    JCI->setArgOperand(2, ASTData);
-    JCI->setArgOperand(3, ASTDataLen);
-    JCI->setArgOperand(4, IRData);
-    JCI->setArgOperand(5, IRDataLen);
+  for (auto &JCS : JCalls) {
+    JCS.setArgument(0, CmdLineStr);
+    JCS.setArgument(1, CmdLineStrLen);
+    JCS.setArgument(2, ASTData);
+    JCS.setArgument(3, ASTDataLen);
+    JCS.setArgument(4, IRData);
+    JCS.setArgument(5, IRDataLen);
   }
 }
 
