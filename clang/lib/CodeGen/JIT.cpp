@@ -1077,8 +1077,115 @@ llvm::sys::SmartMutex<false> Mutex;
 bool InitializedTarget = false;
 llvm::DenseMap<const void *, std::unique_ptr<CompilerData>> TUCompilerData;
 
+struct InstInfo {
+  InstInfo(const char *InstKey, const void *NTTPValues,
+           unsigned NTTPValuesSize, const char **TypeStrings,
+           unsigned TypeStringsCnt)
+    : Key(InstKey),
+      NTArgs(StringRef((const char *) NTTPValues, NTTPValuesSize)) {
+    for (unsigned i = 0, e = TypeStringsCnt; i != e; ++i)
+      TArgs.push_back(StringRef(TypeStrings[i]));
+  }
+
+  InstInfo(const StringRef &R) : Key(R) { }
+
+  // The instantiation key (these are always constants, so we don't need to
+  // allocate storage for them).
+  StringRef Key;
+
+  // The buffer of non-type arguments (this is packed).
+  SmallString<16> NTArgs;
+
+  // Vector of string type names.
+  SmallVector<SmallString<32>, 1> TArgs;
+};
+
+struct ThisInstInfo {
+  ThisInstInfo(const char *InstKey, const void *NTTPValues,
+               unsigned NTTPValuesSize, const char **TypeStrings,
+               unsigned TypeStringsCnt)
+    : InstKey(InstKey), NTTPValues(NTTPValues), NTTPValuesSize(NTTPValuesSize),
+      TypeStrings(TypeStrings), TypeStringsCnt(TypeStringsCnt) { }
+
+  const char *InstKey;
+
+  const void *NTTPValues;
+  unsigned NTTPValuesSize;
+
+  const char **TypeStrings;
+  unsigned TypeStringsCnt;
+};
+
+struct InstMapInfo {
+  static inline InstInfo getEmptyKey() {
+    return InstInfo(DenseMapInfo<StringRef>::getEmptyKey());
+  }
+
+  static inline InstInfo getTombstoneKey() {
+    return InstInfo(DenseMapInfo<StringRef>::getTombstoneKey());
+  }
+
+  static unsigned getHashValue(const InstInfo &II) {
+    using llvm::hash_code;
+    using llvm::hash_combine;
+    using llvm::hash_combine_range;
+
+    hash_code h = hash_combine_range(II.Key.begin(), II.Key.end());
+    h = hash_combine(h, hash_combine_range(II.NTArgs.begin(),
+                                           II.NTArgs.end()));
+    for (auto &TA : II.TArgs)
+      h = hash_combine(h, hash_combine_range(TA.begin(), TA.end()));
+
+    return (unsigned) h;
+  }
+  
+  static unsigned getHashValue(const ThisInstInfo &TII) {
+    using llvm::hash_code;
+    using llvm::hash_combine;
+    using llvm::hash_combine_range;
+
+    hash_code h =
+      hash_combine_range(TII.InstKey, TII.InstKey + std::strlen(TII.InstKey));
+    h = hash_combine(h, hash_combine_range((const char *) TII.NTTPValues,
+                                           ((const char *) TII.NTTPValues) +
+                                             TII.NTTPValuesSize));
+    for (unsigned int i = 0, e = TII.TypeStringsCnt; i != e; ++i)
+      h = hash_combine(h,
+                       hash_combine_range(TII.TypeStrings[i],
+                                          TII.TypeStrings[i] +
+                                            std::strlen(TII.TypeStrings[i])));
+
+    return (unsigned) h;
+  }
+
+  static bool isEqual(const InstInfo &LHS, const InstInfo &RHS) {
+    return LHS.Key    == RHS.Key &&
+           LHS.NTArgs == RHS.NTArgs &&
+           LHS.TArgs  == RHS.TArgs;
+  }
+
+  static bool isEqual(const ThisInstInfo &LHS, const InstInfo &RHS) {
+    return isEqual(RHS, LHS);
+  }
+
+  static bool isEqual(const InstInfo &II, const ThisInstInfo &TII) {
+    if (II.Key != StringRef(TII.InstKey))
+      return false;
+    if (II.NTArgs != StringRef((const char *) TII.NTTPValues,
+                               TII.NTTPValuesSize))
+      return false;
+    if (II.TArgs.size() != TII.TypeStringsCnt)
+      return false;
+    for (unsigned int i = 0, e = TII.TypeStringsCnt; i != e; ++i)
+      if (II.TArgs[i] != StringRef(TII.TypeStrings[i]))
+        return false;
+
+    return true; 
+  }
+};
+
 llvm::sys::SmartMutex<false> IMutex;
-std::unordered_map<std::string, void *> Instantiations;
+llvm::DenseMap<InstInfo, void *, InstMapInfo> Instantiations;
 
 } // anonymous namespace
 
@@ -1093,17 +1200,11 @@ void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
                   const void *NTTPValues, unsigned NTTPValuesSize,
                   const char **TypeStrings, unsigned TypeStringsCnt,
                   const char *InstKey, unsigned Idx) {
-  // FIXME: Use a DenseSet instead of unordered_map, use a SmallVector to hold data.
-  const char *KPtr = ((const char *) ASTBuffer) + Idx;
-  std::string Key((const char *) &KPtr, ((const char *) &KPtr) + sizeof(KPtr));
-  Key += std::string((const char *) NTTPValues,
-                     ((const char *) NTTPValues) + NTTPValuesSize);
-  for (unsigned i = 0, e = TypeStringsCnt; i != e; ++i)
-    Key += TypeStrings[i];
-
   {
     llvm::MutexGuard Guard(IMutex);
-    auto II = Instantiations.find(Key);
+    auto II =
+      Instantiations.find_as(ThisInstInfo(InstKey, NTTPValues, NTTPValuesSize,
+                                          TypeStrings, TypeStringsCnt));
     if (II != Instantiations.end())
       return II->second;
   }
@@ -1134,7 +1235,8 @@ void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
 
   {
     llvm::MutexGuard Guard(IMutex);
-    Instantiations[Key] = FPtr;
+    Instantiations[InstInfo(InstKey, NTTPValues, NTTPValuesSize,
+                            TypeStrings, TypeStringsCnt)] = FPtr;
   }
 
   return FPtr;
