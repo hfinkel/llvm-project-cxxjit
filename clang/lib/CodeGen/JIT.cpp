@@ -1092,7 +1092,7 @@ void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
                   const void **LocalPtrs, unsigned LocalPtrsCnt,
                   const void *NTTPValues, unsigned NTTPValuesSize,
                   const char **TypeStrings, unsigned TypeStringsCnt,
-                  unsigned Idx) {
+                  const char *InstKey, unsigned Idx) {
   // FIXME: Use a DenseSet instead of unordered_map, use a SmallVector to hold data.
   const char *KPtr = ((const char *) ASTBuffer) + Idx;
   std::string Key((const char *) &KPtr, ((const char *) &KPtr) + sizeof(KPtr));

@@ -37,6 +37,8 @@ namespace clang {
   struct ThisAdjustment;
   struct ThunkInfo;
   class VarDecl;
+  class TemplateDecl;
+  class TemplateArgument;
 
 /// MangleContext - Context for tracking state which persists across multiple
 /// calls to the C++ name mangler.
@@ -140,6 +142,11 @@ public:
 
   virtual void mangleSEHFinallyBlock(const NamedDecl *EnclosingDecl,
                                      raw_ostream &Out) = 0;
+
+  virtual void mangleTemplateArgument(const TemplateDecl *TD,
+                                      const TemplateArgument &TA,
+                                      const NamedDecl *Parm,
+                                      raw_ostream &) = 0;
 
   /// Generates a unique string for an externally visible type for use with TBAA
   /// or type uniquing.

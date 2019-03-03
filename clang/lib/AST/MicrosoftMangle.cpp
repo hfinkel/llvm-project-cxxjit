@@ -175,6 +175,10 @@ public:
   mangleCXXRTTICompleteObjectLocator(const CXXRecordDecl *Derived,
                                      ArrayRef<const CXXRecordDecl *> BasePath,
                                      raw_ostream &Out) override;
+  void mangleTemplateArgument(const TemplateDecl *TD,
+                              const TemplateArgument &TA,
+                              const NamedDecl *Parm,
+                              raw_ostream &Out) override;
   void mangleTypeName(QualType T, raw_ostream &) override;
   void mangleCXXCtor(const CXXConstructorDecl *D, CXXCtorType Type,
                      raw_ostream &) override;
@@ -319,6 +323,8 @@ public:
                           bool ForceThisQuals = false,
                           bool MangleExceptionSpec = true);
   void mangleNestedName(const NamedDecl *ND);
+  void mangleTemplateArg(const TemplateDecl *TD, const TemplateArgument &TA,
+                         const NamedDecl *Parm);
 
 private:
   bool isStructorDecl(const NamedDecl *ND) const {
@@ -371,8 +377,6 @@ private:
 
   void mangleTemplateArgs(const TemplateDecl *TD,
                           const TemplateArgumentList &TemplateArgs);
-  void mangleTemplateArg(const TemplateDecl *TD, const TemplateArgument &TA,
-                         const NamedDecl *Parm);
 
   void mangleObjCProtocol(const ObjCProtocolDecl *PD);
   void mangleObjCLifetime(const QualType T, Qualifiers Quals,
@@ -3268,6 +3272,14 @@ void MicrosoftMangleContextImpl::mangleTypeName(QualType T, raw_ostream &Out) {
   MicrosoftCXXNameMangler Mangler(*this, Out);
   Mangler.getStream() << '?';
   Mangler.mangleType(T, SourceRange());
+}
+
+void MicrosoftMangleContextImpl::mangleTemplateArgument(const TemplateDecl *TD,
+                                                        const TemplateArgument &TA,
+                                                        const NamedDecl *Parm,
+                                                        raw_ostream &Out) {
+  MicrosoftCXXNameMangler Mangler(*this, Out);
+  Mangler.mangleTemplateArg(TD, TA, Parm);
 }
 
 void MicrosoftMangleContextImpl::mangleCXXCtor(const CXXConstructorDecl *D,

@@ -2387,6 +2387,14 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
          "A JIT method does not have an instantiation id?");
   int Cnt = FD->getAttr<JITFuncInstantiationAttr>()->getId();
 
+  SmallString<128> InstKey;
+  llvm::raw_svector_ostream IKOut(InstKey);
+  auto &MC = CGF.CGM.getCXXABI().getMangleContext();
+
+  // Start by mangling the template itself; this will get the template name and
+  // the types of any non-type arguments.
+  MC.mangleName(FD->getTemplateInstantiationPattern(), IKOut);
+
   // FIXME: This number will effectively identify the call site, but is too
   // specific to identify the instantiation, as that key should ignore the AST
   // identity of the dynamic parameters.
@@ -2402,17 +2410,35 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
                             .str());
   RD->startDefinition();
 
+  auto DefaultTAMangle = [&](const TemplateArgument &TA, unsigned TAIdx) {
+    MC.mangleTemplateArgument(FD->getPrimaryTemplate(), TA,
+                              FD->getPrimaryTemplate()->
+                                getTemplateParameters()->getParam(TAIdx),
+                              IKOut);
+  };
+
   auto *FTSI = FD->getTemplateSpecializationInfo();
+  unsigned TAIdx = UINT_MAX;
   for (auto &TA : FTSI->TemplateArguments->asArray()) {
+    ++TAIdx;
+    IKOut << "#";
+
     if (TA.getKind() == TemplateArgument::Type) {
-      if (auto *JFST = TA.getAsType()->getAs<JITFromStringType>())
+      if (auto *JFST = TA.getAsType()->getAs<JITFromStringType>()) {
         TypeStrings.push_back(CGF.EmitScalarExpr(
                                 JFST->getUnderlyingExpr()));
+        IKOut << "?";
+      } else {
+        DefaultTAMangle(TA, TAIdx);
+      }
+
       continue;
     }
 
-    if (TA.getKind() != TemplateArgument::Expression)
+    if (TA.getKind() != TemplateArgument::Expression) {
+      DefaultTAMangle(TA, TAIdx);
       continue;
+    }
 
     // Using C++17 rules, this check should be sufficient.
     SmallVector<PartialDiagnosticAt, 8> Notes;
@@ -2420,8 +2446,10 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
     Eval.Diag = &Notes;
     if (TA.getAsExpr()->
           EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, C) &&
-        Notes.empty())
+        Notes.empty()) {
+      DefaultTAMangle(TA, TAIdx);
       continue;
+    }
 
     QualType FieldTy = TA.getNonTypeTemplateArgumentType();
     auto *Field = FieldDecl::Create(
@@ -2432,6 +2460,7 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
     RD->addDecl(Field);
 
     RDTArgs.push_back(TA);
+    IKOut << "?";
   }
 
   RD->completeDefinition();
@@ -2466,7 +2495,7 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
     {CGF.Int8PtrTy, CGF.Int32Ty, CGF.VoidPtrTy, CGF.SizeTy,
      CGF.VoidPtrTy, CGF.SizeTy, CGF.VoidPtrPtrTy, CGF.Int32Ty,
      CGF.VoidPtrTy, CGF.Int32Ty, CGF.Int8PtrPtrTy, CGF.Int32Ty,
-     CGF.Int32Ty};
+     CGF.Int8PtrTy, CGF.Int32Ty};
   auto *RetFTy = CGF.getTypes().GetFunctionType(GlobalDecl(FD));
 
   // This function is marked as readonly to allow the optimizer to remove it if
@@ -2496,6 +2525,7 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
       CGF.Builder.getInt32(RDTArgs.empty() ? 0 : C.getTypeSizeInChars(RDTy).getQuantity()),
       CGF.Builder.CreatePointerCast(STAI.getPointer(), CGF.Int8PtrPtrTy),
       CGF.Builder.getInt32(TypeStrings.size()),
+      CGF.Builder.CreateGlobalStringPtr(InstKey, ".cj.key.str"),
       CGF.Builder.getInt32(Cnt)
   };
 

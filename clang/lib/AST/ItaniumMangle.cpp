@@ -148,6 +148,10 @@ public:
                            const CXXRecordDecl *Type, raw_ostream &) override;
   void mangleCXXRTTI(QualType T, raw_ostream &) override;
   void mangleCXXRTTIName(QualType T, raw_ostream &) override;
+  void mangleTemplateArgument(const TemplateDecl *TD,
+                              const TemplateArgument &TA,
+                              const NamedDecl *Parm,
+                              raw_ostream &Out) override;
   void mangleTypeName(QualType T, raw_ostream &) override;
   void mangleCXXCtor(const CXXConstructorDecl *D, CXXCtorType Type,
                      raw_ostream &) override;
@@ -424,6 +428,7 @@ public:
   void mangleName(const NamedDecl *ND);
   void mangleType(QualType T);
   void mangleNameOrStandardSubstitution(const NamedDecl *ND);
+  void mangleTemplateArg(TemplateArgument A);
 
 private:
 
@@ -546,7 +551,6 @@ private:
   void mangleTemplateArgs(const TemplateArgument *TemplateArgs,
                           unsigned NumTemplateArgs);
   void mangleTemplateArgs(const TemplateArgumentList &AL);
-  void mangleTemplateArg(TemplateArgument A);
 
   void mangleTemplateParameter(unsigned Index);
 
@@ -5035,6 +5039,14 @@ void ItaniumMangleContextImpl::mangleCXXRTTIName(QualType Ty,
 
 void ItaniumMangleContextImpl::mangleTypeName(QualType Ty, raw_ostream &Out) {
   mangleCXXRTTIName(Ty, Out);
+}
+
+void ItaniumMangleContextImpl::mangleTemplateArgument(const TemplateDecl *TD,
+                                                      const TemplateArgument &TA,
+                                                      const NamedDecl *Parm,
+                                                      raw_ostream &Out) {
+  CXXNameMangler Mangler(*this, Out);
+  Mangler.mangleTemplateArg(TA);
 }
 
 void ItaniumMangleContextImpl::mangleStringLiteral(const StringLiteral *, raw_ostream &) {
