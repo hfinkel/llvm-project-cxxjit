@@ -1236,10 +1236,16 @@ void tools::AddJITRunTimeLibs(const ToolChain &TC, const Driver &D,
 
     AddFromLC("--ldflags");
 
-    CmdArgs.push_back("-lclangBasic");
     CmdArgs.push_back("-lclangCodeGen");
+    CmdArgs.push_back("-lclangAnalysis");
+    CmdArgs.push_back("-lclangAST");
+    CmdArgs.push_back("-lclangBasic");
     CmdArgs.push_back("-lclangDriver");
+    CmdArgs.push_back("-lclangEdit");
     CmdArgs.push_back("-lclangFrontend");
+    CmdArgs.push_back("-lclangLex");
+    CmdArgs.push_back("-lclangParse");
+    CmdArgs.push_back("-lclangSema");
     CmdArgs.push_back("-lclangSerialization");
 
     AddFromLC("--libs");
