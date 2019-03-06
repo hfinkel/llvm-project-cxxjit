@@ -422,8 +422,6 @@ namespace clang {
 
       EmbedBitcode(getModule(), CodeGenOpts, llvm::MemoryBufferRef());
 
-      // FIXME: Move to after the opt pipeline runs so the optimized IR is
-      // stored.
       FinalizeForJIT(C);
 
       EmitBackendOutput(Diags, HeaderSearchOpts, CodeGenOpts, TargetOpts,
