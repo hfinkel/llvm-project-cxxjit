@@ -124,7 +124,7 @@ namespace clang {
 
         if (!Name.empty()) {
           auto *GV = CGM.getModule().getNamedValue(Name);
-          if (GV)
+          if (GV && GV->hasLocalLinkage())
             Collector.Locals.insert(GV);
         }
 
