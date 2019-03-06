@@ -1247,6 +1247,7 @@ void tools::AddJITRunTimeLibs(const ToolChain &TC, const Driver &D,
     CmdArgs.push_back("-lclangParse");
     CmdArgs.push_back("-lclangSema");
     CmdArgs.push_back("-lclangSerialization");
+    CmdArgs.push_back("-lstdc++");
 
     AddFromLC("--libs");
     AddFromLC("--system-libs");
