@@ -124,7 +124,11 @@ namespace clang {
 
         if (!Name.empty()) {
           auto *GV = CGM.getModule().getNamedValue(Name);
-          if (GV && GV->hasLocalLinkage())
+
+	  // Symbols with local linkage must be included (symbols with hidden
+	  // visibility should be included also because the JIT won't be able
+	  // to get those otherwise).
+          if (GV && (GV->hasLocalLinkage() || GV->hasHiddenVisibility()))
             Collector.Locals.insert(GV);
         }
 
@@ -327,6 +331,22 @@ namespace clang {
 
       llvm::SetVector<GlobalValue *> Locals;
       JITLocalCollector(Locals, Gen->CGM()).TraverseAST(C);
+
+      // We also need to include local symbols generated internally (e.g.,
+      // __clang_call_terminate).
+      for (auto &GV : getModule()->global_values()) {
+	// Get all of the symbols that start with __clang (except those that
+	// start with __clang_jit).
+        if (!GV.hasName())
+          continue;
+        if (!GV.getName().startswith("__clang") ||
+            GV.getName().startswith("__clang_jit"))
+          continue;
+        if (!GV.hasLocalLinkage() && !GV.hasHiddenVisibility())
+          continue;
+
+        Locals.insert(&GV);
+      }
 
       llvm::SmallVector<llvm::Constant *, 32> LocalPtrs;
       for (auto &Local : Locals) {
