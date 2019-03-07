@@ -1237,16 +1237,16 @@ void tools::AddJITRunTimeLibs(const ToolChain &TC, const Driver &D,
     AddFromLC("--ldflags");
 
     CmdArgs.push_back("-lclangCodeGen");
-    CmdArgs.push_back("-lclangAnalysis");
-    CmdArgs.push_back("-lclangAST");
-    CmdArgs.push_back("-lclangBasic");
-    CmdArgs.push_back("-lclangDriver");
-    CmdArgs.push_back("-lclangEdit");
     CmdArgs.push_back("-lclangFrontend");
-    CmdArgs.push_back("-lclangLex");
+    CmdArgs.push_back("-lclangDriver");
     CmdArgs.push_back("-lclangParse");
     CmdArgs.push_back("-lclangSema");
+    CmdArgs.push_back("-lclangAnalysis");
     CmdArgs.push_back("-lclangSerialization");
+    CmdArgs.push_back("-lclangAST");
+    CmdArgs.push_back("-lclangEdit");
+    CmdArgs.push_back("-lclangLex");
+    CmdArgs.push_back("-lclangBasic");
 
     AddFromLC("--libs");
     AddFromLC("--system-libs");
@@ -1278,8 +1278,6 @@ void tools::AddRunTimeLibs(const ToolChain &TC, const Driver &D,
       AddLibgcc(TC.getTriple(), D, CmdArgs, Args);
     break;
   }
-
-  AddJITRunTimeLibs(TC, D, CmdArgs, Args);
 }
 
 /// Add OpenMP linker script arguments at the end of the argument list so that

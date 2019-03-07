@@ -472,6 +472,9 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
   TC.addProfileRTLibs(Args, CmdArgs);
 
+  if (!Args.hasArg(options::OPT_nostdlib, options::OPT_nodefaultlibs))
+    AddJITRunTimeLibs(TC, TC.getDriver(), CmdArgs, Args);
+
   std::vector<const char *> Environment;
 
   // We need to special case some linker paths.  In the case of lld, we need to

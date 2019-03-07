@@ -538,6 +538,9 @@ void darwin::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   if (!Args.hasArg(options::OPT_nostdlib, options::OPT_nodefaultlibs))
     addOpenMPRuntime(CmdArgs, getToolChain(), Args);
 
+  if (!Args.hasArg(options::OPT_nostdlib, options::OPT_nodefaultlibs))
+    AddJITRunTimeLibs(getToolChain(), getToolChain().getDriver(), CmdArgs, Args);
+
   if (isObjCRuntimeLinked(Args) &&
       !Args.hasArg(options::OPT_nostdlib, options::OPT_nodefaultlibs)) {
     // We use arclite library for both ARC and subscripting support.

@@ -289,6 +289,7 @@ void netbsd::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
   if (!Args.hasArg(options::OPT_nostdlib, options::OPT_nodefaultlibs)) {
     addOpenMPRuntime(CmdArgs, getToolChain(), Args);
+    AddJITRunTimeLibs(ToolChain, D, CmdArgs, Args);
     if (D.CCCIsCXX()) {
       if (ToolChain.ShouldLinkCXXStdlib(Args))
         ToolChain.AddCXXStdlibLibArgs(Args, CmdArgs);

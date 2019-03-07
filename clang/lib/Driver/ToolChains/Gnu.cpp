@@ -471,6 +471,9 @@ void tools::gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   // The profile runtime also needs access to system libraries.
   getToolChain().addProfileRTLibs(Args, CmdArgs);
 
+  if (!Args.hasArg(options::OPT_nostdlib, options::OPT_nodefaultlibs))
+    AddJITRunTimeLibs(getToolChain(), D, CmdArgs, Args);
+
   if (D.CCCIsCXX() &&
       !Args.hasArg(options::OPT_nostdlib, options::OPT_nodefaultlibs)) {
     if (ToolChain.ShouldLinkCXXStdlib(Args)) {

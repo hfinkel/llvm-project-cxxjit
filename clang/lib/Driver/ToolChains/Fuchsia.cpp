@@ -114,6 +114,8 @@ void fuchsia::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   ToolChain.addProfileRTLibs(Args, CmdArgs);
 
   if (!Args.hasArg(options::OPT_nostdlib, options::OPT_nodefaultlibs)) {
+    AddJITRunTimeLibs(getToolChain(), D, CmdArgs, Args);
+
     if (Args.hasArg(options::OPT_static))
       CmdArgs.push_back("-Bdynamic");
 

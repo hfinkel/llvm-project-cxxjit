@@ -190,6 +190,9 @@ void tools::MinGW::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
   // TODO: Add profile stuff here
 
+  if (!Args.hasArg(options::OPT_nostdlib, options::OPT_nodefaultlibs))
+    AddJITRunTimeLibs(TC, D, CmdArgs, Args);
+
   if (TC.ShouldLinkCXXStdlib(Args)) {
     bool OnlyLibstdcxxStatic = Args.hasArg(options::OPT_static_libstdcxx) &&
                                !Args.hasArg(options::OPT_static);
