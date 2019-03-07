@@ -2411,56 +2411,66 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
   RD->startDefinition();
 
   auto DefaultTAMangle = [&](const TemplateArgument &TA, unsigned TAIdx) {
-    MC.mangleTemplateArgument(FD->getPrimaryTemplate(), TA,
-                              FD->getPrimaryTemplate()->
-                                getTemplateParameters()->getParam(TAIdx),
-                              IKOut);
+    auto *ND =
+      FD->getPrimaryTemplate()->getTemplateParameters()->getParam(TAIdx);
+    MC.mangleTemplateArgument(FD->getPrimaryTemplate(), TA, ND, IKOut);
   };
 
   auto *FTSI = FD->getTemplateSpecializationInfo();
   unsigned TAIdx = UINT_MAX;
   for (auto &TA : FTSI->TemplateArguments->asArray()) {
     ++TAIdx;
-    IKOut << "#";
 
-    if (TA.getKind() == TemplateArgument::Type) {
-      if (auto *JFST = TA.getAsType()->getAs<JITFromStringType>()) {
-        TypeStrings.push_back(CGF.EmitScalarExpr(
-                                JFST->getUnderlyingExpr()));
-        IKOut << "?";
-      } else {
-        DefaultTAMangle(TA, TAIdx);
+    auto HandleTA = [&](const TemplateArgument &TA) {
+      IKOut << "#";
+
+      if (TA.getKind() == TemplateArgument::Type) {
+        if (auto *JFST = TA.getAsType()->getAs<JITFromStringType>()) {
+          TypeStrings.push_back(CGF.EmitScalarExpr(
+                                  JFST->getUnderlyingExpr()));
+          IKOut << "?";
+        } else {
+          DefaultTAMangle(TA, TAIdx);
+        }
+
+        return;
       }
 
+      if (TA.getKind() != TemplateArgument::Expression) {
+        DefaultTAMangle(TA, TAIdx);
+        return;
+      }
+
+      // Using C++17 rules, this check should be sufficient.
+      SmallVector<PartialDiagnosticAt, 8> Notes;
+      Expr::EvalResult Eval;
+      Eval.Diag = &Notes;
+      if (TA.getAsExpr()->
+            EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, C) &&
+          Notes.empty()) {
+        DefaultTAMangle(TA, TAIdx);
+        return;
+      }
+
+      QualType FieldTy = TA.getNonTypeTemplateArgumentType();
+      auto *Field = FieldDecl::Create(
+          C, RD, SourceLocation(), SourceLocation(), /*Id=*/nullptr,
+          FieldTy, C.getTrivialTypeSourceInfo(FieldTy, SourceLocation()),
+          /*BW=*/nullptr, /*Mutable=*/false, /*InitStyle=*/ICIS_NoInit);
+      Field->setAccess(AS_public);
+      RD->addDecl(Field);
+
+      RDTArgs.push_back(TA);
+      IKOut << "?";
+    };
+
+    if (TA.getKind() == TemplateArgument::Pack) {
+      for (auto &PTA : TA.getPackAsArray())
+        HandleTA(PTA);
       continue;
     }
 
-    if (TA.getKind() != TemplateArgument::Expression) {
-      DefaultTAMangle(TA, TAIdx);
-      continue;
-    }
-
-    // Using C++17 rules, this check should be sufficient.
-    SmallVector<PartialDiagnosticAt, 8> Notes;
-    Expr::EvalResult Eval;
-    Eval.Diag = &Notes;
-    if (TA.getAsExpr()->
-          EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, C) &&
-        Notes.empty()) {
-      DefaultTAMangle(TA, TAIdx);
-      continue;
-    }
-
-    QualType FieldTy = TA.getNonTypeTemplateArgumentType();
-    auto *Field = FieldDecl::Create(
-        C, RD, SourceLocation(), SourceLocation(), /*Id=*/nullptr,
-        FieldTy, C.getTrivialTypeSourceInfo(FieldTy, SourceLocation()),
-        /*BW=*/nullptr, /*Mutable=*/false, /*InitStyle=*/ICIS_NoInit);
-    Field->setAccess(AS_public);
-    RD->addDecl(Field);
-
-    RDTArgs.push_back(TA);
-    IKOut << "?";
+    HandleTA(TA);
   }
 
   RD->completeDefinition();

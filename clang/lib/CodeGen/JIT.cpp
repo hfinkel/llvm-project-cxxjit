@@ -699,35 +699,45 @@ struct CompilerData {
 
     auto *FTSI = FD->getTemplateSpecializationInfo();
     for (auto &TA : FTSI->TemplateArguments->asArray()) {
-      if (TA.getKind() == TemplateArgument::Type)
-        if (TA.getAsType()->isJITFromStringType()) {
-          TAIsSaved.push_back(TASK_Type);
-          continue;
+      auto HandleTA = [&](const TemplateArgument &TA) {
+        if (TA.getKind() == TemplateArgument::Type)
+          if (TA.getAsType()->isJITFromStringType()) {
+            TAIsSaved.push_back(TASK_Type);
+            return;
+          }
+
+        if (TA.getKind() != TemplateArgument::Expression) {
+          TAIsSaved.push_back(TASK_None);
+          return;
         }
 
-      if (TA.getKind() != TemplateArgument::Expression) {
-        TAIsSaved.push_back(TASK_None);
+        SmallVector<PartialDiagnosticAt, 8> Notes;
+        Expr::EvalResult Eval;
+        Eval.Diag = &Notes;
+        if (TA.getAsExpr()->
+              EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, *Ctx)) {
+          TAIsSaved.push_back(TASK_None);
+          return;
+        }
+
+        QualType FieldTy = TA.getNonTypeTemplateArgumentType();
+        auto *Field = FieldDecl::Create(
+            *Ctx, RD, SourceLocation(), SourceLocation(), /*Id=*/nullptr,
+            FieldTy, Ctx->getTrivialTypeSourceInfo(FieldTy, SourceLocation()),
+            /*BW=*/nullptr, /*Mutable=*/false, /*InitStyle=*/ICIS_NoInit);
+        Field->setAccess(AS_public);
+        RD->addDecl(Field);
+
+        TAIsSaved.push_back(TASK_Value);
+      };
+
+      if (TA.getKind() == TemplateArgument::Pack) {
+        for (auto &PTA : TA.getPackAsArray())
+          HandleTA(PTA);
         continue;
       }
 
-      SmallVector<PartialDiagnosticAt, 8> Notes;
-      Expr::EvalResult Eval;
-      Eval.Diag = &Notes;
-      if (TA.getAsExpr()->
-            EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, *Ctx)) {
-        TAIsSaved.push_back(TASK_None);
-        continue;
-      }
-
-      QualType FieldTy = TA.getNonTypeTemplateArgumentType();
-      auto *Field = FieldDecl::Create(
-          *Ctx, RD, SourceLocation(), SourceLocation(), /*Id=*/nullptr,
-          FieldTy, Ctx->getTrivialTypeSourceInfo(FieldTy, SourceLocation()),
-          /*BW=*/nullptr, /*Mutable=*/false, /*InitStyle=*/ICIS_NoInit);
-      Field->setAccess(AS_public);
-      RD->addDecl(Field);
-
-      TAIsSaved.push_back(TASK_Value);
+      HandleTA(TA);
     }
 
     RD->completeDefinition();
@@ -743,82 +753,84 @@ struct CompilerData {
 
     unsigned TAIdx = 0, TSIdx = 0;
     for (auto &TA : FTSI->TemplateArguments->asArray()) {
-      if (TAIsSaved[TAIdx] == TASK_Type) {
-        PP->ResetForJITTypes();
+      auto HandleTA = [&](const TemplateArgument &TA,
+                          SmallVector<TemplateArgument, 8> &Builder) {
+        if (TAIsSaved[TAIdx] == TASK_Type) {
+          PP->ResetForJITTypes();
 
-        PP->setPredefines(TypeStrings[TSIdx]);
-        PP->EnterMainSourceFile();
+          PP->setPredefines(TypeStrings[TSIdx]);
+          PP->EnterMainSourceFile();
 
-        Parser P(*PP, *S, /*SkipFunctionBodies*/true, /*JITTypes*/true);
+          Parser P(*PP, *S, /*SkipFunctionBodies*/true, /*JITTypes*/true);
 
 	// Reset this to nullptr so that when we call
 	// Parser::Initialize it has the clean slate it expects.
-        S->CurContext = nullptr;
+          S->CurContext = nullptr;
 
-        P.Initialize();
+          P.Initialize();
 
-        Sema::ContextRAII TUContext(*S, Ctx->getTranslationUnitDecl());
+          Sema::ContextRAII TUContext(*S, Ctx->getTranslationUnitDecl());
 
-        auto CSFMI = CSFuncMap.find(Idx);
-        if (CSFMI != CSFuncMap.end()) {
+          auto CSFMI = CSFuncMap.find(Idx);
+          if (CSFMI != CSFuncMap.end()) {
 	  // Note that this restores the context of the function in which the
 	  // template was instantiated, but not the state *within* the
 	  // function, so local types will remain unavailable.
 
-          auto *FunD = CSFMI->second;
-          restoreFuncDeclContext(FunD);
-          S->CurContext = S->getContainingDC(FunD);
+            auto *FunD = CSFMI->second;
+            restoreFuncDeclContext(FunD);
+            S->CurContext = S->getContainingDC(FunD);
+          }
+
+          TypeResult TSTy = P.ParseTypeName();
+          if (TSTy.isInvalid())
+            fatal();
+
+          QualType TypeFromString = Sema::GetTypeFromParser(TSTy.get());
+          TypeFromString = Ctx->getCanonicalType(TypeFromString);
+
+          Builder.push_back(TemplateArgument(TypeFromString));
+
+          ++TSIdx;
+          ++TAIdx;
+          return;
         }
 
-        TypeResult TSTy = P.ParseTypeName();
-        if (TSTy.isInvalid())
-          fatal();
+        if (TAIsSaved[TAIdx++] != TASK_Value) {
+          Builder.push_back(TA);
+          return;
+        }
 
-        QualType TypeFromString = Sema::GetTypeFromParser(TSTy.get());
-        TypeFromString = Ctx->getCanonicalType(TypeFromString);
+        assert(TA.getKind() == TemplateArgument::Expression &&
+               "Only expressions template arguments handled here");
 
-        Builder.push_back(TemplateArgument(TypeFromString));
+        QualType FieldTy = TA.getNonTypeTemplateArgumentType();
 
-        ++TSIdx;
-        ++TAIdx;
-        continue;
-      }
+        assert(!FieldTy->isMemberPointerType() &&
+               "Can't handle member pointers here without ABI knowledge");
 
-      if (TAIsSaved[TAIdx++] != TASK_Value) {
-        Builder.push_back(TA);
-        continue;
-      }
+        auto *Fld = *Fields++;
+        unsigned Offset = RLayout.getFieldOffset(Fld->getFieldIndex()) / 8;
+        unsigned Size = Ctx->getTypeSizeInChars(FieldTy).getQuantity();
 
-      assert(TA.getKind() == TemplateArgument::Expression &&
-             "Only expressions template arguments handled here");
+        unsigned NumIntWords = llvm::alignTo<8>(Size);
+        SmallVector<uint64_t, 2> IntWords(NumIntWords, 0);
+        std::memcpy((char *) IntWords.data(),
+                    ((const char *) NTTPValues) + Offset, Size);
+        llvm::APInt IntVal(Size*8, IntWords);
 
-      QualType FieldTy = TA.getNonTypeTemplateArgumentType();
+        QualType CanonFieldTy = Ctx->getCanonicalType(FieldTy);
 
-      assert(!FieldTy->isMemberPointerType() &&
-             "Can't handle member pointers here without ABI knowledge");
-
-      auto *Fld = *Fields++;
-      unsigned Offset = RLayout.getFieldOffset(Fld->getFieldIndex()) / 8;
-      unsigned Size = Ctx->getTypeSizeInChars(FieldTy).getQuantity();
-
-      unsigned NumIntWords = llvm::alignTo<8>(Size);
-      SmallVector<uint64_t, 2> IntWords(NumIntWords, 0);
-      std::memcpy((char *) IntWords.data(),
-                  ((const char *) NTTPValues) + Offset, Size);
-      llvm::APInt IntVal(Size*8, IntWords);
-
-      QualType CanonFieldTy = Ctx->getCanonicalType(FieldTy);
-
-      if (FieldTy->isIntegralOrEnumerationType()) {
-        llvm::APSInt SIntVal(IntVal,
-                             FieldTy->isUnsignedIntegerOrEnumerationType());
-        Builder.push_back(TemplateArgument(*Ctx, SIntVal, CanonFieldTy));
-      } else {
-        assert(FieldTy->isPointerType() || FieldTy->isReferenceType() ||
-               FieldTy->isNullPtrType());
-        if (IntVal.isNullValue()) {
-          Builder.push_back(TemplateArgument(CanonFieldTy, /*isNullPtr*/true));
+        if (FieldTy->isIntegralOrEnumerationType()) {
+          llvm::APSInt SIntVal(IntVal,
+                               FieldTy->isUnsignedIntegerOrEnumerationType());
+          Builder.push_back(TemplateArgument(*Ctx, SIntVal, CanonFieldTy));
         } else {
+          assert(FieldTy->isPointerType() || FieldTy->isReferenceType() ||
+                 FieldTy->isNullPtrType());
+          if (IntVal.isNullValue()) {
+            Builder.push_back(TemplateArgument(CanonFieldTy, /*isNullPtr*/true));
+          } else {
 	  // Note: We always generate a new global for pointer values here.
 	  // This provides a new potential way to introduce an ODR violation:
 	  // If you also generate an instantiation using the same pointer value
@@ -829,64 +841,75 @@ struct CompilerData {
 	  // point to subobjects, this is useful for optimization because each
 	  // of these resolve to distinct underlying objects.
 
-          llvm::SmallString<256> GlobalName("__clang_jit_symbol_");
-          IntVal.toString(GlobalName, 16, false);
+            llvm::SmallString<256> GlobalName("__clang_jit_symbol_");
+            IntVal.toString(GlobalName, 16, false);
 
 	  // To this base name we add the mangled type. Stack/heap addresses
 	  // can be reused with variables of different type, and these should
 	  // have different names even if they share the same address;
-          auto &CGM = Consumer->getCodeGenerator()->CGM();
-          llvm::raw_svector_ostream MOut(GlobalName);
-          CGM.getCXXABI().getMangleContext().mangleTypeName(CanonFieldTy, MOut);
+            auto &CGM = Consumer->getCodeGenerator()->CGM();
+            llvm::raw_svector_ostream MOut(GlobalName);
+            CGM.getCXXABI().getMangleContext().mangleTypeName(CanonFieldTy, MOut);
 
-          auto NLDSI = NewLocalSymDecls.find(GlobalName);
-          if (NLDSI != NewLocalSymDecls.end()) {
-              Builder.push_back(TemplateArgument(NLDSI->second, CanonFieldTy));
-          } else {
-            Sema::ContextRAII TUContext(*S, Ctx->getTranslationUnitDecl());
-            SourceLocation Loc = FTSI->getPointOfInstantiation();
+            auto NLDSI = NewLocalSymDecls.find(GlobalName);
+            if (NLDSI != NewLocalSymDecls.end()) {
+                Builder.push_back(TemplateArgument(NLDSI->second, CanonFieldTy));
+            } else {
+              Sema::ContextRAII TUContext(*S, Ctx->getTranslationUnitDecl());
+              SourceLocation Loc = FTSI->getPointOfInstantiation();
 
-            QualType STy = CanonFieldTy->getPointeeType();
-            auto &II = PP->getIdentifierTable().get(GlobalName);
+              QualType STy = CanonFieldTy->getPointeeType();
+              auto &II = PP->getIdentifierTable().get(GlobalName);
 
-            if (STy->isFunctionType()) {
-              auto *TAFD =
-                FunctionDecl::Create(*Ctx, S->CurContext, Loc, Loc, &II,
-                                     STy, /*TInfo=*/nullptr, SC_Extern, false,
-                                     STy->isFunctionProtoType());
-              TAFD->setImplicit();
+              if (STy->isFunctionType()) {
+                auto *TAFD =
+                  FunctionDecl::Create(*Ctx, S->CurContext, Loc, Loc, &II,
+                                       STy, /*TInfo=*/nullptr, SC_Extern, false,
+                                       STy->isFunctionProtoType());
+                TAFD->setImplicit();
 
-              if (const FunctionProtoType *FT = dyn_cast<FunctionProtoType>(STy)) {
-                SmallVector<ParmVarDecl*, 16> Params;
-                for (unsigned i = 0, e = FT->getNumParams(); i != e; ++i) {
-                  ParmVarDecl *Parm =
-                    ParmVarDecl::Create(*Ctx, TAFD, SourceLocation(), SourceLocation(),
-                                        nullptr, FT->getParamType(i), /*TInfo=*/nullptr,
-                                        SC_None, nullptr);
-                  Parm->setScopeInfo(0, i);
-                  Params.push_back(Parm);
+                if (const FunctionProtoType *FT = dyn_cast<FunctionProtoType>(STy)) {
+                  SmallVector<ParmVarDecl*, 16> Params;
+                  for (unsigned i = 0, e = FT->getNumParams(); i != e; ++i) {
+                    ParmVarDecl *Parm =
+                      ParmVarDecl::Create(*Ctx, TAFD, SourceLocation(), SourceLocation(),
+                                          nullptr, FT->getParamType(i), /*TInfo=*/nullptr,
+                                          SC_None, nullptr);
+                    Parm->setScopeInfo(0, i);
+                    Params.push_back(Parm);
+                  }
+
+                  TAFD->setParams(Params);
                 }
 
-                TAFD->setParams(Params);
+                NewLocalSymDecls[II.getName()] = TAFD;
+                Builder.push_back(TemplateArgument(TAFD, CanonFieldTy));
+              } else {
+                auto *TAVD =
+                  VarDecl::Create(*Ctx, S->CurContext, Loc, Loc, &II,
+                                  STy, Ctx->getTrivialTypeSourceInfo(STy, Loc),
+                                  SC_Extern);
+                TAVD->setImplicit();
+
+                NewLocalSymDecls[II.getName()] = TAVD;
+                Builder.push_back(TemplateArgument(TAVD, CanonFieldTy));
               }
 
-              NewLocalSymDecls[II.getName()] = TAFD;
-              Builder.push_back(TemplateArgument(TAFD, CanonFieldTy));
-            } else {
-              auto *TAVD =
-                VarDecl::Create(*Ctx, S->CurContext, Loc, Loc, &II,
-                                STy, Ctx->getTrivialTypeSourceInfo(STy, Loc),
-                                SC_Extern);
-              TAVD->setImplicit();
-
-              NewLocalSymDecls[II.getName()] = TAVD;
-              Builder.push_back(TemplateArgument(TAVD, CanonFieldTy));
+              LocalSymAddrs[II.getName()] = (const void *) IntVal.getZExtValue();
             }
-
-            LocalSymAddrs[II.getName()] = (const void *) IntVal.getZExtValue();
           }
         }
+      };
+
+      if (TA.getKind() == TemplateArgument::Pack) {
+        SmallVector<TemplateArgument, 8> PBuilder;
+        for (auto &PTA : TA.getPackAsArray())
+          HandleTA(PTA, PBuilder);
+        Builder.push_back(TemplateArgument::CreatePackCopy(*Ctx, PBuilder));
+        continue;
       }
+
+      HandleTA(TA, Builder);
     }
 
     SourceLocation Loc = FTSI->getPointOfInstantiation();
