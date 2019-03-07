@@ -944,6 +944,11 @@ struct CompilerData {
     if (Diagnostics->hasErrorOccurred())
       fatal();
 
+    // Now we know the name of the symbol, check to see if we already have it.
+    if (auto SpecSymbol = CJ->findSymbol(SMName))
+      if (SpecSymbol.getAddress())
+        return (void *) llvm::cantFail(SpecSymbol.getAddress());
+
     // There might have been functions/variables with local linkage that were
     // only used by JIT functions. These would not have been used during
     // initial code generation for this translation unit, and so not emitted.
@@ -996,6 +1001,18 @@ struct CompilerData {
         Changed = true;
       }
     } while (Changed);
+
+    // Before anything gets optimized, mark the top-level symbol we're
+    // generating so that it doesn't get eliminated by the optimizer.
+
+    auto *TopGV =
+      cast<GlobalObject>(Consumer->getModule()->getNamedValue(SMName));
+    assert(TopGV && "Didn't generate the desired top-level symbol?");
+
+    TopGV->setLinkage(llvm::GlobalValue::ExternalLinkage);
+    TopGV->setComdat(nullptr);
+
+    // Finalize the module, generate module-level metadata, etc.
 
     Consumer->HandleTranslationUnit(*Ctx);
 
