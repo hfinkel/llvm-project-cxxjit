@@ -2395,10 +2395,6 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
   // the types of any non-type arguments.
   MC.mangleName(FD->getTemplateInstantiationPattern(), IKOut);
 
-  // FIXME: This number will effectively identify the call site, but is too
-  // specific to identify the instantiation, as that key should ignore the AST
-  // identity of the dynamic parameters.
-
   SmallVector<llvm::Value *, 8> TypeStrings;
   SmallVector<TemplateArgument, 8> RDTArgs;
 
