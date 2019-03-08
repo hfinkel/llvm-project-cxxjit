@@ -494,7 +494,8 @@ struct CompilerData {
   CompilerData(const void *CmdArgs, unsigned CmdArgsLen,
                const void *ASTBuffer, size_t ASTBufferSize,
                const void *IRBuffer, size_t IRBufferSize,
-               const void **LocalPtrs, unsigned LocalPtrsCnt) {
+               const void **LocalPtrs, unsigned LocalPtrsCnt,
+               const void **LocalDbgPtrs, unsigned LocalDbgPtrsCnt) {
     StringRef CombinedArgv((const char *) CmdArgs, CmdArgsLen);
     SmallVector<StringRef, 32> Argv;
     CombinedArgv.split(Argv, '\0', /*MaxSplit*/ -1, false);
@@ -637,6 +638,12 @@ struct CompilerData {
     for (unsigned Idx = 0; Idx < 2*LocalPtrsCnt; Idx += 2) {
       const char *Name = (const char *) LocalPtrs[Idx];
       const void *Ptr = LocalPtrs[Idx+1];
+      LocalSymAddrs[Name] = Ptr;
+    }
+
+    for (unsigned Idx = 0; Idx < 2*LocalDbgPtrsCnt; Idx += 2) {
+      const char *Name = (const char *) LocalDbgPtrs[Idx];
+      const void *Ptr = LocalDbgPtrs[Idx+1];
       LocalSymAddrs[Name] = Ptr;
     }
 
@@ -1237,6 +1244,7 @@ void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
                   const void *ASTBuffer, size_t ASTBufferSize,
                   const void *IRBuffer, size_t IRBufferSize,
                   const void **LocalPtrs, unsigned LocalPtrsCnt,
+                  const void **LocalDbgPtrs, unsigned LocalDbgPtrsCnt,
                   const void *NTTPValues, unsigned NTTPValuesSize,
                   const char **TypeStrings, unsigned TypeStringsCnt,
                   const char *InstKey, unsigned Idx) {
@@ -1265,7 +1273,8 @@ void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
   auto TUCDI = TUCompilerData.find(ASTBuffer);
   if (TUCDI == TUCompilerData.end()) {
     CD = new CompilerData(CmdArgs, CmdArgsLen, ASTBuffer, ASTBufferSize,
-                          IRBuffer, IRBufferSize, LocalPtrs, LocalPtrsCnt);
+                          IRBuffer, IRBufferSize, LocalPtrs, LocalPtrsCnt,
+                          LocalDbgPtrs, LocalDbgPtrsCnt);
     TUCompilerData[ASTBuffer].reset(CD);
   } else {
     CD = TUCDI->second.get();

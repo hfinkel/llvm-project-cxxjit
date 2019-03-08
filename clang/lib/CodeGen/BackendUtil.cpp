@@ -27,6 +27,7 @@
 #include "llvm/CodeGen/SchedulerRegistry.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/IRPrintingPasses.h"
 #include "llvm/IR/LegacyPassManager.h"
@@ -550,6 +551,77 @@ void EmitAssemblyHelper::FinalizeForJIT() {
   llvm::Value *IRDataLen =
     llvm::ConstantInt::get(JCalls[0].getArgument(5)->getType(),
                            Data.size());
+
+  // Before we optimized the IR, we collected the addresses of local variables
+  // that might be used when instantiating templates dynamically. If we've
+  // generated debugging information, however, we might have references to
+  // other symbols (from the debugging information) that the runtime loader
+  // will expect to resolve. Collect those now (after optimization).
+  llvm::DebugInfoFinder F;
+  F.processModule(*TheModule);
+
+  std::vector<StringRef> DbgLocalNames;
+  for (auto *DSP : F.subprograms())
+    DbgLocalNames.push_back(DSP->getLinkageName());
+  for (auto *DGVE : F.global_variables())
+    if (auto *DGV = DGVE->getVariable())
+      DbgLocalNames.push_back(DGV->getLinkageName());
+
+  if (!DbgLocalNames.empty()) {
+    DenseSet<StringRef> LocalNames;
+    auto *LocalsGV =
+      cast<GlobalVariable>(TheModule->getNamedValue("__clang_jit_locals"));
+    auto *LocalsInit = LocalsGV->getInitializer();
+    unsigned NumLocals = LocalsInit->getType()->getArrayNumElements();
+    for (unsigned i = 0; i < NumLocals; i += 2)
+      LocalNames.insert(
+        cast<ConstantDataSequential>(LocalsInit->getAggregateElement(i))->
+                                       getAsCString());
+
+    llvm::SetVector<GlobalValue *> DLocals;
+    for (auto &DLocalName : DbgLocalNames) {
+      if (LocalNames.count(DLocalName))
+        continue;
+      auto *GV = TheModule->getNamedValue(DLocalName);
+      if (!GV || (!GV->hasLocalLinkage() && !GV->hasHiddenVisibility()))
+        continue;
+      DLocals.insert(GV);
+    }
+          
+    if (!DLocals.empty()) {
+      auto *VoidPtrPtrTy = JCalls[0]->getOperand(8)->getType();
+      auto *VoidPtrTy = VoidPtrPtrTy->getPointerElementType();
+
+      llvm::SmallVector<llvm::Constant *, 32> DLocalPtrs;
+      for (auto &DLocal : DLocals) {
+        llvm::Constant *Name =
+          Builder.CreateGlobalStringPtr(DLocal->getName(), ".cjl.str");
+        DLocalPtrs.push_back(Name);
+        DLocalPtrs.push_back(
+          llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(
+                                DLocal, VoidPtrTy));
+      }
+
+      auto *DLNAType = llvm::ArrayType::get(VoidPtrTy, DLocalPtrs.size());
+      auto *DLNAValue = ConstantArray::get(DLNAType, DLocalPtrs);
+
+      auto *DPtrsGbl = new llvm::GlobalVariable(
+        *TheModule, DLNAType, true, llvm::GlobalValue::PrivateLinkage,
+        DLNAValue, "__clang_jit_dbg_locals");
+      DPtrsGbl->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+
+      llvm::Value *DPtrsCnt =
+        llvm::ConstantInt::get(JCalls[0]->getOperand(9)->getType(),
+                               DLocalPtrs.size()/2);
+
+      for (auto &JCS : JCalls) {
+        JCS.setArgument(8,
+          llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(
+            DPtrsGbl, VoidPtrPtrTy));
+        JCS.setArgument(9, DPtrsCnt);
+      }
+    }
+  }
 
   // Now that we've serialized the base IR module, add the AST and other
   // information to it.

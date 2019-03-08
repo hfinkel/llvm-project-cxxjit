@@ -1,6 +1,9 @@
 // RUN: %clangxx -o %t %s -fjit -std=c++11 -O0
 // RUN: %t | FileCheck %s
 
+// RUN: %clangxx -o %t %s -fjit -std=c++11 -O0 -g
+// RUN: %t | FileCheck %s
+
 #include <iostream>
 
 static int gi = 4;

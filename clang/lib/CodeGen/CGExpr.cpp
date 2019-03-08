@@ -2496,11 +2496,23 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
     CGF.Builder.CreateStore(TypeStrings[i],
       CGF.Builder.CreateConstArrayGEP(STAI, i, "tsidx"));
 
-  // Emit call to __clang_jit(const char *CmdArgs, void *AST, void *Params)
+  // Emit call to:
+  // void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
+  //                   const void *ASTBuffer, size_t ASTBufferSize,
+  //                   const void *IRBuffer, size_t IRBufferSize,
+  //                   const void **LocalPtrs, unsigned LocalPtrsCnt,
+  //                   const void **LocalDbgPtrs, unsigned LocalDbgPtrsCnt,
+  //                   const void *NTTPValues, unsigned NTTPValuesSize,
+  //                   const char **TypeStrings, unsigned TypeStringsCnt,
+  //                   const char *InstKey, unsigned Idx)
   llvm::Type *TypeParams[] =
-    {CGF.Int8PtrTy, CGF.Int32Ty, CGF.VoidPtrTy, CGF.SizeTy,
-     CGF.VoidPtrTy, CGF.SizeTy, CGF.VoidPtrPtrTy, CGF.Int32Ty,
-     CGF.VoidPtrTy, CGF.Int32Ty, CGF.Int8PtrPtrTy, CGF.Int32Ty,
+    {CGF.Int8PtrTy, CGF.Int32Ty,
+     CGF.VoidPtrTy, CGF.SizeTy,
+     CGF.VoidPtrTy, CGF.SizeTy,
+     CGF.VoidPtrPtrTy, CGF.Int32Ty,
+     CGF.VoidPtrPtrTy, CGF.Int32Ty,
+     CGF.VoidPtrTy, CGF.Int32Ty,
+     CGF.Int8PtrPtrTy, CGF.Int32Ty,
      CGF.Int8PtrTy, CGF.Int32Ty};
   auto *RetFTy = CGF.getTypes().GetFunctionType(GlobalDecl(FD));
 
@@ -2525,6 +2537,8 @@ static llvm::Value *EmitJITStubCall(CodeGenFunction &CGF,
       llvm::Constant::getNullValue(CGF.SizeTy),
       llvm::Constant::getNullValue(CGF.VoidPtrTy),
       llvm::Constant::getNullValue(CGF.SizeTy),
+      llvm::Constant::getNullValue(CGF.VoidPtrPtrTy),
+      llvm::Constant::getNullValue(CGF.Int32Ty),
       llvm::Constant::getNullValue(CGF.VoidPtrPtrTy),
       llvm::Constant::getNullValue(CGF.Int32Ty),
       CGF.Builder.CreatePointerCast(AI.getPointer(), CGF.VoidPtrTy),
