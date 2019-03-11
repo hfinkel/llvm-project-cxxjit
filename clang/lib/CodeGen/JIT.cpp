@@ -217,6 +217,64 @@ void fatal() {
   report_fatal_error("Clang JIT failed!");
 }
 
+// This is a variant of ORC's LegacyLookupFnResolver with a cutomized
+// getResponsibilitySet behavior allowing us to claim responsibility for weak
+// symbols in the loaded modules that we don't otherwise have.
+// Note: We generally convert all IR level symbols to have strong linkage, but
+// that won't cover everything (and especially doesn't cover the DW.ref.
+// symbols created by the low-level EH logic on some platforms).
+template <typename LegacyLookupFn>
+class ClangLookupFnResolver final : public llvm::orc::SymbolResolver {
+public:
+  using ErrorReporter = std::function<void(Error)>;
+
+  ClangLookupFnResolver(llvm::orc::ExecutionSession &ES,
+                              LegacyLookupFn LegacyLookup,
+                              ErrorReporter ReportError)
+      : ES(ES), LegacyLookup(std::move(LegacyLookup)),
+        ReportError(std::move(ReportError)) {}
+
+  llvm::orc::SymbolNameSet
+  getResponsibilitySet(const llvm::orc::SymbolNameSet &Symbols) final {
+    llvm::orc::SymbolNameSet Result;
+
+    for (auto &S : Symbols) {
+      if (JITSymbol Sym = LegacyLookup(*S)) {
+        // If the symbol exists elsewhere, and we have only a weak version,
+        // then we're not responsible.
+        continue;
+      } else if (auto Err = Sym.takeError()) {
+        ReportError(std::move(Err));
+        return llvm::orc::SymbolNameSet();
+      } else {
+        Result.insert(S);
+      }
+    }
+
+    return Result;
+  }
+
+  llvm::orc::SymbolNameSet
+  lookup(std::shared_ptr<llvm::orc::AsynchronousSymbolQuery> Query,
+                         llvm::orc::SymbolNameSet Symbols) final {
+    return llvm::orc::lookupWithLegacyFn(ES, *Query, Symbols, LegacyLookup);
+  }
+
+private:
+  llvm::orc::ExecutionSession &ES;
+  LegacyLookupFn LegacyLookup;
+  ErrorReporter ReportError;
+};
+
+template <typename LegacyLookupFn>
+std::shared_ptr<ClangLookupFnResolver<LegacyLookupFn>>
+createClangLookupResolver(llvm::orc::ExecutionSession &ES,
+                          LegacyLookupFn LegacyLookup,
+                          std::function<void(Error)> ErrorReporter) {
+  return std::make_shared<ClangLookupFnResolver<LegacyLookupFn>>(
+      ES, std::move(LegacyLookup), std::move(ErrorReporter));
+}
+
 class ClangJIT {
 public:
   using ObjLayerT = llvm::orc::LegacyRTDyldObjectLinkingLayer;
@@ -224,7 +282,7 @@ public:
 
   ClangJIT(DenseMap<StringRef, const void *> &LocalSymAddrs)
       : LocalSymAddrs(LocalSymAddrs),
-        Resolver(createLegacyLookupResolver(
+        Resolver(createClangLookupResolver(
             ES,
             [this](const std::string &Name) {
               return findSymbol(Name);
