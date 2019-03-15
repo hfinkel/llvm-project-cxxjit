@@ -1015,6 +1015,8 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
     }
   }
 
+  Opts.DeviceJITBCFile = Args.getLastArgValue(OPT_fjit_device_ir_file_path);
+
   Opts.PreserveVec3Type = Args.hasArg(OPT_fpreserve_vec3_type);
   Opts.InstrumentFunctions = Args.hasArg(OPT_finstrument_functions);
   Opts.InstrumentFunctionsAfterInlining =

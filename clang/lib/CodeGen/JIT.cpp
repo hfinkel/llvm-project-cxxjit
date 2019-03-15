@@ -514,6 +514,15 @@ public:
 unsigned LastUnique = 0;
 std::unique_ptr<llvm::LLVMContext> LCtx;
 
+struct DevData {
+  const char *Triple;
+  const char *Arch;
+  const char *ASTBuffer;
+  size_t ASTBufferSize;
+  const void *CmdArgs;
+  size_t CmdArgsLen;
+};
+
 struct CompilerData {
   std::unique_ptr<CompilerInvocation>     Invocation;
   std::unique_ptr<llvm::opt::OptTable>    Opts;
@@ -553,7 +562,8 @@ struct CompilerData {
                const void *ASTBuffer, size_t ASTBufferSize,
                const void *IRBuffer, size_t IRBufferSize,
                const void **LocalPtrs, unsigned LocalPtrsCnt,
-               const void **LocalDbgPtrs, unsigned LocalDbgPtrsCnt) {
+               const void **LocalDbgPtrs, unsigned LocalDbgPtrsCnt,
+               const DevData *DeviceData, unsigned DevCnt) {
     StringRef CombinedArgv((const char *) CmdArgs, CmdArgsLen);
     SmallVector<StringRef, 32> Argv;
     CombinedArgv.split(Argv, '\0', /*MaxSplit*/ -1, false);
@@ -706,6 +716,12 @@ struct CompilerData {
     }
 
     CJ = llvm::make_unique<ClangJIT>(LocalSymAddrs);
+
+if (DevCnt)
+llvm::errs() << "Devices: " << DevCnt << "\n";
+for (unsigned i = 0; i < DevCnt; ++i) {
+  llvm::errs() << i << ": " << DeviceData[i].Triple << ": " << DeviceData[i].Arch << "\n";
+}
   }
 
   void restoreFuncDeclContext(FunctionDecl *FunD) {
@@ -1303,6 +1319,7 @@ void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
                   const void *IRBuffer, size_t IRBufferSize,
                   const void **LocalPtrs, unsigned LocalPtrsCnt,
                   const void **LocalDbgPtrs, unsigned LocalDbgPtrsCnt,
+                  const DevData *DeviceData, unsigned DevCnt,
                   const void *NTTPValues, unsigned NTTPValuesSize,
                   const char **TypeStrings, unsigned TypeStringsCnt,
                   const char *InstKey, unsigned Idx) {
@@ -1332,7 +1349,7 @@ void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
   if (TUCDI == TUCompilerData.end()) {
     CD = new CompilerData(CmdArgs, CmdArgsLen, ASTBuffer, ASTBufferSize,
                           IRBuffer, IRBufferSize, LocalPtrs, LocalPtrsCnt,
-                          LocalDbgPtrs, LocalDbgPtrsCnt);
+                          LocalDbgPtrs, LocalDbgPtrsCnt, DeviceData, DevCnt);
     TUCompilerData[ASTBuffer].reset(CD);
   } else {
     CD = TUCDI->second.get();

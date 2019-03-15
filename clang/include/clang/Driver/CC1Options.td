@@ -827,6 +827,9 @@ def fcuda_allow_variadic_functions : Flag<["-"], "fcuda-allow-variadic-functions
 def fno_cuda_host_device_constexpr : Flag<["-"], "fno-cuda-host-device-constexpr">,
   HelpText<"Don't treat unattributed constexpr functions as __host__ __device__.">;
 
+def fjit_device_ir_file_path : Separate<["-"], "fjit-device-ir-file-path">,
+  HelpText<"Path to the IR file produced by the frontend for the device for JIT.">;
+
 //===----------------------------------------------------------------------===//
 // OpenMP Options
 //===----------------------------------------------------------------------===//

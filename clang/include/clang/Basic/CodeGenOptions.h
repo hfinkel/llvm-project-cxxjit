@@ -281,6 +281,10 @@ public:
   /// When needed for JIT, the buffer into which to save the AST.
   mutable SmallString<128> ASTBufferForJIT;
 
+  /// The name of the file used to store IR created during device compilation
+  /// that is later used during host compilation.
+  std::string DeviceJITBCFile;
+
   /// A list of all -fno-builtin-* function names (e.g., memset).
   std::vector<std::string> NoBuiltinFuncs;
 

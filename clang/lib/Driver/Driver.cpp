@@ -4511,6 +4511,17 @@ std::string Driver::GetTemporaryDirectory(StringRef Prefix) const {
   return Path.str();
 }
 
+std::string Driver::GetDeviceJITBCFile(Compilation &C,
+                                       bool CreateNewName) const {
+  if (!DeviceJITBCFile.empty() || !CreateNewName)
+    return DeviceJITBCFile;
+
+  std::string TmpName = GetTemporaryPath("device-jit", "bc");
+  DeviceJITBCFile = C.addTempFile(C.getArgs().MakeArgString(TmpName));
+
+  return DeviceJITBCFile;
+}
+
 std::string Driver::GetClPchPath(Compilation &C, StringRef BaseName) const {
   SmallString<128> Output;
   if (Arg *FpArg = C.getArgs().getLastArg(options::OPT__SLASH_Fp)) {

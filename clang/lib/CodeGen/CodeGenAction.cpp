@@ -305,6 +305,15 @@ namespace clang {
       if (!LangOpts.isJITEnabled())
         return;
 
+      // Now that we have access to both objects, move the AST buffer from the
+      // ASTContext to CodeGenOpts (from where it will be accessed later).
+      C.ASTBufferForJIT.swap(CodeGenOpts.ASTBufferForJIT);
+
+      // If we're compiling for a CUDA device, skip the rest (there's no way to
+      // share locals between kernels anyway).
+      if (LangOpts.CUDAIsDevice)
+        return;
+
       SmallVector<llvm::CallSite, 10> JCalls;
       for (auto &F : getModule()->functions())
       for (auto &BB : F)
@@ -316,10 +325,6 @@ namespace clang {
 
       if (JCalls.empty())
         return;
-
-      // Now that we have access to both objects, move the AST buffer from the
-      // ASTContext to CodeGenOpts (from where it will be accessed later).
-      C.ASTBufferForJIT.swap(CodeGenOpts.ASTBufferForJIT);
 
       llvm::IRBuilder<> Builder(JCalls[0].getParent());
 

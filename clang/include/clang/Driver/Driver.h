@@ -245,6 +245,10 @@ private:
   /// stored in it, and will clean them up when torn down.
   mutable llvm::StringMap<std::unique_ptr<ToolChain>> ToolChains;
 
+  /// The name of the file used to store IR created during device compilation
+  /// that is later used during host compilation.
+  mutable std::string DeviceJITBCFile;
+
 private:
   /// TranslateInputArgs - Create a new derived argument list from the input
   /// arguments, after applying the standard argument translations.
@@ -526,6 +530,12 @@ public:
 
   /// Get the specific kind of LTO being performed.
   LTOKind getLTOMode() const { return LTOMode; }
+
+  /// Return the name of the file used to store IR used for JIT extensions that
+  /// is generated during device compilation and used during later host
+  /// compilation.
+  std::string GetDeviceJITBCFile(Compilation &C,
+                                 bool CreateNewName = false) const ;
 
 private:
 
