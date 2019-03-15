@@ -570,8 +570,42 @@ void EmitAssemblyHelper::FinalizeForJIT() {
       llvm::ConstantInt::get(SzTy, ASTBuffer.size());
 
     auto *BytePtrTy = llvm::Type::getInt8PtrTy(DevMod->getContext());
+
+    auto *FileDataTy = llvm::StructType::get(BytePtrTy, BytePtrTy, SzTy);
+    SmallVector<llvm::Constant *, 1> FileData;
+    for (auto &F : CodeGenOpts.LinkBitcodeFiles) {
+      auto DevBCFile = llvm::MemoryBuffer::getFile(F.Filename);
+      if (!DevBCFile)
+        continue;
+
+      auto *FNGV = NewStrGV(F.Filename, "__clang_jit_device_bc_filename");
+      auto *FDataGV = NewStrGV(DevBCFile.get()->getBuffer(),
+                               "__clang_jit_device_bc");
+      auto *FDataSz =
+        llvm::ConstantInt::get(SzTy, DevBCFile.get()->getBufferSize());
+      auto *FData =
+        llvm::ConstantStruct::get(FileDataTy,
+                                  llvm::ConstantExpr::getBitCast(FNGV,
+                                                                 BytePtrTy),
+                                  llvm::ConstantExpr::getBitCast(FDataGV,
+                                                                 BytePtrTy),
+                                  FDataSz);
+      FileData.push_back(FData);
+    }
+
+    auto *FileDataArrTy = llvm::ArrayType::get(FileDataTy, FileData.size());
+    auto *FileDataArr = llvm::ConstantArray::get(FileDataArrTy, FileData);
+    auto *FileDataGV =
+        new llvm::GlobalVariable(*DevMod, FileDataArrTy, true,
+                                 llvm::GlobalValue::PrivateLinkage, FileDataArr,
+                                 "__clang_jit_device_files");
+    FileDataGV->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+
+    auto *FileDataCnt = llvm::ConstantInt::get(SzTy, FileData.size());
+
     auto *STy = llvm::StructType::get(BytePtrTy,
                                       BytePtrTy,
+                                      BytePtrTy, SzTy,
                                       BytePtrTy, SzTy,
                                       BytePtrTy, SzTy);
 
@@ -590,7 +624,10 @@ void EmitAssemblyHelper::FinalizeForJIT() {
                                 ASTDataLen,
                                 llvm::ConstantExpr::getBitCast(CmdArgsGV,
                                                                BytePtrTy),
-                                CmdLineStrLen);
+                                CmdLineStrLen,
+                                llvm::ConstantExpr::getBitCast(FileDataGV,
+                                                               BytePtrTy),
+                                FileDataCnt);
 
     auto *ASTy = llvm::ArrayType::get(STy, 1);
     auto *ASData = llvm::ConstantArray::get(ASTy, SData);

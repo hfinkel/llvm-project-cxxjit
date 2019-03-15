@@ -514,6 +514,12 @@ public:
 unsigned LastUnique = 0;
 std::unique_ptr<llvm::LLVMContext> LCtx;
 
+struct DevFileData {
+  const char *Filename;
+  const void *Data;
+  size_t DataSize;
+};
+
 struct DevData {
   const char *Triple;
   const char *Arch;
@@ -521,6 +527,8 @@ struct DevData {
   size_t ASTBufferSize;
   const void *CmdArgs;
   size_t CmdArgsLen;
+  DevFileData *FileData;
+  size_t FileDataCnt;
 };
 
 struct CompilerData {
@@ -721,6 +729,8 @@ if (DevCnt)
 llvm::errs() << "Devices: " << DevCnt << "\n";
 for (unsigned i = 0; i < DevCnt; ++i) {
   llvm::errs() << i << ": " << DeviceData[i].Triple << ": " << DeviceData[i].Arch << "\n";
+  for (unsigned j = 0; j < DeviceData[i].FileDataCnt; ++j)
+    llvm::errs() << "  file: " << DeviceData[i].FileData[j].Filename << "\n";
 }
   }
 
