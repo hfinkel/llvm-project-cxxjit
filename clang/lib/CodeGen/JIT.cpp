@@ -53,7 +53,6 @@
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/CodeGen/MachineOptimizationRemarkEmitter.h"
@@ -1447,18 +1446,21 @@ struct CompilerData {
       GV.setName(UniqueName);
     }
 
-    // We need to do the same for local ctor/dtor functions.
-    llvm::StringSet<> CtorDtorNames;
-    for (auto Ctor : llvm::orc::getConstructors(*ToRunMod))
-      if (Ctor.Func)
-        CtorDtorNames.insert(Ctor.Func->getName());
-    for (auto Dtor : llvm::orc::getDestructors(*ToRunMod))
-      if (Dtor.Func)
-        CtorDtorNames.insert(Dtor.Func->getName());
+    // Clang will generate local init/deinit functions for variable
+    // initialization, CUDA registration, etc. and these can't be shared with
+    // the base part of the module (as they specifically initialize variables,
+    // etc. that we just generated).
 
     for (auto &F : ToRunMod->functions()) {
-      if (!CtorDtorNames.count(F.getName()) &&
-          !F.getName().startswith("__cuda_"))
+      // FIXME: This likely covers the set of TU-local init/deinit functions
+      // that can't be shared with the base module. There should be a better
+      // way to do this (e.g., we could record all functions that
+      // CreateGlobalInitOrDestructFunction creates? - ___cuda_ would still be
+      // a special case).
+      if (!F.getName().startswith("__cuda_") &&
+          !F.getName().startswith("_GLOBAL_") &&
+          !F.getName().startswith("__GLOBAL_") &&
+          !F.getName().startswith("__cxx_"))
         continue;
 
       if (!RunningMod->getFunction(F.getName()))
