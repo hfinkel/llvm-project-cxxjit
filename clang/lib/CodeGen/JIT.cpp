@@ -417,6 +417,7 @@ class BackendConsumer : public ASTConsumer {
   std::string InFile;
   const PreprocessorOptions &PPOpts;
   LLVMContext &C;
+  std::vector<std::unique_ptr<llvm::Module>> &DevLinkMods;
   CoverageSourceInfo *CoverageInfo;
 
   std::unique_ptr<CodeGenerator> Gen;
@@ -435,11 +436,13 @@ public:
                   const LangOptions &LangOpts, bool TimePasses,
                   const std::string &InFile,
                   std::unique_ptr<raw_pwrite_stream> OS, LLVMContext &C,
+                  std::vector<std::unique_ptr<llvm::Module>> &DevLinkMods,
                   CoverageSourceInfo *CoverageInfo = nullptr)
       : Diags(Diags), Action(Action), HeaderSearchOpts(HeaderSearchOpts),
         CodeGenOpts(CodeGenOpts), TargetOpts(TargetOpts), LangOpts(LangOpts),
         AsmOutStream(std::move(OS)), Context(nullptr), InFile(InFile),
-        PPOpts(PPOpts), C(C), CoverageInfo(CoverageInfo) { }
+        PPOpts(PPOpts), C(C), DevLinkMods(DevLinkMods),
+        CoverageInfo(CoverageInfo) { }
 
   llvm::Module *getModule() const { return Gen->GetModule(); }
   std::unique_ptr<llvm::Module> takeModule() {
@@ -477,6 +480,26 @@ public:
     // Silently ignore if we weren't initialized for some reason.
     if (!getModule())
       return;
+
+    for (auto &BM : DevLinkMods) {
+      std::unique_ptr<llvm::Module> M = llvm::CloneModule(*BM);
+      M->setDataLayout(getModule()->getDataLayoutStr());
+      M->setTargetTriple(getModule()->getTargetTriple());
+
+      for (Function &F : *M)
+        Gen->CGM().AddDefaultFnAttrs(F);
+
+      bool Err = Linker::linkModules(
+              *getModule(), std::move(M), llvm::Linker::Flags::LinkOnlyNeeded,
+              [](llvm::Module &M, const llvm::StringSet<> &GVS) {
+                internalizeModule(M, [&GVS](const llvm::GlobalValue &GV) {
+                  return !GV.hasName() || (GVS.count(GV.getName()) == 0);
+                });
+              });
+
+      if (Err)
+        fatal();
+    }
 
     EmitBackendOutput(Diags, HeaderSearchOpts, CodeGenOpts, TargetOpts,
                       LangOpts, C.getTargetInfo().getDataLayout(),
@@ -612,6 +635,7 @@ struct CompilerData {
 
   std::unique_ptr<CompilerData>           DevCD;
   SmallString<1>                          DevAsm;
+  std::vector<std::unique_ptr<llvm::Module>> DevLinkMods;
 
   CompilerData(const void *CmdArgs, unsigned CmdArgsLen,
                const void *ASTBuffer, size_t ASTBufferSize,
@@ -661,16 +685,6 @@ struct CompilerData {
     StringRef ASTBufferSR((const char *) ASTBuffer, ASTBufferSize);
     InMemoryFileSystem->addFile(Filename, 0,
                                 llvm::MemoryBuffer::getMemBufferCopy(ASTBufferSR));
-
-    if (IsForDev)
-      for (unsigned i = 0; i < DeviceData[ForDev].FileDataCnt; ++i) {
-        StringRef FileBufferSR(
-                    (const char *) DeviceData[ForDev].FileData[i].Data,
-                    DeviceData[ForDev].FileData[i].DataSize);
-        InMemoryFileSystem->addFile(
-          DeviceData[ForDev].FileData[i].Filename, 0,
-          llvm::MemoryBuffer::getMemBufferCopy(FileBufferSR));
-      }
 
     PCHContainerRdr.reset(new RawPCHContainerReader);
     SourceMgr = new SourceManager(*Diagnostics, *FileMgr,
@@ -749,7 +763,7 @@ struct CompilerData {
         BA, *Diagnostics, Invocation->getHeaderSearchOpts(),
         Invocation->getPreprocessorOpts(), Invocation->getCodeGenOpts(),
         Invocation->getTargetOpts(), *Invocation->getLangOpts(), false, Filename,
-        std::move(OS), *LCtx));
+        std::move(OS), *LCtx, DevLinkMods));
 
     // Create a semantic analysis object and tell the AST reader about it.
     S.reset(new Sema(*PP, *Ctx, *Consumer));
@@ -797,6 +811,17 @@ struct CompilerData {
 
     if (!IsForDev)
       CJ = llvm::make_unique<ClangJIT>(LocalSymAddrs);
+
+    if (IsForDev)
+      for (unsigned i = 0; i < DeviceData[ForDev].FileDataCnt; ++i) {
+        StringRef FileBufferSR(
+                    (const char *) DeviceData[ForDev].FileData[i].Data,
+                    DeviceData[ForDev].FileData[i].DataSize);
+
+        llvm::SMDiagnostic Err;
+        DevLinkMods.push_back(parseIR(
+          *llvm::MemoryBuffer::getMemBufferCopy(FileBufferSR), Err, *LCtx));
+      }
 
     if (!IsForDev && Invocation->getLangOpts()->CUDA) {
       typedef int (*cudaGetDevicePtr)(int *);
