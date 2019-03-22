@@ -1379,6 +1379,7 @@ struct CompilerData {
 
       Consumer->getCodeGenerator()->CGM().getCodeGenOpts().GPUBinForJIT =
         FatBin;
+      DevCD->DevAsm.clear();
     }
 
     Consumer->HandleTranslationUnit(*Ctx);
