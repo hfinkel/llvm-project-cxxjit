@@ -57,9 +57,11 @@ CtorDtorIterator::Element CtorDtorIterator::operator*() const {
       Func = F;
       break;
     } else if (ConstantExpr *CE = dyn_cast_or_null<ConstantExpr>(FuncC)) {
-      if (CE->isCast())
+      if (CE->isCast()) {
         FuncC = dyn_cast_or_null<ConstantExpr>(CE->getOperand(0));
-      else
+        if (!FuncC)
+          FuncC = dyn_cast_or_null<Function>(CE->getOperand(0));
+      } else
         break;
     } else {
       // This isn't anything we recognize. Bail out with Func left set to null.

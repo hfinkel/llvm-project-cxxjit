@@ -28,8 +28,10 @@ set(LLVM_LINK_COMPONENTS
   Vectorize
   ExecutionEngine
   Interpreter
-  native
+  ${LLVM_TARGETS_TO_BUILD}
   )
+# Note that above we depend on ${LLVM_TARGETS_TO_BUILD} instead of just native
+# because we might need NVPTX, etc.
 
 # In a standard Clang+LLVM build, we need to generate intrinsics before
 # building codegen. In a standalone build, LLVM is already built and we don't

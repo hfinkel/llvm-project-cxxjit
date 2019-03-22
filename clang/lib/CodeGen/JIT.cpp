@@ -53,12 +53,14 @@
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/CodeGen/MachineOptimizationRemarkEmitter.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/ExecutionEngine/JITSymbol.h"
 #include "llvm/ExecutionEngine/Orc/CompileUtils.h"
+#include "llvm/ExecutionEngine/Orc/ExecutionUtils.h"
 #include "llvm/ExecutionEngine/Orc/IRCompileLayer.h"
 #include "llvm/ExecutionEngine/Orc/LambdaResolver.h"
 #include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
@@ -294,16 +296,49 @@ public:
                       return ObjLayerT::Resources{
                           std::make_shared<SectionMemoryManager>(), Resolver};
                     }),
-        CompileLayer(ObjectLayer, llvm::orc::SimpleCompiler(*TM)) {
+        CompileLayer(ObjectLayer, llvm::orc::SimpleCompiler(*TM)),
+        CXXRuntimeOverrides(
+            [this](const std::string &S) { return mangle(S); }) {
     llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
+  }
+
+  ~ClangJIT() {
+    // Run any destructors registered with __cxa_atexit.
+    CXXRuntimeOverrides.runDestructors();
+
+    // Run any IR destructors.
+    for (auto &DtorRunner : IRStaticDestructorRunners)
+      cantFail(DtorRunner.runViaLayer(CompileLayer));
   }
 
   llvm::TargetMachine &getTargetMachine() { return *TM; }
 
   llvm::orc::VModuleKey addModule(std::unique_ptr<llvm::Module> M) {
+    // Record the static constructors and destructors. We have to do this before
+    // we hand over ownership of the module to the JIT.
+    std::vector<std::string> CtorNames, DtorNames;
+    for (auto Ctor : llvm::orc::getConstructors(*M))
+      if (Ctor.Func && !Ctor.Func->hasAvailableExternallyLinkage())
+        CtorNames.push_back(mangle(Ctor.Func->getName()));
+    for (auto Dtor : llvm::orc::getDestructors(*M))
+      if (Dtor.Func && !Dtor.Func->hasAvailableExternallyLinkage())
+        DtorNames.push_back(mangle(Dtor.Func->getName()));
+
     auto K = ES.allocateVModule();
     cantFail(CompileLayer.addModule(K, std::move(M)));
     ModuleKeys.push_back(K);
+
+    // Run the static constructors, and save the static destructor runner for
+    // execution when the JIT is torn down.
+    llvm::orc::LegacyCtorDtorRunner<CompileLayerT>
+      CtorRunner(std::move(CtorNames), K);
+    if (auto Err = CtorRunner.runViaLayer(CompileLayer)) {
+      llvm::errs() << Err << "\n";
+      fatal();
+    }
+
+    IRStaticDestructorRunners.emplace_back(std::move(DtorNames), K);
+
     return K;
   }
 
@@ -331,6 +366,9 @@ private:
       if (auto Sym = CompileLayer.findSymbolIn(H, Name,
                                                /*ExportedSymbolsOnly*/ false))
         return Sym;
+
+    if (auto Sym = CXXRuntimeOverrides.searchOverrides(Name))
+      return Sym;
 
     auto LSAI = LocalSymAddrs.find(Name);
     if (LSAI != LocalSymAddrs.end())
@@ -362,6 +400,10 @@ private:
   ObjLayerT ObjectLayer;
   CompileLayerT CompileLayer;
   std::vector<llvm::orc::VModuleKey> ModuleKeys;
+
+  llvm::orc::LegacyLocalCXXRuntimeOverrides CXXRuntimeOverrides;
+  std::vector<llvm::orc::LegacyCtorDtorRunner<CompileLayerT>>
+    IRStaticDestructorRunners;
 };
 
 class BackendConsumer : public ASTConsumer {
@@ -439,7 +481,8 @@ public:
 
     EmitBackendOutput(Diags, HeaderSearchOpts, CodeGenOpts, TargetOpts,
                       LangOpts, C.getTargetInfo().getDataLayout(),
-                      getModule(), Action, std::move(AsmOutStream));
+                      getModule(), Action,
+                      llvm::make_unique<llvm::buffer_ostream>(*AsmOutStream));
   }
 
   void HandleTagDeclDefinition(TagDecl *D) override {
@@ -514,6 +557,8 @@ public:
 unsigned LastUnique = 0;
 std::unique_ptr<llvm::LLVMContext> LCtx;
 
+bool InitializedDevTarget = false;
+
 struct DevFileData {
   const char *Filename;
   const void *Data;
@@ -566,12 +611,18 @@ struct CompilerData {
   // (instantiations with from-string types).
   DenseMap<unsigned, FunctionDecl *>      CSFuncMap;
 
+  std::unique_ptr<CompilerData>           DevCD;
+  SmallString<1>                          DevAsm;
+
   CompilerData(const void *CmdArgs, unsigned CmdArgsLen,
                const void *ASTBuffer, size_t ASTBufferSize,
                const void *IRBuffer, size_t IRBufferSize,
                const void **LocalPtrs, unsigned LocalPtrsCnt,
                const void **LocalDbgPtrs, unsigned LocalDbgPtrsCnt,
-               const DevData *DeviceData, unsigned DevCnt) {
+               const DevData *DeviceData, unsigned DevCnt,
+               int ForDev = -1) {
+    bool IsForDev = (ForDev != -1);
+
     StringRef CombinedArgv((const char *) CmdArgs, CmdArgsLen);
     SmallVector<StringRef, 32> Argv;
     CombinedArgv.split(Argv, '\0', /*MaxSplit*/ -1, false);
@@ -611,6 +662,16 @@ struct CompilerData {
     StringRef ASTBufferSR((const char *) ASTBuffer, ASTBufferSize);
     InMemoryFileSystem->addFile(Filename, 0,
                                 llvm::MemoryBuffer::getMemBufferCopy(ASTBufferSR));
+
+    if (IsForDev)
+      for (unsigned i = 0; i < DeviceData[ForDev].FileDataCnt; ++i) {
+        StringRef FileBufferSR(
+                    (const char *) DeviceData[ForDev].FileData[i].Data,
+                    DeviceData[ForDev].FileData[i].DataSize);
+        InMemoryFileSystem->addFile(
+          DeviceData[ForDev].FileData[i].Filename, 0,
+          llvm::MemoryBuffer::getMemBufferCopy(FileBufferSR));
+      }
 
     PCHContainerRdr.reset(new RawPCHContainerReader);
     SourceMgr = new SourceManager(*Diagnostics, *FileMgr,
@@ -679,6 +740,12 @@ struct CompilerData {
 
     BackendAction BA = Backend_EmitNothing;
     std::unique_ptr<raw_pwrite_stream> OS(new llvm::raw_null_ostream);
+
+    if (ForDev) {
+       BA = Backend_EmitAssembly;
+       OS.reset(new raw_svector_ostream(DevAsm));
+    }
+
     Consumer.reset(new BackendConsumer(
         BA, *Diagnostics, Invocation->getHeaderSearchOpts(),
         Invocation->getPreprocessorOpts(), Invocation->getCodeGenOpts(),
@@ -696,18 +763,24 @@ struct CompilerData {
     JFIMapDeclVisitor(FuncMap).TraverseAST(*Ctx);
     JFICSMapDeclVisitor(CSFuncMap).TraverseAST(*Ctx);
 
-    llvm::SMDiagnostic Err;
-    StringRef IRBufferSR((const char *) IRBuffer, IRBufferSize);
-    RunningMod = parseIR(
-      *llvm::MemoryBuffer::getMemBufferCopy(IRBufferSR), Err, *LCtx);
+    if (IRBufferSize) {
+      llvm::SMDiagnostic Err;
+      StringRef IRBufferSR((const char *) IRBuffer, IRBufferSize);
+      RunningMod = parseIR(
+        *llvm::MemoryBuffer::getMemBufferCopy(IRBufferSR), Err, *LCtx);
 
-    for (auto &F : RunningMod->functions())
-      if (!F.isDeclaration())
-        F.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
+      for (auto &F : RunningMod->functions())
+        if (!F.isDeclaration())
+          F.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
 
-    for (auto &GV : RunningMod->global_values())
-      if (!GV.isDeclaration())
-        GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
+      for (auto &GV : RunningMod->global_values())
+        if (!GV.isDeclaration()) {
+          if (GV.hasAppendingLinkage())
+            cast<GlobalVariable>(GV).setInitializer(nullptr);
+          else
+            GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
+        }
+    }
 
     Consumer->Initialize(*Ctx);
 
@@ -723,15 +796,96 @@ struct CompilerData {
       LocalSymAddrs[Name] = Ptr;
     }
 
-    CJ = llvm::make_unique<ClangJIT>(LocalSymAddrs);
+    if (!IsForDev)
+      CJ = llvm::make_unique<ClangJIT>(LocalSymAddrs);
 
-if (DevCnt)
-llvm::errs() << "Devices: " << DevCnt << "\n";
-for (unsigned i = 0; i < DevCnt; ++i) {
-  llvm::errs() << i << ": " << DeviceData[i].Triple << ": " << DeviceData[i].Arch << "\n";
-  for (unsigned j = 0; j < DeviceData[i].FileDataCnt; ++j)
-    llvm::errs() << "  file: " << DeviceData[i].FileData[j].Filename << "\n";
-}
+    if (!IsForDev && Invocation->getLangOpts()->CUDA) {
+      typedef int (*cudaGetDevicePtr)(int *);
+      auto cudaGetDevice =
+        (cudaGetDevicePtr) RTDyldMemoryManager::getSymbolAddressInProcess(
+                                                     "cudaGetDevice");
+      if (!cudaGetDevice) {
+        llvm::errs() << "Could not find CUDA API functions; "
+                        "did you forget to link with -lcudart?\n";
+        fatal();
+      }
+
+      typedef int (*cudaGetDeviceCountPtr)(int *);
+      auto cudaGetDeviceCount =
+        (cudaGetDeviceCountPtr) RTDyldMemoryManager::getSymbolAddressInProcess(
+                                                     "cudaGetDeviceCount");
+
+      int SysDevCnt;
+      if (cudaGetDeviceCount(&SysDevCnt)) {
+        llvm::errs() << "Failed to get CUDA device count!\n";
+        fatal();
+      }
+
+      typedef int (*cudaDeviceGetAttributePtr)(int *, int, int);
+      auto cudaDeviceGetAttribute =
+        (cudaDeviceGetAttributePtr) RTDyldMemoryManager::getSymbolAddressInProcess(
+                                      "cudaDeviceGetAttribute");
+
+      if (SysDevCnt) {
+        int CDev;
+        if (cudaGetDevice(&CDev))
+          fatal();
+
+        int CLMajor, CLMinor;
+        if (cudaDeviceGetAttribute(
+              &CLMajor, /*cudaDevAttrComputeCapabilityMajor*/ 75, CDev))
+          fatal();
+        if (cudaDeviceGetAttribute(
+              &CLMinor, /*cudaDevAttrComputeCapabilityMinor*/ 76, CDev))
+          fatal();
+
+        SmallString<6> EffArch;
+        raw_svector_ostream(EffArch) << "sm_" << CLMajor << CLMinor;
+
+        SmallVector<StringRef, 2> DevArchs;
+        for (unsigned i = 0; i < DevCnt; ++i) {
+          if (!Triple(DeviceData[i].Triple).isNVPTX())
+            continue;
+          if (!StringRef(DeviceData[i].Arch).startswith("sm_"))
+            continue;
+          DevArchs.push_back(DeviceData[i].Arch);
+        }
+
+        std::sort(DevArchs.begin(), DevArchs.end());
+        auto ArchI =
+          std::upper_bound(DevArchs.begin(), DevArchs.end(), EffArch);
+        if (ArchI == DevArchs.begin()) {
+          llvm::errs() << "No JIT device configuration supports " <<
+                          EffArch << "\n";
+          fatal();
+        }
+
+        auto BestDevArch = *--ArchI;
+        int BestDevIdx = 0;
+        for (; BestDevIdx < (int) DevCnt; ++BestDevIdx) {
+          if (!Triple(DeviceData[BestDevIdx].Triple).isNVPTX())
+            continue;
+          if (DeviceData[BestDevIdx].Arch == BestDevArch)
+            break;
+        }
+
+        assert(BestDevIdx != (int) DevCnt && "Didn't find the chosen device data?");
+
+        if (!InitializedDevTarget) {
+          LLVMInitializeNVPTXTargetInfo();
+          LLVMInitializeNVPTXTarget();
+          LLVMInitializeNVPTXTargetMC();
+          LLVMInitializeNVPTXAsmPrinter();
+
+          InitializedDevTarget = true;
+        }
+
+        DevCD.reset(new CompilerData(
+            DeviceData[BestDevIdx].CmdArgs, DeviceData[BestDevIdx].CmdArgsLen,
+            DeviceData[BestDevIdx].ASTBuffer, DeviceData[BestDevIdx].ASTBufferSize,
+            nullptr, 0, nullptr, 0, nullptr, 0, DeviceData, DevCnt, BestDevIdx));
+      }
+    }
   }
 
   void restoreFuncDeclContext(FunctionDecl *FunD) {
@@ -766,8 +920,8 @@ for (unsigned i = 0; i < DevCnt; ++i) {
     }
   }
 
-  void *resolveFunction(const void *NTTPValues, const char **TypeStrings,
-                        unsigned Idx) {
+  std::string instantiateTemplate(const void *NTTPValues, const char **TypeStrings,
+                                  unsigned Idx) {
     FunctionDecl *FD = FuncMap[Idx];
     if (!FD)
       fatal();
@@ -854,8 +1008,8 @@ for (unsigned i = 0; i < DevCnt; ++i) {
 
           Parser P(*PP, *S, /*SkipFunctionBodies*/true, /*JITTypes*/true);
 
-	// Reset this to nullptr so that when we call
-	// Parser::Initialize it has the clean slate it expects.
+          // Reset this to nullptr so that when we call
+          // Parser::Initialize it has the clean slate it expects.
           S->CurContext = nullptr;
 
           P.Initialize();
@@ -1035,11 +1189,10 @@ for (unsigned i = 0; i < DevCnt; ++i) {
     if (Diagnostics->hasErrorOccurred())
       fatal();
 
-    // Now we know the name of the symbol, check to see if we already have it.
-    if (auto SpecSymbol = CJ->findSymbol(SMName))
-      if (SpecSymbol.getAddress())
-        return (void *) llvm::cantFail(SpecSymbol.getAddress());
+    return SMName;
+  }
 
+  void emitAllNeeded(bool CheckExisting = true) {
     // There might have been functions/variables with local linkage that were
     // only used by JIT functions. These would not have been used during
     // initial code generation for this translation unit, and so not emitted.
@@ -1059,7 +1212,7 @@ for (unsigned i = 0; i < DevCnt; ++i) {
 
       Consumer->getCodeGenerator()->CGM().EmitAllDeferred([&](GlobalDecl GD) {
         auto MName = Consumer->getCodeGenerator()->CGM().getMangledName(GD);
-        if (!CJ->findSymbol(MName)) {
+        if (!CheckExisting || !CJ->findSymbol(MName)) {
           Changed = true;
           return false;
         }
@@ -1079,7 +1232,7 @@ for (unsigned i = 0; i < DevCnt; ++i) {
             DeclNames.insert(GV.getName());
 
       for (auto &DeclName : DeclNames) {
-        if (CJ->findSymbol(DeclName))
+        if (CheckExisting && CJ->findSymbol(DeclName))
           continue;
 
         Decl *D = const_cast<Decl *>(Consumer->getCodeGenerator()->
@@ -1092,6 +1245,24 @@ for (unsigned i = 0; i < DevCnt; ++i) {
         Changed = true;
       }
     } while (Changed);
+  }
+
+  void *resolveFunction(const void *NTTPValues, const char **TypeStrings,
+                        unsigned Idx) {
+    std::string SMName = instantiateTemplate(NTTPValues, TypeStrings, Idx);
+
+    // Now we know the name of the symbol, check to see if we already have it.
+    if (auto SpecSymbol = CJ->findSymbol(SMName))
+      if (SpecSymbol.getAddress())
+        return (void *) llvm::cantFail(SpecSymbol.getAddress());
+
+    if (DevCD)
+      DevCD->instantiateTemplate(NTTPValues, TypeStrings, Idx);
+
+    emitAllNeeded();
+
+    if (DevCD)
+      DevCD->emitAllNeeded(false);
 
     // Before anything gets optimized, mark the top-level symbol we're
     // generating so that it doesn't get eliminated by the optimizer.
@@ -1104,6 +1275,112 @@ for (unsigned i = 0; i < DevCnt; ++i) {
     TopGV->setComdat(nullptr);
 
     // Finalize the module, generate module-level metadata, etc.
+
+    if (DevCD) {
+      DevCD->Consumer->HandleTranslationUnit(*DevCD->Ctx);
+
+      // We have now created the PTX output, but what we really need as a
+      // fatbin that the CUDA runtime will recognize.
+
+      // The outer header of the fat binary is documented in the CUDA
+      // fatbinary.h header. As mentioned there, the overall size must be a
+      // multiple of eight, and so we must make sure that the PTX is.
+      while (DevCD->DevAsm.size() % 8)
+        DevCD->DevAsm += ' ';
+
+      // NVIDIA, unfortunatly, does not provide full documentation on their
+      // fatbin format. There is some information on the outer header block in
+      // the CUDA fatbinary.h header. Also, it is possible to figure out more
+      // about the format by creating fatbins using the provided utilities
+      // and then observing what cuobjdump reports about the resulting files.
+      // There are some other online references which shed light on the format,
+      // including https://reviews.llvm.org/D8397 and FatBinaryContext.{cpp,h}
+      // from the GPU Ocelot project (https://github.com/gtcasl/gpuocelot).
+
+      SmallString<128> FatBin;
+      llvm::raw_svector_ostream FBOS(FatBin);
+
+      struct FatBinHeader {
+        uint32_t Magic;      // 0x00
+        uint16_t Version;    // 0x04
+        uint16_t HeaderSize; // 0x06
+        uint32_t DataSize;   // 0x08
+        uint32_t unknown0c;  // 0x0c
+      public:
+        FatBinHeader(uint32_t DataSize)
+            : Magic(0xba55ed50), Version(1),
+              HeaderSize(sizeof(*this)), DataSize(DataSize), unknown0c(0) {}
+      };
+
+      enum FatBinFlags {
+        AddressSize64 = 0x01,
+        HasDebugInfo = 0x02,
+        ProducerCuda = 0x04,
+        HostLinux = 0x10,
+        HostMac = 0x20,
+        HostWindows = 0x40
+      };
+
+      struct FatBinFileHeader {
+        uint16_t Kind;             // 0x00
+        uint16_t unknown02;        // 0x02
+        uint32_t HeaderSize;       // 0x04
+        uint32_t DataSize;         // 0x08
+        uint32_t unknown0c;        // 0x0c
+        uint32_t CompressedSize;   // 0x10
+        uint32_t SubHeaderSize;    // 0x14
+        uint16_t VersionMinor;     // 0x18
+        uint16_t VersionMajor;     // 0x1a
+        uint32_t CudaArch;         // 0x1c
+        uint32_t unknown20;        // 0x20
+        uint32_t unknown24;        // 0x24
+        uint32_t Flags;            // 0x28
+        uint32_t unknown2c;        // 0x2c
+        uint32_t unknown30;        // 0x30
+        uint32_t unknown34;        // 0x34
+        uint32_t UncompressedSize; // 0x38
+        uint32_t unknown3c;        // 0x3c
+        uint32_t unknown40;        // 0x40
+        uint32_t unknown44;        // 0x44
+        FatBinFileHeader(uint32_t DataSize, uint32_t CudaArch, uint32_t Flags)
+            : Kind(1 /*PTX*/), unknown02(0x0101), HeaderSize(sizeof(*this)),
+              DataSize(DataSize), unknown0c(0), CompressedSize(0),
+              SubHeaderSize(HeaderSize - 8), VersionMinor(2), VersionMajor(4),
+              CudaArch(CudaArch), unknown20(0), unknown24(0), Flags(Flags), unknown2c(0),
+              unknown30(0), unknown34(0), UncompressedSize(0), unknown3c(0),
+              unknown40(0), unknown44(0) {}
+      };
+
+      uint32_t CudaArch;
+      StringRef(DevCD->Invocation->getTargetOpts().CPU)
+        .drop_front(3 /*sm_*/).getAsInteger(10, CudaArch);
+
+      uint32_t Flags = ProducerCuda;
+      if (DevCD->Invocation->getCodeGenOpts().getDebugInfo() >=
+            codegenoptions::LimitedDebugInfo)
+        Flags |= HasDebugInfo;
+
+      if (Triple(DevCD->Invocation->getTargetOpts().Triple).getArch() ==
+            Triple::nvptx64)
+        Flags |= AddressSize64;
+
+      if (Triple(Invocation->getTargetOpts().Triple).isOSWindows())
+        Flags |= HostWindows;
+      else if (Triple(Invocation->getTargetOpts().Triple).isOSDarwin())
+        Flags |= HostMac;
+      else
+        Flags |= HostLinux;
+
+      FatBinFileHeader FBFHdr(DevCD->DevAsm.size(), CudaArch, Flags);
+      FatBinHeader FBHdr(DevCD->DevAsm.size() + FBFHdr.HeaderSize);
+
+      FBOS.write((char *) &FBHdr, FBHdr.HeaderSize);
+      FBOS.write((char *) &FBFHdr, FBFHdr.HeaderSize);
+      FBOS << DevCD->DevAsm;
+
+      Consumer->getCodeGenerator()->CGM().getCodeGenOpts().GPUBinForJIT =
+        FatBin;
+    }
 
     Consumer->HandleTranslationUnit(*Ctx);
 
@@ -1129,7 +1406,7 @@ for (unsigned i = 0; i < DevCnt; ++i) {
     };
 
     for (auto &GV : Consumer->getModule()->global_values()) {
-      if (IsLocalUnnamedConst(GV))
+      if (IsLocalUnnamedConst(GV) || GV.hasAppendingLinkage())
         continue;
 
       GV.setLinkage(llvm::GlobalValue::ExternalLinkage);
@@ -1152,7 +1429,7 @@ for (unsigned i = 0; i < DevCnt; ++i) {
     // names chosen for string literals in this module.
 
     for (auto &GV : ToRunMod->global_values()) {
-      if (!IsLocalUnnamedConst(GV))
+      if (!IsLocalUnnamedConst(GV) && !GV.getName().startswith("__cuda_"))
         continue;
 
       if (!RunningMod->getNamedValue(GV.getName()))
@@ -1170,6 +1447,35 @@ for (unsigned i = 0; i < DevCnt; ++i) {
       GV.setName(UniqueName);
     }
 
+    // We need to do the same for local ctor/dtor functions.
+    llvm::StringSet<> CtorDtorNames;
+    for (auto Ctor : llvm::orc::getConstructors(*ToRunMod))
+      if (Ctor.Func)
+        CtorDtorNames.insert(Ctor.Func->getName());
+    for (auto Dtor : llvm::orc::getDestructors(*ToRunMod))
+      if (Dtor.Func)
+        CtorDtorNames.insert(Dtor.Func->getName());
+
+    for (auto &F : ToRunMod->functions()) {
+      if (!CtorDtorNames.count(F.getName()) &&
+          !F.getName().startswith("__cuda_"))
+        continue;
+
+      if (!RunningMod->getFunction(F.getName()))
+        continue;
+
+      llvm::SmallString<16> UniqueName(F.getName());
+      unsigned BaseSize = UniqueName.size();
+      do {
+        // Trim any suffix off and append the next number.
+        UniqueName.resize(BaseSize);
+        llvm::raw_svector_ostream S(UniqueName);
+        S << "." << ++LastUnique;
+      } while (RunningMod->getFunction(UniqueName));
+
+      F.setName(UniqueName);
+    }
+
     if (Linker::linkModules(*ToRunMod, llvm::CloneModule(*RunningMod),
                             Linker::Flags::OverrideFromSrc))
       fatal();
@@ -1185,8 +1491,12 @@ for (unsigned i = 0; i < DevCnt; ++i) {
         F.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
 
     for (auto &GV : Consumer->getModule()->global_values())
-      if (!GV.isDeclaration())
-        GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
+      if (!GV.isDeclaration()) {
+        if (GV.hasAppendingLinkage())
+          cast<GlobalVariable>(GV).setInitializer(nullptr);
+        else
+          GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
+      }
 
     if (Linker::linkModules(*RunningMod, Consumer->takeModule(),
                             Linker::Flags::None))

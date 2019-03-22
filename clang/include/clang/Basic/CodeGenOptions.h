@@ -285,6 +285,10 @@ public:
   /// that is later used during host compilation.
   std::string DeviceJITBCFile;
 
+  /// When needed for JIT, the buffer into which the GPU binary is stored for
+  /// host compilation.
+  mutable SmallString<128> GPUBinForJIT;
+
   /// A list of all -fno-builtin-* function names (e.g., memset).
   std::vector<std::string> NoBuiltinFuncs;
 
