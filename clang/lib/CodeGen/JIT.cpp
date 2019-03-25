@@ -102,6 +102,7 @@
 #include "llvm/Transforms/IPO/Internalize.h"
 
 #include <cassert>
+#include <cstdlib> // ::getenv
 #include <cstring>
 #include <memory>
 #include <string>
@@ -1401,6 +1402,21 @@ struct CompilerData {
       FBOS.write((char *) &FBHdr, FBHdr.HeaderSize);
       FBOS.write((char *) &FBFHdr, FBFHdr.HeaderSize);
       FBOS << DevCD->DevAsm;
+
+      if (::getenv("CLANG_JIT_CUDA_DUMP_DYNAMIC_FATBIN")) {
+        SmallString<128> Path;
+        auto EC = llvm::sys::fs::createUniqueFile(
+                      llvm::Twine("clang-jit-") +
+                      llvm::sys::path::filename(Invocation->getCodeGenOpts().
+                                                  MainFileName) +
+                      llvm::Twine("-%%%%.fatbin"), Path,
+                    llvm::sys::fs::owner_read | llvm::sys::fs::owner_write);
+        if (!EC) {
+          raw_fd_ostream DOS(Path, EC);
+          if (!EC)
+            DOS << FatBin;
+        }
+      }
 
       Consumer->getCodeGenerator()->CGM().getCodeGenOpts().GPUBinForJIT =
         FatBin;
