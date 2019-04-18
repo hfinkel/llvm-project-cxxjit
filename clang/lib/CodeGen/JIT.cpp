@@ -791,6 +791,10 @@ struct CompilerData {
         if (!GV.isDeclaration()) {
           if (GV.hasAppendingLinkage())
             cast<GlobalVariable>(GV).setInitializer(nullptr);
+          else if (isa<GlobalAlias>(GV))
+            // Aliases cannot have externally-available linkage, so give them
+            // private linkage.
+            GV.setLinkage(llvm::GlobalValue::PrivateLinkage);
           else
             GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
         }
@@ -1539,6 +1543,10 @@ struct CompilerData {
       if (!GV.isDeclaration()) {
         if (GV.hasAppendingLinkage())
           cast<GlobalVariable>(GV).setInitializer(nullptr);
+        else if (isa<GlobalAlias>(GV))
+          // Aliases cannot have externally-available linkage, so give them
+          // private linkage.
+          GV.setLinkage(llvm::GlobalValue::PrivateLinkage);
         else
           GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
       }
