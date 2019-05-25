@@ -707,10 +707,15 @@ void EmitAssemblyHelper::FinalizeForJIT() {
       cast<GlobalVariable>(TheModule->getNamedValue("__clang_jit_locals"));
     auto *LocalsInit = LocalsGV->getInitializer();
     unsigned NumLocals = LocalsInit->getType()->getArrayNumElements();
-    for (unsigned i = 0; i < NumLocals; i += 2)
+    for (unsigned i = 0; i < NumLocals; i += 2) {
+      llvm::Value *AI = LocalsInit->getAggregateElement(i);
+      if (auto *SGV =
+            dyn_cast<GlobalVariable>(AI->stripPointerCasts()))
+        AI = SGV->getInitializer();
+
       LocalNames.insert(
-        cast<ConstantDataSequential>(LocalsInit->getAggregateElement(i))->
-                                       getAsCString());
+        cast<ConstantDataSequential>(AI)->getAsCString());
+    }
 
     llvm::SetVector<GlobalValue *> DLocals;
     for (auto &DLocalName : DbgLocalNames) {
