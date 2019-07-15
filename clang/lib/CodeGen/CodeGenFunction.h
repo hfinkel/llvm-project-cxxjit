@@ -3596,6 +3596,8 @@ public:
   RValue EmitSimpleCallExpr(const CallExpr *E, ReturnValueSlot ReturnValue);
   CGCallee EmitCallee(const Expr *E);
 
+  llvm::Value *EmitJITStubCall(const FunctionDecl *FD);
+
   void checkTargetFeatures(const CallExpr *E, const FunctionDecl *TargetDecl);
 
   llvm::CallInst *EmitRuntimeCall(llvm::FunctionCallee callee,
