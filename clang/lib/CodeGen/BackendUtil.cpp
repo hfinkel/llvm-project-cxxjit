@@ -664,7 +664,8 @@ void EmitAssemblyHelper::FinalizeForJIT() {
   for (auto &BB : F)
   for (auto &I : BB)
     if (auto CS = CallSite(&I))
-      if (auto *Callee = CS.getCalledFunction())
+      if (auto *Callee =
+            dyn_cast<llvm::Function>(CS.getCalledValue()->stripPointerCasts()))
         if (Callee->getName() == "__clang_jit")
           JCalls.push_back(CS);
 
