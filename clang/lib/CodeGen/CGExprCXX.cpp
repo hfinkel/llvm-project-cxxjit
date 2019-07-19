@@ -374,7 +374,13 @@ RValue CodeGenFunction::EmitCXXMemberOrOperatorMemberCallExpr(
 
     if (getLangOpts().AppleKext && MD->isVirtual() && HasQualifier)
       Callee = BuildAppleKextVirtualCall(MD, Qualifier, Ty);
-    else if (!DevirtualizedMethod)
+    else if (getLangOpts().isJITEnabled() &&
+             isa<FunctionDecl>(MD) &&
+             cast<FunctionDecl>(MD)->
+               hasAttr<JITFuncInstantiationAttr>()) {
+      llvm::Value *calleePtr = EmitJITStubCall(cast<FunctionDecl>(MD));
+      Callee = CGCallee(CGCalleeInfo(), calleePtr);
+    } else if (!DevirtualizedMethod)
       Callee =
           CGCallee::forDirect(CGM.GetAddrOfFunction(MD, Ty), GlobalDecl(MD));
     else {
