@@ -54,6 +54,7 @@
 #include "llvm/Support/TargetParser.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/YAMLParser.h"
+#include <cstring>
 
 using namespace clang::driver;
 using namespace clang::driver::tools;
@@ -1230,8 +1231,14 @@ void tools::AddJITRunTimeLibs(const ToolChain &TC, const Driver &D,
           llvm::cl::TokenizeGNUCommandLine;
       CLTokenizer(Output, Saver, splitArgs, false);
 
-      for (auto &splitArg : splitArgs)
-        CmdArgs.push_back(Args.MakeArgString(splitArg));
+      for (auto &splitArg : splitArgs) {
+        const char *ldArg = splitArg;
+
+        if (!strncmp(ldArg, "-Wl,", 4))
+          ldArg += 4;
+
+        CmdArgs.push_back(Args.MakeArgString(ldArg));
+      }
     };
 
     AddFromLC("--ldflags");
