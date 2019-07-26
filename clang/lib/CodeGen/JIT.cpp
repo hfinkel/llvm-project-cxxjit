@@ -901,10 +901,18 @@ struct CompilerData {
         assert(BestDevIdx != (int) DevCnt && "Didn't find the chosen device data?");
 
         if (!InitializedDevTarget) {
-          LLVMInitializeNVPTXTargetInfo();
-          LLVMInitializeNVPTXTarget();
-          LLVMInitializeNVPTXTargetMC();
-          LLVMInitializeNVPTXAsmPrinter();
+          // In theory, we only need to initialize the NVPTX target here,
+          // however, there doesn't seem to be any good way to know if the
+          // NVPTX target is enabled.
+          //
+          // LLVMInitializeNVPTXTargetInfo();
+          // LLVMInitializeNVPTXTarget();
+          // LLVMInitializeNVPTXTargetMC();
+          // LLVMInitializeNVPTXAsmPrinter();
+
+          llvm::InitializeAllTargets();
+          llvm::InitializeAllTargetMCs();
+          llvm::InitializeAllAsmPrinters();
 
           InitializedDevTarget = true;
         }
