@@ -4862,6 +4862,17 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
       if (Inst.isInvalid())
         return true;
 
+      // If we're compiling a JIT template, and we have an array with a
+      // dependent size, decay it to a pointer (to allow providing a pointer,
+      // even in the case where the array size might be some other argument to
+      // this template, and in this case, the user will need to provide the
+      // size explicitly).
+      if (IsForJIT && NTTPType.getNonReferenceType()->isDependentSizedArrayType()) {
+        NTTPType = Context.getDecayedType(NTTPType.getNonReferenceType());
+        if (isa<DecayedType>(NTTPType))
+          NTTPType = cast<DecayedType>(NTTPType)->getDecayedType();
+      }
+
       TemplateArgumentList TemplateArgs(TemplateArgumentList::OnStack,
                                         Converted);
       NTTPType = SubstType(NTTPType,
