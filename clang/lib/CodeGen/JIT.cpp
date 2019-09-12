@@ -1167,14 +1167,96 @@ struct CompilerData {
                 NewLocalSymDecls[II.getName()] = TAFD;
                 Builder.push_back(TemplateArgument(TAFD, CanonFieldTy));
               } else {
-                auto *TAVD =
-                  VarDecl::Create(*Ctx, S->CurContext, Loc, Loc, &II,
-                                  STy, Ctx->getTrivialTypeSourceInfo(STy, Loc),
-                                  SC_Extern);
-                TAVD->setImplicit();
+                bool MadeArray = false;
+                auto *TPL = FTSI->getTemplate()->getTemplateParameters();
+                if (TPL->size() >= TAIdx) {
+                  auto *Param = TPL->getParam(TAIdx-1);
+                  if (NonTypeTemplateParmDecl *NTTP =
+                        dyn_cast<NonTypeTemplateParmDecl>(Param)) {
+                    QualType OrigTy = NTTP->getType()->getPointeeType();
+                    OrigTy = OrigTy.getDesugaredType(*Ctx);
 
-                NewLocalSymDecls[II.getName()] = TAVD;
-                Builder.push_back(TemplateArgument(TAVD, CanonFieldTy));
+                    bool IsArray = false;
+                    llvm::APInt Sz;
+                    QualType ElemTy;
+                    if (const auto *DAT = dyn_cast<DependentSizedArrayType>(OrigTy)) {
+                      Expr* SzExpr = DAT->getSizeExpr();
+
+                      // Get the already-processed arguments for potential substitution.
+                      auto *NewTAL = TemplateArgumentList::CreateCopy(*Ctx, Builder);
+                      MultiLevelTemplateArgumentList SubstArgs(*NewTAL);
+
+                      SmallVector<Expr *, 1> NewSzExprVec;
+                      if (!S->SubstExprs(SzExpr, /*IsCall*/ false, SubstArgs, NewSzExprVec)) {
+                        Expr::EvalResult NewSzResult;
+                        if (NewSzExprVec[0]->EvaluateAsInt(NewSzResult, *Ctx)) {
+                          Sz = NewSzResult.Val.getInt();
+                          ElemTy = DAT->getElementType();
+                          IsArray = true;
+                        }
+                      }
+                    } else if (const auto *CAT = dyn_cast<ConstantArrayType>(OrigTy)) {
+                      Sz = CAT->getSize();
+                      ElemTy = CAT->getElementType();
+                      IsArray = true;
+                    }
+
+                    if (IsArray && (ElemTy->isIntegerType() ||
+                                    ElemTy->isFloatingType())) {
+                      QualType ArrTy =
+                        Ctx->getConstantArrayType(ElemTy,
+                                                  Sz, clang::ArrayType::Normal, 0);
+
+                      SmallVector<Expr *, 16> Vals;
+                      unsigned ElemSize = Ctx->getTypeSizeInChars(ElemTy).getQuantity();
+                      unsigned ElemNumIntWords = llvm::alignTo<8>(ElemSize);
+                      const char *Elem = (const char *) IntVal.getZExtValue();
+                      for (unsigned i = 0; i < Sz.getZExtValue(); ++i) {
+                        SmallVector<uint64_t, 2> ElemIntWords(ElemNumIntWords, 0);
+
+                        std::memcpy((char *) ElemIntWords.data(), Elem, ElemSize);
+                        Elem += ElemSize;
+
+                        llvm::APInt ElemVal(ElemSize*8, ElemIntWords);
+                        if (ElemTy->isIntegerType()) {
+                          Vals.push_back(new (*Ctx) IntegerLiteral(
+                            *Ctx, ElemVal, ElemTy, Loc));
+                        } else {
+                          llvm::APFloat ElemValFlt(Ctx->getFloatTypeSemantics(ElemTy), ElemVal);
+                          Vals.push_back(FloatingLiteral::Create(*Ctx, ElemValFlt,
+                                                                 false, ElemTy, Loc));
+                        }
+                      }
+
+                      InitListExpr *InitL = new (*Ctx) InitListExpr(*Ctx, Loc, Vals, Loc);
+                      InitL->setType(ArrTy);
+
+                      auto *TAVD =
+                        VarDecl::Create(*Ctx, S->CurContext, Loc, Loc, &II,
+                                        ArrTy, Ctx->getTrivialTypeSourceInfo(ArrTy, Loc),
+                                        SC_Extern);
+                      TAVD->setImplicit();
+                      TAVD->setConstexpr(true);
+                      TAVD->setInit(InitL);
+
+                      NewLocalSymDecls[II.getName()] = TAVD;
+                      Builder.push_back(TemplateArgument(TAVD, Ctx->getLValueReferenceType(ArrTy)));
+
+                      MadeArray = true;
+                    }
+                  }
+                }
+
+                if (!MadeArray) {
+                  auto *TAVD =
+                    VarDecl::Create(*Ctx, S->CurContext, Loc, Loc, &II,
+                                    STy, Ctx->getTrivialTypeSourceInfo(STy, Loc),
+                                    SC_Extern);
+                  TAVD->setImplicit();
+
+                  NewLocalSymDecls[II.getName()] = TAVD;
+                  Builder.push_back(TemplateArgument(TAVD, CanonFieldTy));
+                }
               }
 
               LocalSymAddrs[II.getName()] = (const void *) IntVal.getZExtValue();
