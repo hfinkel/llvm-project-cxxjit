@@ -2384,7 +2384,8 @@ StmtResult Sema::BuildCXXForRangeStmt(SourceLocation ForLoc,
 
     // Build auto __begin = begin-expr, __end = end-expr.
     // Divide by 2, since the variables are in the inner scope (loop body).
-    const auto DepthStr = std::to_string(S->getDepth() / 2);
+    // FIXME: For JIT, we might not have a Scope here.
+    const auto DepthStr = S ? std::to_string(S->getDepth() / 2) : std::string("n0");
     VarDecl *BeginVar = BuildForRangeVarDecl(*this, ColonLoc, AutoType,
                                              std::string("__begin") + DepthStr);
     VarDecl *EndVar = BuildForRangeVarDecl(*this, ColonLoc, AutoType,
