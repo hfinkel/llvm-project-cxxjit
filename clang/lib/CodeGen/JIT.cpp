@@ -1653,8 +1653,9 @@ struct CompilerData {
           GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
       }
 
+    // OverrideFromSrc is needed here too, otherwise globals marked available_externally are not considered.
     if (Linker::linkModules(*RunningMod, Consumer->takeModule(),
-                            Linker::Flags::None))
+                            Linker::Flags::OverrideFromSrc))
       fatal();
 
     Consumer->Initialize(*Ctx);
