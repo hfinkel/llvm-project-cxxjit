@@ -10868,6 +10868,9 @@ public:
     return CurScope->incrementMSManglingNumber();
   }
 
+  // Used for JIT.
+  void setCurScope(Scope *S) { CurScope = S; }
+
   IdentifierInfo *getSuperIdentifier() const;
   IdentifierInfo *getFloat128Identifier() const;
 

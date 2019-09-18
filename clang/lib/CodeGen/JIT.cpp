@@ -1292,6 +1292,9 @@ struct CompilerData {
       Sema::InstantiatingTemplate Inst(
         *S, Loc, FTD, NewTAL->asArray(),
         Sema::CodeSynthesisContext::ExplicitTemplateArgumentSubstitution, Info);
+
+      S->setCurScope(S->TUScope = new Scope(nullptr, Scope::DeclScope, PP->getDiagnostics()));
+
       Sema::ContextRAII TUContext(*S, Ctx->getTranslationUnitDecl());
 
       auto *Specialization = cast_or_null<FunctionDecl>(
