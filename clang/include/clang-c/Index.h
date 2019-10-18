@@ -3338,7 +3338,7 @@ enum CXTypeKind {
 
   CXType_ExtVector = 176,
 
-  CXType_JITFromString = 176
+  CXType_JITFromString = 177
 };
 
 /**
