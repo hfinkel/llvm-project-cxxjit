@@ -502,6 +502,10 @@ public:
         fatal();
     }
 
+    EmitBackendOutput(Diags, HeaderSearchOpts, CodeGenOpts, TargetOpts,
+                      LangOpts, C.getTargetInfo().getDataLayout(),
+                      getModule(), Action,
+                      llvm::make_unique<llvm::buffer_ostream>(*AsmOutStream));
   }
 
   void HandleTagDeclDefinition(TagDecl *D) override {
@@ -522,13 +526,6 @@ public:
 
   void HandleVTable(CXXRecordDecl *RD) override {
     Gen->HandleVTable(RD);
-  }
-
-  void EmitOptimized() {
-    EmitBackendOutput(Diags, HeaderSearchOpts, CodeGenOpts, TargetOpts,
-                      LangOpts, Context->getTargetInfo().getDataLayout(),
-                      getModule(), Action,
-                      llvm::make_unique<llvm::buffer_ostream>(*AsmOutStream));
   }
 };
 
@@ -1403,7 +1400,6 @@ struct CompilerData {
 
     if (DevCD) {
       DevCD->Consumer->HandleTranslationUnit(*DevCD->Ctx);
-      DevCD->Consumer->EmitOptimized();
 
       // We have now created the PTX output, but what we really need as a
       // fatbin that the CUDA runtime will recognize.
@@ -1525,7 +1521,6 @@ struct CompilerData {
       DevCD->DevAsm.clear();
     }
 
-    // Finalize translation unit. No optimization yet.
     Consumer->HandleTranslationUnit(*Ctx);
 
     // First, mark everything we've newly generated with external linkage. When
@@ -1558,6 +1553,9 @@ struct CompilerData {
         GO->setComdat(nullptr);
     }
 
+    std::unique_ptr<llvm::Module> ToRunMod =
+      llvm::CloneModule(*Consumer->getModule());
+
     // Here we link our previous cache of definitions, etc. into this module.
     // This includes all of our previously-generated functions (marked as
     // available externally). We prefer our previously-generated versions to
@@ -1569,7 +1567,7 @@ struct CompilerData {
     // number), and these from previously-generated code will conflict with the
     // names chosen for string literals in this module.
 
-    for (auto &GV : Consumer->getModule()->global_values()) {
+    for (auto &GV : ToRunMod->global_values()) {
       if (!IsLocalUnnamedConst(GV) && !GV.getName().startswith("__cuda_"))
         continue;
 
@@ -1593,7 +1591,7 @@ struct CompilerData {
     // the base part of the module (as they specifically initialize variables,
     // etc. that we just generated).
 
-    for (auto &F : Consumer->getModule()->functions()) {
+    for (auto &F : ToRunMod->functions()) {
       // FIXME: This likely covers the set of TU-local init/deinit functions
       // that can't be shared with the base module. There should be a better
       // way to do this (e.g., we could record all functions that
@@ -1620,16 +1618,9 @@ struct CompilerData {
       F.setName(UniqueName);
     }
 
-    if (Linker::linkModules(*Consumer->getModule(), llvm::CloneModule(*RunningMod),
+    if (Linker::linkModules(*ToRunMod, llvm::CloneModule(*RunningMod),
                             Linker::Flags::OverrideFromSrc))
       fatal();
-
-    // Optimize the merged module, containing both the newly generated IR as well as
-    // previously emitted code marked available_externally.
-    Consumer->EmitOptimized();
-
-    std::unique_ptr<llvm::Module> ToRunMod =
-        llvm::CloneModule(*Consumer->getModule());
 
     CJ->addModule(std::move(ToRunMod));
 
@@ -1653,9 +1644,8 @@ struct CompilerData {
           GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
       }
 
-    // OverrideFromSrc is needed here too, otherwise globals marked available_externally are not considered.
     if (Linker::linkModules(*RunningMod, Consumer->takeModule(),
-                            Linker::Flags::OverrideFromSrc))
+                            Linker::Flags::None))
       fatal();
 
     Consumer->Initialize(*Ctx);
@@ -1735,7 +1725,7 @@ struct InstMapInfo {
 
     return (unsigned) h;
   }
-
+  
   static unsigned getHashValue(const ThisInstInfo &TII) {
     using llvm::hash_code;
     using llvm::hash_combine;
