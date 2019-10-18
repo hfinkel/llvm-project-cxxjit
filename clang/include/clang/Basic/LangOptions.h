@@ -120,7 +120,8 @@ public:
     MSVC2013 = 1800,
     MSVC2015 = 1900,
     MSVC2017 = 1910,
-    MSVC2017_5 = 1912
+    MSVC2017_5 = 1912,
+    MSVC2017_7 = 1914,
   };
 
   /// Clang versions with different platform ABI conformance.
@@ -276,7 +277,7 @@ public:
 
   /// Do we need to track the owning module for a local declaration?
   bool trackLocalOwningModule() const {
-    return isCompilingModule() || ModulesLocalVisibility || ModulesTS;
+    return isCompilingModule() || ModulesLocalVisibility;
   }
 
   bool isSignedOverflowDefined() const {

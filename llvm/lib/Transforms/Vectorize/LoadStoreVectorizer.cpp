@@ -926,7 +926,7 @@ bool Vectorizer::vectorizeStoreChain(
   StoreInst *S0 = cast<StoreInst>(Chain[0]);
 
   // If the vector has an int element, default to int for the whole store.
-  Type *StoreTy;
+  Type *StoreTy = nullptr;
   for (Instruction *I : Chain) {
     StoreTy = cast<StoreInst>(I)->getValueOperand()->getType();
     if (StoreTy->isIntOrIntVectorTy())
@@ -938,6 +938,7 @@ bool Vectorizer::vectorizeStoreChain(
       break;
     }
   }
+  assert(StoreTy && "Failed to find store type");
 
   unsigned Sz = DL.getTypeSizeInBits(StoreTy);
   unsigned AS = S0->getPointerAddressSpace();
@@ -1151,13 +1152,8 @@ bool Vectorizer::vectorizeLoadChain(
              vectorizeLoadChain(Chains.second, InstructionsProcessed);
     }
 
-    unsigned NewAlign = getOrEnforceKnownAlignment(L0->getPointerOperand(),
-                                                   StackAdjustedAlignment,
-                                                   DL, L0, nullptr, &DT);
-    if (NewAlign != 0)
-      Alignment = NewAlign;
-
-    Alignment = NewAlign;
+    Alignment = getOrEnforceKnownAlignment(
+        L0->getPointerOperand(), StackAdjustedAlignment, DL, L0, nullptr, &DT);
   }
 
   if (!TTI.isLegalToVectorizeLoadChain(SzInBytes, Alignment, AS)) {

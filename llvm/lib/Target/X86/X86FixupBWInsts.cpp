@@ -102,9 +102,7 @@ public:
 
   StringRef getPassName() const override { return FIXUPBW_DESC; }
 
-  FixupBWInstPass() : MachineFunctionPass(ID) {
-    initializeFixupBWInstPassPass(*PassRegistry::getPassRegistry());
-  }
+  FixupBWInstPass() : MachineFunctionPass(ID) { }
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.addRequired<MachineLoopInfo>(); // Machine loop info is used to
@@ -150,7 +148,7 @@ bool FixupBWInstPass::runOnMachineFunction(MachineFunction &MF) {
 
   this->MF = &MF;
   TII = MF.getSubtarget<X86Subtarget>().getInstrInfo();
-  OptForSize = MF.getFunction().optForSize();
+  OptForSize = MF.getFunction().hasOptSize();
   MLI = &getAnalysis<MachineLoopInfo>();
   LiveRegs.init(TII->getRegisterInfo());
 

@@ -14,7 +14,6 @@
 #include "lldb/DataFormatters/FormattersHelpers.h"
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Target/Language.h"
-#include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/DataBufferHeap.h"
 #include "lldb/Utility/Endian.h"
@@ -54,7 +53,7 @@ public:
 
   bool MightHaveChildren() override;
 
-  size_t GetIndexOfChildWithName(const ConstString &name) override;
+  size_t GetIndexOfChildWithName(ConstString name) override;
 
 private:
   struct DataDescriptor_32 {
@@ -95,7 +94,7 @@ public:
 
   bool MightHaveChildren() override;
 
-  size_t GetIndexOfChildWithName(const ConstString &name) override;
+  size_t GetIndexOfChildWithName(ConstString name) override;
 
 private:
 
@@ -211,7 +210,7 @@ public:
 
   bool MightHaveChildren() override;
 
-  size_t GetIndexOfChildWithName(const ConstString &name) override;
+  size_t GetIndexOfChildWithName(ConstString name) override;
 };
 } // namespace formatters
 } // namespace lldb_private
@@ -225,9 +224,7 @@ bool lldb_private::formatters::NSSetSummaryProvider(
   if (!process_sp)
     return false;
 
-  ObjCLanguageRuntime *runtime =
-      (ObjCLanguageRuntime *)process_sp->GetLanguageRuntime(
-          lldb::eLanguageTypeObjC);
+  ObjCLanguageRuntime *runtime = ObjCLanguageRuntime::Get(*process_sp);
 
   if (!runtime)
     return false;
@@ -304,9 +301,7 @@ lldb_private::formatters::NSSetSyntheticFrontEndCreator(
   lldb::ProcessSP process_sp(valobj_sp->GetProcessSP());
   if (!process_sp)
     return nullptr;
-  ObjCLanguageRuntime *runtime =
-      (ObjCLanguageRuntime *)process_sp->GetLanguageRuntime(
-          lldb::eLanguageTypeObjC);
+  ObjCLanguageRuntime *runtime = ObjCLanguageRuntime::Get(*process_sp);
   if (!runtime)
     return nullptr;
 
@@ -374,7 +369,7 @@ lldb_private::formatters::NSSetISyntheticFrontEnd::~NSSetISyntheticFrontEnd() {
 
 size_t
 lldb_private::formatters::NSSetISyntheticFrontEnd::GetIndexOfChildWithName(
-    const ConstString &name) {
+    ConstString name) {
   const char *item_name = name.GetCString();
   uint32_t idx = ExtractIndexFromString(item_name);
   if (idx < UINT32_MAX && idx >= CalculateNumChildren())
@@ -529,7 +524,7 @@ template <typename D32, typename D64>
 size_t
 lldb_private::formatters::
   GenericNSSetMSyntheticFrontEnd<D32, D64>::GetIndexOfChildWithName(
-    const ConstString &name) {
+    ConstString name) {
   const char *item_name = name.GetCString();
   uint32_t idx = ExtractIndexFromString(item_name);
   if (idx < UINT32_MAX && idx >= CalculateNumChildren())

@@ -15,7 +15,7 @@ General Analysis Dumpers
 
 These checkers are used to dump the results of various infrastructural analyses
 to stderr. Some checkers also have "view" variants, which will display a graph
-using a 'dot' format viewer (such as Graphviz on OS X) instead.
+using a 'dot' format viewer (such as Graphviz on macOS) instead.
 
 - debug.DumpCallGraph, debug.ViewCallGraph: Show the call graph generated for
   the current translation unit. This is used to determine the order in which to
@@ -285,3 +285,10 @@ There is also an additional -analyzer-stats flag, which enables various
 statistics within the analyzer engine. Note the Stats checker (which produces at
 least one bug report per function) may actually change the values reported by
 -analyzer-stats.
+
+Output testing checkers
+=======================
+
+- debug.ReportStmts reports a warning at **every** statement, making it a very
+  useful tool for testing thoroughly bug report construction and output
+  emission.

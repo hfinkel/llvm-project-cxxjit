@@ -22,17 +22,9 @@
 
 namespace lldb_private {
 class CommandInterpreter;
-}
-namespace lldb_private {
 class ConstString;
-}
-namespace lldb_private {
 class ExecutionContext;
-}
-namespace lldb_private {
 class Property;
-}
-namespace lldb_private {
 class Stream;
 }
 
@@ -77,7 +69,7 @@ public:
                  std::vector<const Property *> &matching_properties) const;
 
   lldb::OptionValuePropertiesSP GetSubProperty(const ExecutionContext *exe_ctx,
-                                               const ConstString &name);
+                                               ConstString name);
 
   // We sometimes need to introduce a setting to enable experimental features,
   // but then we don't want the setting for these to cause errors when the

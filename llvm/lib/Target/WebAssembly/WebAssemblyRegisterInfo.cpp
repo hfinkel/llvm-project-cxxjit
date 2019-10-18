@@ -66,19 +66,22 @@ void WebAssemblyRegisterInfo::eliminateFrameIndex(
   assert(MFI.getObjectSize(FrameIndex) != 0 &&
          "We assume that variable-sized objects have already been lowered, "
          "and don't use FrameIndex operands.");
-  unsigned FrameRegister = getFrameRegister(MF);
+  Register FrameRegister = getFrameRegister(MF);
 
   // If this is the address operand of a load or store, make it relative to SP
   // and fold the frame offset directly in.
-  if ((MI.mayLoad() && FIOperandNum == WebAssembly::LoadAddressOperandNo) ||
-      (MI.mayStore() && FIOperandNum == WebAssembly::StoreAddressOperandNo)) {
-    assert(FrameOffset >= 0 && MI.getOperand(FIOperandNum - 1).getImm() >= 0);
-    int64_t Offset = MI.getOperand(FIOperandNum - 1).getImm() + FrameOffset;
+  unsigned AddrOperandNum = WebAssembly::getNamedOperandIdx(
+      MI.getOpcode(), WebAssembly::OpName::addr);
+  if (AddrOperandNum == FIOperandNum) {
+    unsigned OffsetOperandNum = WebAssembly::getNamedOperandIdx(
+        MI.getOpcode(), WebAssembly::OpName::off);
+    assert(FrameOffset >= 0 && MI.getOperand(OffsetOperandNum).getImm() >= 0);
+    int64_t Offset = MI.getOperand(OffsetOperandNum).getImm() + FrameOffset;
 
     if (static_cast<uint64_t>(Offset) <= std::numeric_limits<uint32_t>::max()) {
-      MI.getOperand(FIOperandNum - 1).setImm(Offset);
+      MI.getOperand(OffsetOperandNum).setImm(Offset);
       MI.getOperand(FIOperandNum)
-          .ChangeToRegister(FrameRegister, /*IsDef=*/false);
+          .ChangeToRegister(FrameRegister, /*isDef=*/false);
       return;
     }
   }
@@ -99,7 +102,7 @@ void WebAssemblyRegisterInfo::eliminateFrameIndex(
           MachineOperand &ImmMO = Def->getOperand(1);
           ImmMO.setImm(ImmMO.getImm() + uint32_t(FrameOffset));
           MI.getOperand(FIOperandNum)
-              .ChangeToRegister(FrameRegister, /*IsDef=*/false);
+              .ChangeToRegister(FrameRegister, /*isDef=*/false);
           return;
         }
       }
@@ -124,10 +127,10 @@ void WebAssemblyRegisterInfo::eliminateFrameIndex(
         .addReg(FrameRegister)
         .addReg(OffsetOp);
   }
-  MI.getOperand(FIOperandNum).ChangeToRegister(FIRegOperand, /*IsDef=*/false);
+  MI.getOperand(FIOperandNum).ChangeToRegister(FIRegOperand, /*isDef=*/false);
 }
 
-unsigned
+Register
 WebAssemblyRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
   static const unsigned Regs[2][2] = {
       /*            !isArch64Bit       isArch64Bit      */

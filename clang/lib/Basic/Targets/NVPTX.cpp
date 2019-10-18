@@ -44,6 +44,8 @@ NVPTXTargetInfo::NVPTXTargetInfo(const llvm::Triple &Triple,
     if (!Feature.startswith("+ptx"))
       continue;
     PTXVersion = llvm::StringSwitch<unsigned>(Feature)
+                     .Case("+ptx64", 64)
+                     .Case("+ptx63", 63)
                      .Case("+ptx61", 61)
                      .Case("+ptx60", 60)
                      .Case("+ptx50", 50)
@@ -117,7 +119,7 @@ NVPTXTargetInfo::NVPTXTargetInfo(const llvm::Triple &Triple,
   LongAlign = HostTarget->getLongAlign();
   LongLongWidth = HostTarget->getLongLongWidth();
   LongLongAlign = HostTarget->getLongLongAlign();
-  MinGlobalAlign = HostTarget->getMinGlobalAlign();
+  MinGlobalAlign = HostTarget->getMinGlobalAlign(/* TypeSize = */ 0);
   NewAlign = HostTarget->getNewAlign();
   DefaultAlignForAttributeAligned =
       HostTarget->getDefaultAlignForAttributeAligned();
@@ -189,7 +191,11 @@ void NVPTXTargetInfo::getTargetDefines(const LangOptions &Opts,
       case CudaArch::GFX902:
       case CudaArch::GFX904:
       case CudaArch::GFX906:
+      case CudaArch::GFX908:
       case CudaArch::GFX909:
+      case CudaArch::GFX1010:
+      case CudaArch::GFX1011:
+      case CudaArch::GFX1012:
       case CudaArch::LAST:
         break;
       case CudaArch::UNKNOWN:

@@ -41,8 +41,8 @@ protected:
   unsigned Size = 0, Capacity;
 
   SmallVectorBase() = delete;
-  SmallVectorBase(void *FirstEl, size_t Capacity)
-      : BeginX(FirstEl), Capacity(Capacity) {}
+  SmallVectorBase(void *FirstEl, size_t TotalCapacity)
+      : BeginX(FirstEl), Capacity(TotalCapacity) {}
 
   /// This is an implementation of the grow() method which only works
   /// on POD-like data types and is out of line to reduce code duplication.
@@ -63,9 +63,9 @@ public:
   /// of the buffer when they know that more elements are available, and only
   /// update the size later. This avoids the cost of value initializing elements
   /// which will only be overwritten.
-  void set_size(size_t Size) {
-    assert(Size <= capacity());
-    this->Size = Size;
+  void set_size(size_t N) {
+    assert(N <= capacity());
+    Size = N;
   }
 };
 
@@ -318,6 +318,7 @@ class SmallVectorImpl : public SmallVectorTemplateBase<T> {
 public:
   using iterator = typename SuperClass::iterator;
   using const_iterator = typename SuperClass::const_iterator;
+  using reference = typename SuperClass::reference;
   using size_type = typename SuperClass::size_type;
 
 protected:
@@ -385,22 +386,18 @@ public:
                 std::input_iterator_tag>::value>::type>
   void append(in_iter in_start, in_iter in_end) {
     size_type NumInputs = std::distance(in_start, in_end);
-    // Grow allocated space if needed.
     if (NumInputs > this->capacity() - this->size())
       this->grow(this->size()+NumInputs);
 
-    // Copy the new elements over.
     this->uninitialized_copy(in_start, in_end, this->end());
     this->set_size(this->size() + NumInputs);
   }
 
-  /// Add the specified range to the end of the SmallVector.
+  /// Append \p NumInputs copies of \p Elt to the end.
   void append(size_type NumInputs, const T &Elt) {
-    // Grow allocated space if needed.
     if (NumInputs > this->capacity() - this->size())
       this->grow(this->size()+NumInputs);
 
-    // Copy the new elements over.
     std::uninitialized_fill_n(this->end(), NumInputs, Elt);
     this->set_size(this->size() + NumInputs);
   }
@@ -641,11 +638,12 @@ public:
     insert(I, IL.begin(), IL.end());
   }
 
-  template <typename... ArgTypes> void emplace_back(ArgTypes &&... Args) {
+  template <typename... ArgTypes> reference emplace_back(ArgTypes &&... Args) {
     if (LLVM_UNLIKELY(this->size() >= this->capacity()))
       this->grow();
     ::new ((void *)this->end()) T(std::forward<ArgTypes>(Args)...);
     this->set_size(this->size() + 1);
+    return this->back();
   }
 
   SmallVectorImpl &operator=(const SmallVectorImpl &RHS);

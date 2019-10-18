@@ -64,12 +64,6 @@ static cl::opt<unsigned> MaxVars("ppc-preinc-prep-max-vars",
 
 STATISTIC(PHINodeAlreadyExists, "PHI node already in pre-increment form");
 
-namespace llvm {
-
-  void initializePPCLoopPreIncPrepPass(PassRegistry&);
-
-} // end namespace llvm
-
 namespace {
 
   class PPCLoopPreIncPrep : public FunctionPass {
@@ -337,7 +331,7 @@ bool PPCLoopPreIncPrep::runOnLoop(Loop *L) {
   // iteration space), insert a new preheader for the loop.
   if (!LoopPredecessor ||
       !LoopPredecessor->getTerminator()->getType()->isVoidTy()) {
-    LoopPredecessor = InsertPreheaderForLoop(L, DT, LI, PreserveLCSSA);
+    LoopPredecessor = InsertPreheaderForLoop(L, DT, LI, nullptr, PreserveLCSSA);
     if (LoopPredecessor)
       MadeChange = true;
   }

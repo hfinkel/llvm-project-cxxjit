@@ -49,9 +49,9 @@ namespace tgtok {
     MultiClass, String, Defset,
 
     // !keywords.
-    XConcat, XADD, XAND, XOR, XSRA, XSRL, XSHL, XListConcat, XStrConcat, XCast,
-    XSubst, XForEach, XFoldl, XHead, XTail, XSize, XEmpty, XIf, XCond, XEq, XIsA, XDag,
-    XNe, XLe, XLt, XGe, XGt,
+    XConcat, XADD, XMUL, XAND, XOR, XSRA, XSRL, XSHL, XListConcat, XListSplat,
+    XStrConcat, XCast, XSubst, XForEach, XFoldl, XHead, XTail, XSize, XEmpty,
+    XIf, XCond, XEq, XIsA, XDag, XNe, XLe, XLt, XGe, XGt,
 
     // Integer value.
     IntVal,
@@ -65,7 +65,7 @@ namespace tgtok {
 
     // Preprocessing tokens for internal usage by the lexer.
     // They are never returned as a result of Lex().
-    Ifdef, Else, Endif, Define
+    Ifdef, Ifndef, Else, Endif, Define
   };
 }
 

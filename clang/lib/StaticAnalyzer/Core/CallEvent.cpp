@@ -303,23 +303,11 @@ ProgramStateRef CallEvent::invalidateRegions(unsigned BlockCount,
   for (unsigned Idx = 0, Count = getNumArgs(); Idx != Count; ++Idx) {
     // Mark this region for invalidation.  We batch invalidate regions
     // below for efficiency.
-    if (const MemRegion *MR = getArgSVal(Idx).getAsRegion()) {
-      bool UseBaseRegion = true;
-      if (const auto *FR = MR->getAs<FieldRegion>()) {
-        if (const auto *TVR = FR->getSuperRegion()->getAs<TypedValueRegion>()) {
-          if (!TVR->getValueType()->isUnionType()) {
-            ETraits.setTrait(MR, RegionAndSymbolInvalidationTraits::
-                                     TK_DoNotInvalidateSuperRegion);
-            UseBaseRegion = false;
-          }
-        }
-      }
-      // todo: factor this out + handle the lower level const pointers.
-      if (PreserveArgs.count(Idx))
-        ETraits.setTrait(
-            UseBaseRegion ? MR->getBaseRegion() : MR,
-            RegionAndSymbolInvalidationTraits::TK_PreserveContents);
-    }
+    if (PreserveArgs.count(Idx))
+      if (const MemRegion *MR = getArgSVal(Idx).getAsRegion())
+        ETraits.setTrait(MR->getBaseRegion(),
+                        RegionAndSymbolInvalidationTraits::TK_PreserveContents);
+        // TODO: Factor this out + handle the lower level const pointers.
 
     ValuesToInvalidate.push_back(getArgSVal(Idx));
 
@@ -368,20 +356,32 @@ bool CallEvent::isCalled(const CallDescription &CD) const {
   // FIXME: Add ObjC Message support.
   if (getKind() == CE_ObjCMessage)
     return false;
+
+  const IdentifierInfo *II = getCalleeIdentifier();
+  if (!II)
+    return false;
+  const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(getDecl());
+  if (!FD)
+    return false;
+
+  if (CD.Flags & CDF_MaybeBuiltin) {
+    return CheckerContext::isCLibraryFunction(FD, CD.getFunctionName()) &&
+           (!CD.RequiredArgs || CD.RequiredArgs <= getNumArgs());
+  }
+
   if (!CD.IsLookupDone) {
     CD.IsLookupDone = true;
     CD.II = &getState()->getStateManager().getContext().Idents.get(
         CD.getFunctionName());
   }
-  const IdentifierInfo *II = getCalleeIdentifier();
-  if (!II || II != CD.II)
+
+  if (II != CD.II)
     return false;
 
-  const Decl *D = getDecl();
   // If CallDescription provides prefix names, use them to improve matching
   // accuracy.
-  if (CD.QualifiedName.size() > 1 && D) {
-    const DeclContext *Ctx = D->getDeclContext();
+  if (CD.QualifiedName.size() > 1 && FD) {
+    const DeclContext *Ctx = FD->getDeclContext();
     // See if we'll be able to match them all.
     size_t NumUnmatched = CD.QualifiedName.size() - 1;
     for (; Ctx && isa<NamedDecl>(Ctx); Ctx = Ctx->getParent()) {
@@ -405,8 +405,7 @@ bool CallEvent::isCalled(const CallDescription &CD) const {
       return false;
   }
 
-  return (CD.RequiredArgs == CallDescription::NoArgRequirement ||
-          CD.RequiredArgs == getNumArgs());
+  return (!CD.RequiredArgs || CD.RequiredArgs == getNumArgs());
 }
 
 SVal CallEvent::getArgSVal(unsigned Index) const {
@@ -767,8 +766,11 @@ RuntimeDefinition CXXInstanceCall::getRuntimeDefinition() const {
 
   // Does the decl that we found have an implementation?
   const FunctionDecl *Definition;
-  if (!Result->hasBody(Definition))
+  if (!Result->hasBody(Definition)) {
+    if (!DynType.canBeASubClass())
+      return AnyFunctionCall::getRuntimeDefinition();
     return {};
+  }
 
   // We found a definition. If we're not sure that this devirtualization is
   // actually what will happen at runtime, make sure to provide the region so

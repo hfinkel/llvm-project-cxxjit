@@ -321,6 +321,9 @@ void StmtProfiler::VisitGCCAsmStmt(const GCCAsmStmt *S) {
   ID.AddInteger(S->getNumClobbers());
   for (unsigned I = 0, N = S->getNumClobbers(); I != N; ++I)
     VisitStringLiteral(S->getClobberStringLiteral(I));
+  ID.AddInteger(S->getNumLabels());
+  for (auto *L : S->labels())
+    VisitDecl(L->getLabel());
 }
 
 void StmtProfiler::VisitMSAsmStmt(const MSAsmStmt *S) {
@@ -412,7 +415,6 @@ public:
   OMPClauseProfiler(StmtProfiler *P) : Profiler(P) { }
 #define OPENMP_CLAUSE(Name, Class)                                             \
   void Visit##Class(const Class *C);
-  OPENMP_CLAUSE(flush, OMPFlushClause)
 #include "clang/Basic/OpenMPKinds.def"
   void VistOMPClauseWithPreInit(const OMPClauseWithPreInit *C);
   void VistOMPClauseWithPostUpdate(const OMPClauseWithPostUpdate *C);
@@ -456,6 +458,11 @@ void OMPClauseProfiler::VisitOMPSafelenClause(const OMPSafelenClause *C) {
 void OMPClauseProfiler::VisitOMPSimdlenClause(const OMPSimdlenClause *C) {
   if (C->getSimdlen())
     Profiler->VisitStmt(C->getSimdlen());
+}
+
+void OMPClauseProfiler::VisitOMPAllocatorClause(const OMPAllocatorClause *C) {
+  if (C->getAllocator())
+    Profiler->VisitStmt(C->getAllocator());
 }
 
 void OMPClauseProfiler::VisitOMPCollapseClause(const OMPCollapseClause *C) {
@@ -710,6 +717,11 @@ void OMPClauseProfiler::VisitOMPDeviceClause(const OMPDeviceClause *C) {
     Profiler->VisitStmt(C->getDevice());
 }
 void OMPClauseProfiler::VisitOMPMapClause(const OMPMapClause *C) {
+  VisitOMPClauseList(C);
+}
+void OMPClauseProfiler::VisitOMPAllocateClause(const OMPAllocateClause *C) {
+  if (Expr *Allocator = C->getAllocator())
+    Profiler->VisitStmt(Allocator);
   VisitOMPClauseList(C);
 }
 void OMPClauseProfiler::VisitOMPNumTeamsClause(const OMPNumTeamsClause *C) {
@@ -1557,6 +1569,11 @@ void StmtProfiler::VisitCXXConstCastExpr(const CXXConstCastExpr *S) {
   VisitCXXNamedCastExpr(S);
 }
 
+void StmtProfiler::VisitBuiltinBitCastExpr(const BuiltinBitCastExpr *S) {
+  VisitExpr(S);
+  VisitType(S->getTypeInfoAsWritten()->getType());
+}
+
 void StmtProfiler::VisitUserDefinedLiteral(const UserDefinedLiteral *S) {
   VisitCallExpr(S);
 }
@@ -1870,6 +1887,10 @@ void StmtProfiler::VisitOpaqueValueExpr(const OpaqueValueExpr *E) {
 }
 
 void StmtProfiler::VisitTypoExpr(const TypoExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitSourceLocExpr(const SourceLocExpr *E) {
   VisitExpr(E);
 }
 

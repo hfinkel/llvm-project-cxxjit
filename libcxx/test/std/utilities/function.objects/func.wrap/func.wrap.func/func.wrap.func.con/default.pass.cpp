@@ -10,10 +10,12 @@
 
 // class function<R(ArgTypes...)>
 
-// explicit function();
+// function();
 
 #include <functional>
 #include <cassert>
+
+#include "test_macros.h"
 
 int main(int, char**)
 {

@@ -374,17 +374,17 @@ static bool isRestoreCall(unsigned Opc) {
 }
 
 static inline bool isOptNone(const MachineFunction &MF) {
-    return MF.getFunction().hasFnAttribute(Attribute::OptimizeNone) ||
+    return MF.getFunction().hasOptNone() ||
            MF.getTarget().getOptLevel() == CodeGenOpt::None;
 }
 
 static inline bool isOptSize(const MachineFunction &MF) {
     const Function &F = MF.getFunction();
-    return F.optForSize() && !F.optForMinSize();
+    return F.hasOptSize() && !F.hasMinSize();
 }
 
 static inline bool isMinSize(const MachineFunction &MF) {
-    return MF.getFunction().optForMinSize();
+    return MF.getFunction().hasMinSize();
 }
 
 /// Implements shrink-wrapping of the stack frame. By default, stack frame
@@ -2101,7 +2101,7 @@ void HexagonFrameLowering::optimizeSpillSlots(MachineFunction &MF,
         }
         if (!Bad) {
           for (auto *Mo : In.memoperands()) {
-            if (!Mo->isVolatile())
+            if (!Mo->isVolatile() && !Mo->isAtomic())
               continue;
             Bad = true;
             break;

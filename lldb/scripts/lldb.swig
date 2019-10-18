@@ -81,6 +81,18 @@ del _to_int
 %enddef
 EMBED_VERSION(SWIG_VERSION)
 
+%pythoncode%{
+# ===================================
+# Iterator for lldb container objects
+# ===================================
+def lldb_iter(obj, getsize, getelem):
+    """A generator adaptor to support iteration for lldb container objects."""
+    size = getattr(obj, getsize)
+    elem = getattr(obj, getelem)
+    for i in range(size()):
+        yield elem(i)
+%}
+
 %include "./Python/python-typemaps.swig"
 
 /* C++ headers to be included. */
@@ -202,7 +214,6 @@ EMBED_VERSION(SWIG_VERSION)
 %include "./interface/SBFrame.i"
 %include "./interface/SBFunction.i"
 %include "./interface/SBHostOS.i"
-%include "./interface/SBInitializerOptions.i"
 %include "./interface/SBInstruction.i"
 %include "./interface/SBInstructionList.i"
 %include "./interface/SBLanguageRuntime.i"
@@ -249,3 +260,13 @@ EMBED_VERSION(SWIG_VERSION)
 %include "./Python/python-extensions.swig"
 
 %include "./Python/python-wrapper.swig"
+
+%pythoncode%{
+debugger_unique_id = 0
+SBDebugger.Initialize()
+debugger = None
+target = SBTarget()
+process = SBProcess()
+thread = SBThread()
+frame = SBFrame()
+%}

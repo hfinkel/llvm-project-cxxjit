@@ -111,10 +111,11 @@ bool unlikelyExecuted(BasicBlock &BB) {
   if (BB.isEHPad() || isa<ResumeInst>(BB.getTerminator()))
     return true;
 
-  // The block is cold if it calls/invokes a cold function.
+  // The block is cold if it calls/invokes a cold function. However, do not
+  // mark sanitizer traps as cold.
   for (Instruction &I : BB)
     if (auto CS = CallSite(&I))
-      if (CS.hasFnAttr(Attribute::Cold))
+      if (CS.hasFnAttr(Attribute::Cold) && !CS->getMetadata("nosanitize"))
         return true;
 
   // The block is cold if it has an unreachable terminator, unless it's
@@ -148,7 +149,7 @@ static bool mayExtractBlock(const BasicBlock &BB) {
 /// module has profile data), set entry count to 0 to ensure treated as cold.
 /// Return true if the function is changed.
 static bool markFunctionCold(Function &F, bool UpdateEntryCount = false) {
-  assert(!F.hasFnAttribute(Attribute::OptimizeNone) && "Can't mark this cold");
+  assert(!F.hasOptNone() && "Can't mark this cold");
   bool Changed = false;
   if (!F.hasFnAttribute(Attribute::Cold)) {
     F.addFnAttr(Attribute::Cold);
@@ -233,6 +234,12 @@ bool HotColdSplitting::shouldOutlineFrom(const Function &F) const {
     return false;
 
   if (F.hasFnAttribute(Attribute::NoInline))
+    return false;
+
+  if (F.hasFnAttribute(Attribute::SanitizeAddress) ||
+      F.hasFnAttribute(Attribute::SanitizeHWAddress) ||
+      F.hasFnAttribute(Attribute::SanitizeThread) ||
+      F.hasFnAttribute(Attribute::SanitizeMemory))
     return false;
 
   return true;
@@ -657,7 +664,7 @@ bool HotColdSplitting::outlineColdRegions(Function &F, bool HasProfileSummary) {
 
 bool HotColdSplitting::run(Module &M) {
   bool Changed = false;
-  bool HasProfileSummary = M.getProfileSummary();
+  bool HasProfileSummary = (M.getProfileSummary(/* IsCS */ false) != nullptr);
   for (auto It = M.begin(), End = M.end(); It != End; ++It) {
     Function &F = *It;
 
@@ -666,7 +673,7 @@ bool HotColdSplitting::run(Module &M) {
       continue;
 
     // Do not modify `optnone` functions.
-    if (F.hasFnAttribute(Attribute::OptimizeNone))
+    if (F.hasOptNone())
       continue;
 
     // Detect inherently cold functions and mark them as such.

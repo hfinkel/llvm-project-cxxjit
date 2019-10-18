@@ -386,9 +386,7 @@ class X86DomainReassignment : public MachineFunctionPass {
 public:
   static char ID;
 
-  X86DomainReassignment() : MachineFunctionPass(ID) {
-    initializeX86DomainReassignmentPass(*PassRegistry::getPassRegistry());
-  }
+  X86DomainReassignment() : MachineFunctionPass(ID) { }
 
   bool runOnMachineFunction(MachineFunction &MF) override;
 
@@ -556,6 +554,7 @@ void X86DomainReassignment::buildClosure(Closure &C, unsigned Reg) {
     // Register already in this closure.
     if (!C.insertEdge(CurReg))
       continue;
+    EnclosedEdges.insert(Reg);
 
     MachineInstr *DefMI = MRI->getVRegDef(CurReg);
     encloseInstr(C, DefMI);

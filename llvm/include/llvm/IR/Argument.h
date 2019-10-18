@@ -78,6 +78,9 @@ public:
   /// If this is a byval or inalloca argument, return its alignment.
   unsigned getParamAlignment() const;
 
+  /// If this is a byval argument, return its type.
+  Type *getParamByValType() const;
+
   /// Return true if this argument has the nest attribute.
   bool hasNestAttr() const;
 
@@ -89,6 +92,9 @@ public:
 
   /// Return true if this argument has the sret attribute.
   bool hasStructRetAttr() const;
+
+  /// Return true if this argument has the inreg attribute.
+  bool hasInRegAttr() const;
 
   /// Return true if this argument has the returned attribute.
   bool hasReturnedAttr() const;
@@ -117,6 +123,8 @@ public:
 
   /// Check if an argument has a given attribute.
   bool hasAttribute(Attribute::AttrKind Kind) const;
+
+  Attribute getAttribute(Attribute::AttrKind Kind) const;
 
   /// Method for support type inquiry through isa, cast, and dyn_cast.
   static bool classof(const Value *V) {

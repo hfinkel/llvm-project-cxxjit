@@ -42,6 +42,9 @@ bool WebAssemblyTargetInfo::hasFeature(StringRef Feature) const {
       .Case("exception-handling", HasExceptionHandling)
       .Case("bulk-memory", HasBulkMemory)
       .Case("atomics", HasAtomics)
+      .Case("mutable-globals", HasMutableGlobals)
+      .Case("multivalue", HasMultivalue)
+      .Case("tail-call", HasTailCall)
       .Default(false);
 }
 
@@ -71,6 +74,12 @@ void WebAssemblyTargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__wasm_bulk_memory__");
   if (HasAtomics)
     Builder.defineMacro("__wasm_atomics__");
+  if (HasMutableGlobals)
+    Builder.defineMacro("__wasm_mutable_globals__");
+  if (HasMultivalue)
+    Builder.defineMacro("__wasm_multivalue__");
+  if (HasTailCall)
+    Builder.defineMacro("__wasm_tail_call__");
 }
 
 void WebAssemblyTargetInfo::setSIMDLevel(llvm::StringMap<bool> &Features,
@@ -94,6 +103,7 @@ bool WebAssemblyTargetInfo::initFeatureMap(
     Features["nontrapping-fptoint"] = true;
     Features["sign-ext"] = true;
     Features["atomics"] = true;
+    Features["mutable-globals"] = true;
     setSIMDLevel(Features, SIMD128);
   }
   // Other targets do not consider user-configured features here, but while we
@@ -110,6 +120,12 @@ bool WebAssemblyTargetInfo::initFeatureMap(
     Features["bulk-memory"] = true;
   if (HasAtomics)
     Features["atomics"] = true;
+  if (HasMutableGlobals)
+    Features["mutable-globals"] = true;
+  if (HasMultivalue)
+    Features["multivalue"] = true;
+  if (HasTailCall)
+    Features["tail-call"] = true;
 
   return TargetInfo::initFeatureMap(Features, Diags, CPU, FeaturesVec);
 }
@@ -171,6 +187,30 @@ bool WebAssemblyTargetInfo::handleTargetFeatures(
     }
     if (Feature == "-atomics") {
       HasAtomics = false;
+      continue;
+    }
+    if (Feature == "+mutable-globals") {
+      HasMutableGlobals = true;
+      continue;
+    }
+    if (Feature == "-mutable-globals") {
+      HasMutableGlobals = false;
+      continue;
+    }
+    if (Feature == "+multivalue") {
+      HasMultivalue = true;
+      continue;
+    }
+    if (Feature == "-multivalue") {
+      HasMultivalue = false;
+      continue;
+    }
+    if (Feature == "+tail-call") {
+      HasTailCall = true;
+      continue;
+    }
+    if (Feature == "-tail-call") {
+      HasTailCall = false;
       continue;
     }
 

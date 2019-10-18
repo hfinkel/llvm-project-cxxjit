@@ -267,6 +267,16 @@ class SelectionDAG {
   /// Tracks dbg_value and dbg_label information through SDISel.
   SDDbgInfo *DbgInfo;
 
+  using CallSiteInfo = MachineFunction::CallSiteInfo;
+  using CallSiteInfoImpl = MachineFunction::CallSiteInfoImpl;
+
+  struct CallSiteDbgInfo {
+    CallSiteInfo CSInfo;
+    MDNode *HeapAllocSite = nullptr;
+  };
+
+  DenseMap<const SDNode *, CallSiteDbgInfo> SDCallSiteDbgInfo;
+
   uint16_t NextPersistentId = 0;
 
 public:
@@ -297,6 +307,9 @@ public:
 
     /// The node N that was updated.
     virtual void NodeUpdated(SDNode *N);
+
+    /// The node N that was inserted.
+    virtual void NodeInserted(SDNode *N);
   };
 
   struct DAGNodeDeletedListener : public DAGUpdateListener {
@@ -403,6 +416,7 @@ public:
   const TargetLowering &getTargetLoweringInfo() const { return *TLI; }
   const TargetLibraryInfo &getLibInfo() const { return *LibInfo; }
   const SelectionDAGTargetInfo &getSelectionDAGInfo() const { return *TSI; }
+  const LegacyDivergenceAnalysis *getDivergenceAnalysis() const { return DA; }
   LLVMContext *getContext() const {return Context; }
   OptimizationRemarkEmitter &getORE() const { return *ORE; }
 
@@ -572,6 +586,9 @@ public:
                       bool isTarget = false, bool isOpaque = false);
   SDValue getIntPtrConstant(uint64_t Val, const SDLoc &DL,
                             bool isTarget = false);
+  SDValue getShiftAmountConstant(uint64_t Val, EVT VT, const SDLoc &DL,
+                                 bool LegalTypes = true);
+
   SDValue getTargetConstant(uint64_t Val, const SDLoc &DL, EVT VT,
                             bool isOpaque = false) {
     return getConstant(Val, DL, VT, true, isOpaque);
@@ -788,6 +805,16 @@ public:
   /// value assuming it was the smaller SrcTy value.
   SDValue getZeroExtendInReg(SDValue Op, const SDLoc &DL, EVT VT);
 
+  /// Convert Op, which must be of integer type, to the integer type VT, by
+  /// either truncating it or performing either zero or sign extension as
+  /// appropriate extension for the pointer's semantics.
+  SDValue getPtrExtOrTrunc(SDValue Op, const SDLoc &DL, EVT VT);
+
+  /// Return the expression required to extend the Op as a pointer value
+  /// assuming it was the smaller SrcTy value. This may be either a zero extend
+  /// or a sign extend.
+  SDValue getPtrExtendInReg(SDValue Op, const SDLoc &DL, EVT VT);
+
   /// Convert Op, which must be of integer type, to the integer type VT,
   /// by using an extension appropriate for the target's
   /// BooleanContent for type OpVT or truncating it.
@@ -970,6 +997,10 @@ public:
   /// Try to simplify a shift into 1 of its operands or a constant.
   SDValue simplifyShift(SDValue X, SDValue Y);
 
+  /// Try to simplify a floating-point binary operation into 1 of its operands
+  /// or a constant.
+  SDValue simplifyFPBinop(unsigned Opcode, SDValue X, SDValue Y);
+
   /// VAArg produces a result and token chain, and takes a pointer
   /// and a source value as input.
   SDValue getVAArg(EVT VT, const SDLoc &dl, SDValue Chain, SDValue Ptr,
@@ -1010,11 +1041,18 @@ public:
     unsigned Align = 0,
     MachineMemOperand::Flags Flags
     = MachineMemOperand::MOLoad | MachineMemOperand::MOStore,
-    unsigned Size = 0);
+    unsigned Size = 0,
+    const AAMDNodes &AAInfo = AAMDNodes());
 
   SDValue getMemIntrinsicNode(unsigned Opcode, const SDLoc &dl, SDVTList VTList,
                               ArrayRef<SDValue> Ops, EVT MemVT,
                               MachineMemOperand *MMO);
+
+  /// Creates a LifetimeSDNode that starts (`IsStart==true`) or ends
+  /// (`IsStart==false`) the lifetime of the portion of `FrameIndex` between
+  /// offsets `Offset` and `Offset + Size`.
+  SDValue getLifetimeNode(bool IsStart, const SDLoc &dl, SDValue Chain,
+                          int FrameIndex, int64_t Size, int64_t Offset = -1);
 
   /// Create a MERGE_VALUES node from the given operands.
   SDValue getMergeValues(ArrayRef<SDValue> Ops, const SDLoc &dl);
@@ -1398,17 +1436,32 @@ public:
                                        ArrayRef<SDValue> Ops,
                                        const SDNodeFlags Flags = SDNodeFlags());
 
+  /// Fold floating-point operations with 2 operands when both operands are
+  /// constants and/or undefined.
+  SDValue foldConstantFPMath(unsigned Opcode, const SDLoc &DL, EVT VT,
+                             SDValue N1, SDValue N2);
+
   /// Constant fold a setcc to true or false.
   SDValue FoldSetCC(EVT VT, SDValue N1, SDValue N2, ISD::CondCode Cond,
                     const SDLoc &dl);
 
-  /// See if the specified operand can be simplified with the knowledge that only
-  /// the bits specified by Mask are used.  If so, return the simpler operand,
-  /// otherwise return a null SDValue.
+  /// See if the specified operand can be simplified with the knowledge that
+  /// only the bits specified by DemandedBits are used.  If so, return the
+  /// simpler operand, otherwise return a null SDValue.
   ///
   /// (This exists alongside SimplifyDemandedBits because GetDemandedBits can
   /// simplify nodes with multiple uses more aggressively.)
-  SDValue GetDemandedBits(SDValue V, const APInt &Mask);
+  SDValue GetDemandedBits(SDValue V, const APInt &DemandedBits);
+
+  /// See if the specified operand can be simplified with the knowledge that
+  /// only the bits specified by DemandedBits are used in the elements specified
+  /// by DemandedElts.  If so, return the simpler operand, otherwise return a
+  /// null SDValue.
+  ///
+  /// (This exists alongside SimplifyDemandedBits because GetDemandedBits can
+  /// simplify nodes with multiple uses more aggressively.)
+  SDValue GetDemandedBits(SDValue V, const APInt &DemandedBits,
+                          const APInt &DemandedElts);
 
   /// Return true if the sign bit of Op is known to be zero.
   /// We use this predicate to simplify operations downstream.
@@ -1417,8 +1470,19 @@ public:
   /// Return true if 'Op & Mask' is known to be zero.  We
   /// use this predicate to simplify operations downstream.  Op and Mask are
   /// known to be the same type.
-  bool MaskedValueIsZero(SDValue Op, const APInt &Mask, unsigned Depth = 0)
-    const;
+  bool MaskedValueIsZero(SDValue Op, const APInt &Mask,
+                         unsigned Depth = 0) const;
+
+  /// Return true if 'Op & Mask' is known to be zero in DemandedElts.  We
+  /// use this predicate to simplify operations downstream.  Op and Mask are
+  /// known to be the same type.
+  bool MaskedValueIsZero(SDValue Op, const APInt &Mask,
+                         const APInt &DemandedElts, unsigned Depth = 0) const;
+
+  /// Return true if '(Op & Mask) == Mask'.
+  /// Op and Mask are known to be the same type.
+  bool MaskedValueIsAllOnes(SDValue Op, const APInt &Mask,
+                            unsigned Depth = 0) const;
 
   /// Determine which bits of Op are known to be either zero or one and return
   /// them in Known. For vectors, the known bits are those that are shared by
@@ -1518,6 +1582,13 @@ public:
   /// Test whether \p V has a splatted value.
   bool isSplatValue(SDValue V, bool AllowUndefs = false);
 
+  /// If V is a splatted value, return the source vector and its splat index.
+  SDValue getSplatSourceVector(SDValue V, int &SplatIndex);
+
+  /// If V is a splat vector, return its scalar source operand by extracting
+  /// that element from the source vector.
+  SDValue getSplatValue(SDValue V);
+
   /// Match a binop + shuffle pyramid that represents a horizontal reduction
   /// over the elements of a vector starting from the EXTRACT_VECTOR_ELT node /p
   /// Extract. The reduction must use one of the opcodes listed in /p
@@ -1534,6 +1605,11 @@ public:
   /// If the  ResNE is greater than the width of the vector op, unroll the
   /// vector op and fill the end of the resulting vector with UNDEFS.
   SDValue UnrollVectorOp(SDNode *N, unsigned ResNE = 0);
+
+  /// Like UnrollVectorOp(), but for the [US](ADD|SUB|MUL)O family of opcodes.
+  /// This is a separate function because those opcodes have two results.
+  std::pair<SDValue, SDValue> UnrollVectorOverflowOp(SDNode *N,
+                                                     unsigned ResNE = 0);
 
   /// Return true if loads are next to each other and can be
   /// merged. Check that both are nonvolatile and if LD is loading
@@ -1569,6 +1645,9 @@ public:
     return SplitVector(N->getOperand(OpNo), SDLoc(N));
   }
 
+  /// Widen the vector up to the next power of two using INSERT_SUBVECTOR.
+  SDValue WidenVector(const SDValue &N, const SDLoc &DL);
+
   /// Append the extracted elements from Start to Count out of the vector Op
   /// in Args. If Count is 0, all of the elements will be extracted.
   void ExtractVectorElements(SDValue Op, SmallVectorImpl<SDValue> &Args,
@@ -1588,6 +1667,29 @@ public:
   inline bool isConstantValueOfAnyType(SDValue N) {
     return isConstantIntBuildVectorOrConstantInt(N) ||
            isConstantFPBuildVectorOrConstantFP(N);
+  }
+
+  void addCallSiteInfo(const SDNode *CallNode, CallSiteInfoImpl &&CallInfo) {
+    SDCallSiteDbgInfo[CallNode].CSInfo = std::move(CallInfo);
+  }
+
+  CallSiteInfo getSDCallSiteInfo(const SDNode *CallNode) {
+    auto I = SDCallSiteDbgInfo.find(CallNode);
+    if (I != SDCallSiteDbgInfo.end())
+      return std::move(I->second).CSInfo;
+    return CallSiteInfo();
+  }
+
+  void addHeapAllocSite(const SDNode *Node, MDNode *MD) {
+    SDCallSiteDbgInfo[Node].HeapAllocSite = MD;
+  }
+
+  /// Return the HeapAllocSite type associated with the SDNode, if it exists.
+  MDNode *getHeapAllocSite(const SDNode *Node) {
+    auto It = SDCallSiteDbgInfo.find(Node);
+    if (It == SDCallSiteDbgInfo.end())
+      return nullptr;
+    return It->second.HeapAllocSite;
   }
 
 private:

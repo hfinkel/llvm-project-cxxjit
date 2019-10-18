@@ -192,6 +192,8 @@ StringRef sys::detail::getHostCPUNameForARM(StringRef ProcCpuinfoContent) {
             .Case("0xd07", "cortex-a57")
             .Case("0xd08", "cortex-a72")
             .Case("0xd09", "cortex-a73")
+            .Case("0xd0a", "cortex-a75")
+            .Case("0xd0b", "cortex-a76")
             .Default("generic");
   }
 
@@ -235,6 +237,10 @@ StringRef sys::detail::getHostCPUNameForARM(StringRef ProcCpuinfoContent) {
             .Case("0x211", "kryo")
             .Case("0x800", "cortex-a73")
             .Case("0x801", "cortex-a73")
+            .Case("0x802", "cortex-a73")
+            .Case("0x803", "cortex-a73")
+            .Case("0x804", "cortex-a73")
+            .Case("0x805", "cortex-a73")
             .Case("0xc00", "falkor")
             .Case("0xc01", "saphira")
             .Default("generic");
@@ -309,6 +315,8 @@ StringRef sys::detail::getHostCPUNameForS390x(StringRef ProcCpuinfoContent) {
         Pos += sizeof("machine = ") - 1;
         unsigned int Id;
         if (!Lines[I].drop_front(Pos).getAsInteger(10, Id)) {
+          if (Id >= 8561 && HaveVectorSupport)
+            return "arch13";
           if (Id >= 3906 && HaveVectorSupport)
             return "z14";
           if (Id >= 2964 && HaveVectorSupport)
@@ -661,10 +669,10 @@ getIntelProcessorTypeAndSubtype(unsigned Family, unsigned Model,
       break;
 
     // Skylake:
-    case 0x4e: // Skylake mobile
-    case 0x5e: // Skylake desktop
-    case 0x8e: // Kaby Lake mobile
-    case 0x9e: // Kaby Lake desktop
+    case 0x4e:              // Skylake mobile
+    case 0x5e:              // Skylake desktop
+    case 0x8e:              // Kaby Lake mobile
+    case 0x9e:              // Kaby Lake desktop
       *Type = X86::INTEL_COREI7; // "skylake"
       *Subtype = X86::INTEL_COREI7_SKYLAKE;
       break;
@@ -672,13 +680,32 @@ getIntelProcessorTypeAndSubtype(unsigned Family, unsigned Model,
     // Skylake Xeon:
     case 0x55:
       *Type = X86::INTEL_COREI7;
-      *Subtype = X86::INTEL_COREI7_SKYLAKE_AVX512; // "skylake-avx512"
+      if (Features3 & (1 << (X86::FEATURE_AVX512BF16 - 64)))
+        *Subtype = X86::INTEL_COREI7_COOPERLAKE; // "cooperlake"
+      else if (Features2 & (1 << (X86::FEATURE_AVX512VNNI - 32)))
+        *Subtype = X86::INTEL_COREI7_CASCADELAKE; // "cascadelake"
+      else
+        *Subtype = X86::INTEL_COREI7_SKYLAKE_AVX512; // "skylake-avx512"
       break;
 
     // Cannonlake:
     case 0x66:
       *Type = X86::INTEL_COREI7;
       *Subtype = X86::INTEL_COREI7_CANNONLAKE; // "cannonlake"
+      break;
+
+    // Icelake:
+    case 0x7d:
+    case 0x7e:
+      *Type = X86::INTEL_COREI7;
+      *Subtype = X86::INTEL_COREI7_ICELAKE_CLIENT; // "icelake-client"
+      break;
+
+    // Icelake Xeon:
+    case 0x6a:
+    case 0x6c:
+      *Type = X86::INTEL_COREI7;
+      *Subtype = X86::INTEL_COREI7_ICELAKE_SERVER; // "icelake-server"
       break;
 
     case 0x1c: // Most 45 nm Intel Atom processors
@@ -706,9 +733,14 @@ getIntelProcessorTypeAndSubtype(unsigned Family, unsigned Model,
     case 0x7a:
       *Type = X86::INTEL_GOLDMONT_PLUS;
       break;
+    case 0x86:
+      *Type = X86::INTEL_TREMONT;
+      break;
+
     case 0x57:
       *Type = X86::INTEL_KNL; // knl
       break;
+
     case 0x85:
       *Type = X86::INTEL_KNM; // knm
       break;
@@ -723,6 +755,12 @@ getIntelProcessorTypeAndSubtype(unsigned Family, unsigned Model,
       if (Features & (1 << X86::FEATURE_AVX512VBMI)) {
         *Type = X86::INTEL_COREI7;
         *Subtype = X86::INTEL_COREI7_CANNONLAKE;
+        break;
+      }
+
+      if (Features3 & (1 << (X86::FEATURE_AVX512BF16 - 64))) {
+        *Type = X86::INTEL_COREI7;
+        *Subtype = X86::INTEL_COREI7_COOPERLAKE;
         break;
       }
 
@@ -916,7 +954,14 @@ static void getAMDProcessorTypeAndSubtype(unsigned Family, unsigned Model,
     break; // "btver2"
   case 23:
     *Type = X86::AMDFAM17H;
-    *Subtype = X86::AMDFAM17H_ZNVER1;
+    if (Model >= 0x30 && Model <= 0x3f) {
+      *Subtype = X86::AMDFAM17H_ZNVER2;
+      break; // "znver2"; 30h-3fh: Zen2
+    }
+    if (Model <= 0x0f) {
+      *Subtype = X86::AMDFAM17H_ZNVER1;
+      break; // "znver1"; 00h-0Fh: Zen1
+    }
     break;
   default:
     break; // "generic"
@@ -1257,6 +1302,7 @@ bool sys::getHostCPUFeatures(StringMap<bool> &Features) {
 
   getX86CpuIDAndInfo(1, &EAX, &EBX, &ECX, &EDX);
 
+  Features["cx8"]    = (EDX >>  8) & 1;
   Features["cmov"]   = (EDX >> 15) & 1;
   Features["mmx"]    = (EDX >> 23) & 1;
   Features["fxsr"]   = (EDX >> 24) & 1;
@@ -1355,6 +1401,7 @@ bool sys::getHostCPUFeatures(StringMap<bool> &Features) {
   Features["cldemote"]        = HasLeaf7 && ((ECX >> 25) & 1);
   Features["movdiri"]         = HasLeaf7 && ((ECX >> 27) & 1);
   Features["movdir64b"]       = HasLeaf7 && ((ECX >> 28) & 1);
+  Features["enqcmd"]          = HasLeaf7 && ((ECX >> 29) & 1);
 
   // There are two CPUID leafs which information associated with the pconfig
   // instruction:
@@ -1367,6 +1414,9 @@ bool sys::getHostCPUFeatures(StringMap<bool> &Features) {
   // detecting features using the "-march=native" flag.
   // For more info, see X86 ISA docs.
   Features["pconfig"] = HasLeaf7 && ((EDX >> 18) & 1);
+  bool HasLeaf7Subleaf1 =
+      MaxLevel >= 7 && !getX86CpuIDAndInfoEx(0x7, 0x1, &EAX, &EBX, &ECX, &EDX);
+  Features["avx512bf16"] = HasLeaf7Subleaf1 && ((EAX >> 5) & 1) && HasAVX512Save;
 
   bool HasLeafD = MaxLevel >= 0xd &&
                   !getX86CpuIDAndInfoEx(0xd, 0x1, &EAX, &EBX, &ECX, &EDX);

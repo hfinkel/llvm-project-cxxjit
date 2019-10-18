@@ -90,9 +90,6 @@ public:
   }
 
   std::string RewriteFilename(const std::string& filename, int &fd) override {
-    assert(llvm::sys::path::is_absolute(filename) &&
-           "clang-fixit expects absolute paths only.");
-
     // We don't need to do permission checking here since clang will diagnose
     // any I/O errors itself.
 
@@ -137,11 +134,11 @@ public:
     if (ASTList)
       return clang::CreateASTDeclNodeLister();
     if (ASTDump)
-      return clang::CreateASTDumper(nullptr /*Dump to stdout.*/,
-                                    ASTDumpFilter,
+      return clang::CreateASTDumper(nullptr /*Dump to stdout.*/, ASTDumpFilter,
                                     /*DumpDecls=*/true,
                                     /*Deserialize=*/false,
-                                    /*DumpLookups=*/false);
+                                    /*DumpLookups=*/false,
+                                    clang::ADOF_Default);
     if (ASTPrint)
       return clang::CreateASTPrinter(nullptr, ASTDumpFilter);
     return llvm::make_unique<clang::ASTConsumer>();

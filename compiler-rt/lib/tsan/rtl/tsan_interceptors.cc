@@ -486,7 +486,7 @@ static void JmpBufGarbageCollect(ThreadState *thr, uptr sp) {
   }
 }
 
-static void SetJmp(ThreadState *thr, uptr sp, uptr mangled_sp) {
+static void SetJmp(ThreadState *thr, uptr sp) {
   if (!thr->is_inited)  // called from libc guts during bootstrap
     return;
   // Cleanup old bufs.
@@ -494,7 +494,6 @@ static void SetJmp(ThreadState *thr, uptr sp, uptr mangled_sp) {
   // Remember the buf.
   JmpBuf *buf = thr->jmp_bufs.PushBack();
   buf->sp = sp;
-  buf->mangled_sp = mangled_sp;
   buf->shadow_stack_pos = thr->shadow_stack_pos;
   ThreadSignalContext *sctx = SigCtx(thr);
   buf->int_signal_send = sctx ? sctx->int_signal_send : 0;
@@ -506,32 +505,11 @@ static void SetJmp(ThreadState *thr, uptr sp, uptr mangled_sp) {
 }
 
 static void LongJmp(ThreadState *thr, uptr *env) {
-#ifdef __powerpc__
-  uptr mangled_sp = env[0];
-#elif SANITIZER_FREEBSD
-  uptr mangled_sp = env[2];
-#elif SANITIZER_NETBSD
-  uptr mangled_sp = env[6];
-#elif SANITIZER_MAC
-# ifdef __aarch64__
-  uptr mangled_sp =
-      (GetMacosVersion() >= MACOS_VERSION_MOJAVE) ? env[12] : env[13];
-# else
-    uptr mangled_sp = env[2];
-# endif
-#elif SANITIZER_LINUX
-# ifdef __aarch64__
-  uptr mangled_sp = env[13];
-# elif defined(__mips64)
-  uptr mangled_sp = env[1];
-# else
-  uptr mangled_sp = env[6];
-# endif
-#endif
-  // Find the saved buf by mangled_sp.
+  uptr sp = ExtractLongJmpSp(env);
+  // Find the saved buf with matching sp.
   for (uptr i = 0; i < thr->jmp_bufs.Size(); i++) {
     JmpBuf *buf = &thr->jmp_bufs[i];
-    if (buf->mangled_sp == mangled_sp) {
+    if (buf->sp == sp) {
       CHECK_GE(thr->shadow_stack_pos, buf->shadow_stack_pos);
       // Unwind the stack.
       while (thr->shadow_stack_pos > buf->shadow_stack_pos)
@@ -553,9 +531,9 @@ static void LongJmp(ThreadState *thr, uptr *env) {
 }
 
 // FIXME: put everything below into a common extern "C" block?
-extern "C" void __tsan_setjmp(uptr sp, uptr mangled_sp) {
+extern "C" void __tsan_setjmp(uptr sp) {
   cur_thread_init();
-  SetJmp(cur_thread(), sp, mangled_sp);
+  SetJmp(cur_thread(), sp);
 }
 
 #if SANITIZER_MAC
@@ -701,6 +679,19 @@ TSAN_INTERCEPTOR(void*, realloc, void *p, uptr size) {
   {
     SCOPED_INTERCEPTOR_RAW(realloc, p, size);
     p = user_realloc(thr, pc, p, size);
+  }
+  invoke_malloc_hook(p, size);
+  return p;
+}
+
+TSAN_INTERCEPTOR(void*, reallocarray, void *p, uptr size, uptr n) {
+  if (in_symbolizer())
+    return InternalReallocArray(p, size, n);
+  if (p)
+    invoke_free_hook(p);
+  {
+    SCOPED_INTERCEPTOR_RAW(reallocarray, p, size, n);
+    p = user_reallocarray(thr, pc, p, size, n);
   }
   invoke_malloc_hook(p, size);
   return p;
@@ -2221,6 +2212,7 @@ static void HandleRecvmsg(ThreadState *thr, uptr pc,
 #define NEED_TLS_GET_ADDR
 #endif
 #undef SANITIZER_INTERCEPT_TLS_GET_ADDR
+#undef SANITIZER_INTERCEPT_PTHREAD_SIGMASK
 
 #define COMMON_INTERCEPT_FUNCTION(name) INTERCEPT_FUNCTION(name)
 #define COMMON_INTERCEPT_FUNCTION_VER(name, ver)                          \
@@ -2620,6 +2612,9 @@ static void unreachable() {
 }
 #endif
 
+// Define default implementation since interception of libdispatch  is optional.
+SANITIZER_WEAK_ATTRIBUTE void InitializeLibdispatchInterceptors() {}
+
 void InitializeInterceptors() {
 #if !SANITIZER_MAC
   // We need to setup it early, because functions like dlsym() can call it.
@@ -2637,18 +2632,18 @@ void InitializeInterceptors() {
 
   InitializeCommonInterceptors();
   InitializeSignalInterceptors();
+  InitializeLibdispatchInterceptors();
 
 #if !SANITIZER_MAC
   // We can not use TSAN_INTERCEPT to get setjmp addr,
   // because it does &setjmp and setjmp is not present in some versions of libc.
-  using __interception::GetRealFunctionAddress;
-  GetRealFunctionAddress(TSAN_STRING_SETJMP,
-                         (uptr*)&REAL(setjmp_symname), 0, 0);
-  GetRealFunctionAddress("_setjmp", (uptr*)&REAL(_setjmp), 0, 0);
-  GetRealFunctionAddress(TSAN_STRING_SIGSETJMP,
-                         (uptr*)&REAL(sigsetjmp_symname), 0, 0);
+  using __interception::InterceptFunction;
+  InterceptFunction(TSAN_STRING_SETJMP, (uptr*)&REAL(setjmp_symname), 0, 0);
+  InterceptFunction("_setjmp", (uptr*)&REAL(_setjmp), 0, 0);
+  InterceptFunction(TSAN_STRING_SIGSETJMP, (uptr*)&REAL(sigsetjmp_symname), 0,
+                    0);
 #if !SANITIZER_NETBSD
-  GetRealFunctionAddress("__sigsetjmp", (uptr*)&REAL(__sigsetjmp), 0, 0);
+  InterceptFunction("__sigsetjmp", (uptr*)&REAL(__sigsetjmp), 0, 0);
 #endif
 #endif
 
@@ -2662,6 +2657,7 @@ void InitializeInterceptors() {
   TSAN_INTERCEPT(__libc_memalign);
   TSAN_INTERCEPT(calloc);
   TSAN_INTERCEPT(realloc);
+  TSAN_INTERCEPT(reallocarray);
   TSAN_INTERCEPT(free);
   TSAN_INTERCEPT(cfree);
   TSAN_INTERCEPT(munmap);

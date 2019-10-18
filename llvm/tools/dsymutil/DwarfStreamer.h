@@ -95,7 +95,9 @@ public:
   /// Emit the debug_loc contribution for \p Unit by copying the entries from
   /// \p Dwarf and offsetting them. Update the location attributes to point to
   /// the new entries.
-  void emitLocationsForUnit(const CompileUnit &Unit, DWARFContext &Dwarf);
+  void emitLocationsForUnit(
+      const CompileUnit &Unit, DWARFContext &Dwarf,
+      std::function<void(StringRef, SmallVectorImpl<uint8_t> &)> ProcessExpr);
 
   /// Emit the line table described in \p Rows into the debug_line section.
   void emitLineTableForUnit(MCDwarfLineTableParams Params,
@@ -105,8 +107,7 @@ public:
 
   /// Copy the debug_line over to the updated binary while unobfuscating the
   /// file names and directories.
-  void translateLineTable(DataExtractor LineData, uint32_t Offset,
-                          LinkOptions &Options);
+  void translateLineTable(DataExtractor LineData, uint32_t Offset);
 
   /// Copy over the debug sections that are not modified when updating.
   void copyInvariantDebugSection(const object::ObjectFile &Obj);

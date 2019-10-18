@@ -18,6 +18,7 @@
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/MC/MCAsmInfo.h"
+#include "llvm/MC/MCDwarf.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSection.h"
 #include "llvm/MC/MCStreamer.h"
@@ -42,11 +43,11 @@ void AsmPrinter::EmitSLEB128(int64_t Value, const char *Desc) const {
   OutStreamer->EmitSLEB128IntValue(Value);
 }
 
-void AsmPrinter::EmitULEB128(uint64_t Value, const char *Desc) const {
+void AsmPrinter::EmitULEB128(uint64_t Value, const char *Desc, unsigned PadTo) const {
   if (isVerbose() && Desc)
     OutStreamer->AddComment(Desc);
 
-  OutStreamer->EmitULEB128IntValue(Value);
+  OutStreamer->EmitULEB128IntValue(Value, PadTo);
 }
 
 /// Emit something like ".uleb128 Hi-Lo".
@@ -180,6 +181,25 @@ void AsmPrinter::emitDwarfStringOffset(DwarfStringPoolEntry S) const {
 
 void AsmPrinter::EmitDwarfOffset(const MCSymbol *Label, uint64_t Offset) const {
   EmitLabelPlusOffset(Label, Offset, MAI->getCodePointerSize());
+}
+
+void AsmPrinter::EmitCallSiteOffset(const MCSymbol *Hi,
+                                    const MCSymbol *Lo,
+                                    unsigned Encoding) const {
+  // The least significant 3 bits specify the width of the encoding
+  if ((Encoding & 0x7) == dwarf::DW_EH_PE_uleb128)
+    EmitLabelDifferenceAsULEB128(Hi, Lo);
+  else
+    EmitLabelDifference(Hi, Lo, GetSizeOfEncodedValue(Encoding));
+}
+
+void AsmPrinter::EmitCallSiteValue(uint64_t Value,
+                                   unsigned Encoding) const {
+  // The least significant 3 bits specify the width of the encoding
+  if ((Encoding & 0x7) == dwarf::DW_EH_PE_uleb128)
+    EmitULEB128(Value);
+  else
+    OutStreamer->EmitIntValue(Value, GetSizeOfEncodedValue(Encoding));
 }
 
 //===----------------------------------------------------------------------===//

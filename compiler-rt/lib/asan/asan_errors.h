@@ -163,6 +163,21 @@ struct ErrorCallocOverflow : ErrorBase {
   void Print();
 };
 
+struct ErrorReallocArrayOverflow : ErrorBase {
+  const BufferedStackTrace *stack;
+  uptr count;
+  uptr size;
+
+  ErrorReallocArrayOverflow() = default;  // (*)
+  ErrorReallocArrayOverflow(u32 tid, BufferedStackTrace *stack_, uptr count_,
+                            uptr size_)
+      : ErrorBase(tid, 10, "reallocarray-overflow"),
+        stack(stack_),
+        count(count_),
+        size(size_) {}
+  void Print();
+};
+
 struct ErrorPvallocOverflow : ErrorBase {
   const BufferedStackTrace *stack;
   uptr size;
@@ -371,6 +386,7 @@ struct ErrorGeneric : ErrorBase {
   macro(MallocUsableSizeNotOwned)               \
   macro(SanitizerGetAllocatedSizeNotOwned)      \
   macro(CallocOverflow)                         \
+  macro(ReallocArrayOverflow)                   \
   macro(PvallocOverflow)                        \
   macro(InvalidAllocationAlignment)             \
   macro(InvalidAlignedAllocAlignment)           \
@@ -388,8 +404,10 @@ struct ErrorGeneric : ErrorBase {
 
 #define ASAN_DEFINE_ERROR_KIND(name) kErrorKind##name,
 #define ASAN_ERROR_DESCRIPTION_MEMBER(name) Error##name name;
-#define ASAN_ERROR_DESCRIPTION_CONSTRUCTOR(name) \
-  ErrorDescription(Error##name const &e) : kind(kErrorKind##name), name(e) {}
+#define ASAN_ERROR_DESCRIPTION_CONSTRUCTOR(name)                    \
+  ErrorDescription(Error##name const &e) : kind(kErrorKind##name) { \
+    internal_memcpy(&name, &e, sizeof(name));                       \
+  }
 #define ASAN_ERROR_DESCRIPTION_PRINT(name) \
   case kErrorKind##name:                   \
     return name.Print();

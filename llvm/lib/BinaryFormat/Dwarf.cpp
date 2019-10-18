@@ -143,8 +143,12 @@ StringRef llvm::dwarf::OperationEncodingString(unsigned Encoding) {
   case DW_OP_##NAME:                                                           \
     return "DW_OP_" #NAME;
 #include "llvm/BinaryFormat/Dwarf.def"
+  case DW_OP_LLVM_convert:
+    return "DW_OP_LLVM_convert";
   case DW_OP_LLVM_fragment:
     return "DW_OP_LLVM_fragment";
+  case DW_OP_LLVM_tag_offset:
+    return "DW_OP_LLVM_tag_offset";
   }
 }
 
@@ -153,7 +157,9 @@ unsigned llvm::dwarf::getOperationEncoding(StringRef OperationEncodingString) {
 #define HANDLE_DW_OP(ID, NAME, VERSION, VENDOR)                                \
   .Case("DW_OP_" #NAME, DW_OP_##NAME)
 #include "llvm/BinaryFormat/Dwarf.def"
+      .Case("DW_OP_LLVM_convert", DW_OP_LLVM_convert)
       .Case("DW_OP_LLVM_fragment", DW_OP_LLVM_fragment)
+      .Case("DW_OP_LLVM_tag_offset", DW_OP_LLVM_tag_offset)
       .Default(0);
 }
 

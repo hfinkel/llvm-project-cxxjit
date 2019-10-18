@@ -6,10 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Lanai.h"
 #include "LanaiAluCode.h"
 #include "LanaiCondCode.h"
+#include "LanaiInstrInfo.h"
 #include "MCTargetDesc/LanaiMCExpr.h"
+#include "TargetInfo/LanaiTargetInfo.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"

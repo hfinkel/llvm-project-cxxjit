@@ -51,7 +51,7 @@ struct atomic_u32 {
 struct atomic_u64 {
   typedef u64 Type;
   // On 32-bit platforms u64 is not necessarily aligned on 8 bytes.
-  volatile ALIGNED(8) Type ValDoNotUse;
+  ALIGNED(8) volatile Type ValDoNotUse;
 };
 
 struct atomic_uptr {
@@ -124,6 +124,14 @@ INLINE typename T::Type atomic_load_relaxed(const volatile T *A) {
 template <typename T>
 INLINE void atomic_store_relaxed(volatile T *A, typename T::Type V) {
   atomic_store(A, V, memory_order_relaxed);
+}
+
+template <typename T>
+INLINE typename T::Type atomic_compare_exchange(volatile T *A,
+                                                typename T::Type Cmp,
+                                                typename T::Type Xchg) {
+  atomic_compare_exchange_strong(A, &Cmp, Xchg, memory_order_acquire);
+  return Cmp;
 }
 
 } // namespace scudo

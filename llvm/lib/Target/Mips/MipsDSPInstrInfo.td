@@ -515,6 +515,7 @@ class MTHI_DESC_BASE<string instr_asm, RegisterOperand RO, InstrItinClass itin> 
 
 class BPOSGE32_PSEUDO_DESC_BASE<SDPatternOperator OpNode, InstrItinClass itin> :
   MipsPseudo<(outs GPR32Opnd:$dst), (ins), [(set GPR32Opnd:$dst, (OpNode))]> {
+  bit hasNoSchedulingInfo = 1;
   bit usesCustomInserter = 1;
 }
 
@@ -1313,7 +1314,9 @@ def PseudoCMPU_LE_QB : PseudoCMP<CMPU_LE_QB>;
 def PseudoPICK_PH : PseudoPICK<PICK_PH>;
 def PseudoPICK_QB : PseudoPICK<PICK_QB>;
 
-def PseudoMTLOHI_DSP : PseudoMTLOHI<ACC64DSP, GPR32>;
+let AdditionalPredicates = [HasDSP] in {
+  def PseudoMTLOHI_DSP : PseudoMTLOHI<ACC64DSP, GPR32>;
+}
 
 // Patterns.
 class DSPPat<dag pattern, dag result, Predicate pred = HasDSP> :

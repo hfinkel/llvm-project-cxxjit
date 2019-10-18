@@ -240,10 +240,11 @@ void IdentifierNamingCheck::registerMatchers(MatchFinder *Finder) {
   Finder->addMatcher(nestedNameSpecifierLoc().bind("nestedNameLoc"), this);
 }
 
-void IdentifierNamingCheck::registerPPCallbacks(CompilerInstance &Compiler) {
-  Compiler.getPreprocessor().addPPCallbacks(
-      llvm::make_unique<IdentifierNamingCheckPPCallbacks>(
-          &Compiler.getPreprocessor(), this));
+void IdentifierNamingCheck::registerPPCallbacks(
+    const SourceManager &SM, Preprocessor *PP, Preprocessor *ModuleExpanderPP) {
+  ModuleExpanderPP->addPPCallbacks(
+      llvm::make_unique<IdentifierNamingCheckPPCallbacks>(ModuleExpanderPP,
+                                                          this));
 }
 
 static bool matchesStyle(StringRef Name,
@@ -799,10 +800,11 @@ void IdentifierNamingCheck::check(const MatchFinder::MatchResult &Result) {
 
     // Fix type aliases in value declarations
     if (const auto *Value = Result.Nodes.getNodeAs<ValueDecl>("decl")) {
-      if (const auto *Typedef =
-              Value->getType().getTypePtr()->getAs<TypedefType>()) {
-        addUsage(NamingCheckFailures, Typedef->getDecl(),
-                 Value->getSourceRange());
+      if (const auto *TypePtr = Value->getType().getTypePtrOrNull()) {
+        if (const auto *Typedef = TypePtr->getAs<TypedefType>()) {
+          addUsage(NamingCheckFailures, Typedef->getDecl(),
+                   Value->getSourceRange());
+        }
       }
     }
 

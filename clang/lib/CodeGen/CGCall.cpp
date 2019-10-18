@@ -299,11 +299,11 @@ bool CodeGenTypes::inheritingCtorHasParams(
   return Type == Ctor_Complete ||
          !Inherited.getShadowDecl()->constructsVirtualBase() ||
          !Target.getCXXABI().hasConstructorVariants();
-  }
+}
 
 const CGFunctionInfo &
-CodeGenTypes::arrangeCXXStructorDeclaration(const CXXMethodDecl *MD,
-                                            StructorType Type) {
+CodeGenTypes::arrangeCXXStructorDeclaration(GlobalDecl GD) {
+  auto *MD = cast<CXXMethodDecl>(GD.getDecl());
 
   SmallVector<CanQualType, 16> argTypes;
   SmallVector<FunctionProtoType::ExtParameterInfo, 16> paramInfos;
@@ -311,17 +311,11 @@ CodeGenTypes::arrangeCXXStructorDeclaration(const CXXMethodDecl *MD,
 
   bool PassParams = true;
 
-  GlobalDecl GD;
   if (auto *CD = dyn_cast<CXXConstructorDecl>(MD)) {
-    GD = GlobalDecl(CD, toCXXCtorType(Type));
-
     // A base class inheriting constructor doesn't get forwarded arguments
     // needed to construct a virtual base (or base class thereof).
     if (auto Inherited = CD->getInheritedConstructor())
-      PassParams = inheritingCtorHasParams(Inherited, toCXXCtorType(Type));
-  } else {
-    auto *DD = dyn_cast<CXXDestructorDecl>(MD);
-    GD = GlobalDecl(DD, toCXXDtorType(Type));
+      PassParams = inheritingCtorHasParams(Inherited, GD.getCtorType());
   }
 
   CanQual<FunctionProtoType> FTP = GetFormalType(MD);
@@ -331,7 +325,7 @@ CodeGenTypes::arrangeCXXStructorDeclaration(const CXXMethodDecl *MD,
     appendParameterTypes(*this, argTypes, paramInfos, FTP);
 
   CGCXXABI::AddedStructorArgs AddedArgs =
-      TheCXXABI.buildStructorSignature(MD, Type, argTypes);
+      TheCXXABI.buildStructorSignature(GD, argTypes);
   if (!paramInfos.empty()) {
     // Note: prefix implies after the first param.
     if (AddedArgs.Prefix)
@@ -519,11 +513,9 @@ CodeGenTypes::arrangeGlobalDeclaration(GlobalDecl GD) {
   // FIXME: Do we need to handle ObjCMethodDecl?
   const FunctionDecl *FD = cast<FunctionDecl>(GD.getDecl());
 
-  if (const CXXConstructorDecl *CD = dyn_cast<CXXConstructorDecl>(FD))
-    return arrangeCXXStructorDeclaration(CD, getFromCtorType(GD.getCtorType()));
-
-  if (const CXXDestructorDecl *DD = dyn_cast<CXXDestructorDecl>(FD))
-    return arrangeCXXStructorDeclaration(DD, getFromDtorType(GD.getDtorType()));
+  if (isa<CXXConstructorDecl>(GD.getDecl()) ||
+      isa<CXXDestructorDecl>(GD.getDecl()))
+    return arrangeCXXStructorDeclaration(GD);
 
   return arrangeFunctionDeclaration(FD);
 }
@@ -1681,13 +1673,7 @@ llvm::Type *CodeGenTypes::GetFunctionTypeForVTable(GlobalDecl GD) {
   if (!isFuncTypeConvertible(FPT))
     return llvm::StructType::get(getLLVMContext());
 
-  const CGFunctionInfo *Info;
-  if (isa<CXXDestructorDecl>(MD))
-    Info =
-        &arrangeCXXStructorDeclaration(MD, getFromDtorType(GD.getDtorType()));
-  else
-    Info = &arrangeCXXMethodDeclaration(MD);
-  return GetFunctionType(*Info);
+  return GetFunctionType(GD);
 }
 
 static void AddAttributesFromFunctionProtoType(ASTContext &Ctx,
@@ -1823,9 +1809,8 @@ void CodeGenModule::ConstructDefaultFnAttrList(StringRef Name, bool HasOptnone,
 
 void CodeGenModule::AddDefaultFnAttrs(llvm::Function &F) {
   llvm::AttrBuilder FuncAttrs;
-  ConstructDefaultFnAttrList(F.getName(),
-                             F.hasFnAttribute(llvm::Attribute::OptimizeNone),
-                             /* AttrOnCallsite = */ false, FuncAttrs);
+  ConstructDefaultFnAttrList(F.getName(), F.hasOptNone(),
+                             /* AttrOnCallSite = */ false, FuncAttrs);
   F.addAttributes(llvm::AttributeList::FunctionIndex, FuncAttrs);
 }
 
@@ -2014,8 +1999,7 @@ void CodeGenModule::ConstructAttributeList(
   // Attach attributes to sret.
   if (IRFunctionArgs.hasSRetArg()) {
     llvm::AttrBuilder SRETAttrs;
-    if (!RetAI.getSuppressSRet())
-      SRETAttrs.addAttribute(llvm::Attribute::StructRet);
+    SRETAttrs.addAttribute(llvm::Attribute::StructRet);
     hasUsedSRet = true;
     if (RetAI.getInReg())
       SRETAttrs.addAttribute(llvm::Attribute::InReg);
@@ -2071,7 +2055,7 @@ void CodeGenModule::ConstructAttributeList(
         Attrs.addAttribute(llvm::Attribute::InReg);
 
       if (AI.getIndirectByVal())
-        Attrs.addAttribute(llvm::Attribute::ByVal);
+        Attrs.addByValAttr(getTypes().ConvertTypeForMem(ParamType));
 
       CharUnits Align = AI.getIndirectAlign();
 
@@ -2506,7 +2490,7 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
         assert(NumIRArgs == 1);
         auto AI = FnArgs[FirstIRArg];
         AI->setName(Arg->getName() + ".coerce");
-        CreateCoercedStore(AI, Ptr, /*DestIsVolatile=*/false, *this);
+        CreateCoercedStore(AI, Ptr, /*DstIsVolatile=*/false, *this);
       }
 
       // Match to what EmitParmDecl is expecting for this type.
@@ -2887,15 +2871,6 @@ void CodeGenFunction::EmitFunctionEpilog(const CGFunctionInfo &FI,
         // Get the stored value and nuke the now-dead store.
         RV = SI->getValueOperand();
         SI->eraseFromParent();
-
-        // If that was the only use of the return value, nuke it as well now.
-        auto returnValueInst = ReturnValue.getPointer();
-        if (returnValueInst->use_empty()) {
-          if (auto alloca = dyn_cast<llvm::AllocaInst>(returnValueInst)) {
-            alloca->eraseFromParent();
-            ReturnValue = Address::invalid();
-          }
-        }
 
       // Otherwise, we have to do a simple load.
       } else {
@@ -3452,7 +3427,7 @@ void CodeGenFunction::EmitCallArgs(
     assert(EmittedArg.getScalarVal() && "We emitted nothing for the arg?");
     llvm::Value *V = evaluateOrEmitBuiltinObjectSize(Arg, PS->getType(), T,
                                                      EmittedArg.getScalarVal(),
-                                                     /*IsDynamic=*/false);
+                                                     PS->isDynamic());
     Args.add(RValue::get(V), SizeTy);
     // If we're emitting args in reverse, be sure to do so with
     // pass_object_size, as well.
@@ -3527,7 +3502,7 @@ struct DestroyUnpassedArg final : EHScopeStack::Cleanup {
       const CXXDestructorDecl *Dtor = Ty->getAsCXXRecordDecl()->getDestructor();
       assert(!Dtor->isTrivial());
       CGF.EmitCXXDestructorCall(Dtor, Dtor_Complete, /*for vbase*/ false,
-                                /*Delegating=*/false, Addr);
+                                /*Delegating=*/false, Addr, Ty);
     } else {
       CGF.callCStructDestructor(CGF.MakeAddrLValue(Addr, Ty));
     }
@@ -3562,7 +3537,7 @@ RValue CallArg::getRValue(CodeGenFunction &CGF) const {
 void CallArg::copyInto(CodeGenFunction &CGF, Address Addr) const {
   LValue Dst = CGF.MakeAddrLValue(Addr, Ty);
   if (!HasLV && RV.isScalar())
-    CGF.EmitStoreOfScalar(RV.getScalarVal(), Dst, /*init=*/true);
+    CGF.EmitStoreOfScalar(RV.getScalarVal(), Dst, /*isInit=*/true);
   else if (!HasLV && RV.isComplex())
     CGF.EmitStoreOfComplex(RV.getComplexVal(), Dst, /*init=*/true);
   else {
@@ -3814,6 +3789,18 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
   const ABIArgInfo &RetAI = CallInfo.getReturnInfo();
 
   llvm::FunctionType *IRFuncTy = getTypes().GetFunctionType(CallInfo);
+
+  const Decl *TargetDecl = Callee.getAbstractInfo().getCalleeDecl().getDecl();
+  if (const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(TargetDecl))
+    // We can only guarantee that a function is called from the correct
+    // context/function based on the appropriate target attributes,
+    // so only check in the case where we have both always_inline and target
+    // since otherwise we could be making a conditional call after a check for
+    // the proper cpu features (and it won't cause code generation issues due to
+    // function based code generation).
+    if (TargetDecl->hasAttr<AlwaysInlineAttr>() &&
+        TargetDecl->hasAttr<TargetAttr>())
+      checkTargetFeatures(Loc, FD);
 
 #ifndef NDEBUG
   if (!(CallInfo.isVariadic() && CallInfo.getArgStruct())) {
@@ -4303,11 +4290,7 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
   // Apply always_inline to all calls within flatten functions.
   // FIXME: should this really take priority over __try, below?
   if (CurCodeDecl && CurCodeDecl->hasAttr<FlattenAttr>() &&
-      !(Callee.getAbstractInfo().getCalleeDecl().getDecl() &&
-        Callee.getAbstractInfo()
-            .getCalleeDecl()
-            .getDecl()
-            ->hasAttr<NoInlineAttr>())) {
+      !(TargetDecl && TargetDecl->hasAttr<NoInlineAttr>())) {
     Attrs =
         Attrs.addAttribute(getLLVMContext(), llvm::AttributeList::FunctionIndex,
                            llvm::Attribute::AlwaysInline);
@@ -4391,10 +4374,14 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
 
   // Suppress tail calls if requested.
   if (llvm::CallInst *Call = dyn_cast<llvm::CallInst>(CI)) {
-    const Decl *TargetDecl = Callee.getAbstractInfo().getCalleeDecl().getDecl();
     if (TargetDecl && TargetDecl->hasAttr<NotTailCalledAttr>())
       Call->setTailCallKind(llvm::CallInst::TCK_NoTail);
   }
+
+  // Add metadata for calls to MSAllocator functions
+  if (getDebugInfo() && TargetDecl &&
+      TargetDecl->hasAttr<MSAllocatorAttr>())
+    getDebugInfo()->addHeapAllocSiteMetadata(CI, RetTy, Loc);
 
   // 4. Finish the call.
 
@@ -4552,7 +4539,6 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
   } ();
 
   // Emit the assume_aligned check on the return value.
-  const Decl *TargetDecl = Callee.getAbstractInfo().getCalleeDecl().getDecl();
   if (Ret.isScalar() && TargetDecl) {
     if (const auto *AA = TargetDecl->getAttr<AssumeAlignedAttr>()) {
       llvm::Value *OffsetValue = nullptr;

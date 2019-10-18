@@ -14,6 +14,7 @@
 #define LLVM_CODEGEN_MACHINEOPERAND_H
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/CodeGen/Register.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/LowLevelTypeImpl.h"
@@ -345,9 +346,9 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// getReg - Returns the register number.
-  unsigned getReg() const {
+  Register getReg() const {
     assert(isReg() && "This is not a register operand!");
-    return SmallContents.RegNo;
+    return Register(SmallContents.RegNo);
   }
 
   unsigned getSubReg() const {
@@ -683,6 +684,11 @@ public:
     Contents.RegMask = RegMaskPtr;
   }
 
+  void setPredicate(unsigned Predicate) {
+    assert(isPredicate() && "Wrong MachineOperand mutator");
+    Contents.Pred = Predicate;
+  }
+
   //===--------------------------------------------------------------------===//
   // Other methods.
   //===--------------------------------------------------------------------===//
@@ -712,6 +718,10 @@ public:
 
   /// ChangeToES - Replace this operand with a new external symbol operand.
   void ChangeToES(const char *SymName, unsigned char TargetFlags = 0);
+
+  /// ChangeToGA - Replace this operand with a new global address operand.
+  void ChangeToGA(const GlobalValue *GV, int64_t Offset,
+                  unsigned char TargetFlags = 0);
 
   /// ChangeToMCSymbol - Replace this operand with a new MC symbol operand.
   void ChangeToMCSymbol(MCSymbol *Sym);

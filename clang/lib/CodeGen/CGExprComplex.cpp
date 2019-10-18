@@ -213,10 +213,11 @@ public:
     return Visit(E->getSubExpr());
   }
   ComplexPairTy VisitCXXDefaultArgExpr(CXXDefaultArgExpr *DAE) {
+    CodeGenFunction::CXXDefaultArgExprScope Scope(CGF, DAE);
     return Visit(DAE->getExpr());
   }
   ComplexPairTy VisitCXXDefaultInitExpr(CXXDefaultInitExpr *DIE) {
-    CodeGenFunction::CXXDefaultInitExprScope Scope(CGF);
+    CodeGenFunction::CXXDefaultInitExprScope Scope(CGF, DIE);
     return Visit(DIE->getExpr());
   }
   ComplexPairTy VisitExprWithCleanups(ExprWithCleanups *E) {
@@ -463,6 +464,15 @@ ComplexPairTy ComplexExprEmitter::EmitCast(CastKind CK, Expr *Op,
     return EmitLoadOfLValue(CGF.MakeAddrLValue(V, DestTy), Op->getExprLoc());
   }
 
+  case CK_LValueToRValueBitCast: {
+    LValue SourceLVal = CGF.EmitLValue(Op);
+    Address Addr = Builder.CreateElementBitCast(SourceLVal.getAddress(),
+                                                CGF.ConvertTypeForMem(DestTy));
+    LValue DestLV = CGF.MakeAddrLValue(Addr, DestTy);
+    DestLV.setTBAAInfo(TBAAAccessInfo::getMayAliasInfo());
+    return EmitLoadOfLValue(DestLV, Op->getExprLoc());
+  }
+
   case CK_BitCast:
   case CK_BaseToDerived:
   case CK_DerivedToBase:
@@ -509,6 +519,8 @@ ComplexPairTy ComplexExprEmitter::EmitCast(CastKind CK, Expr *Op,
   case CK_IntToOCLSampler:
   case CK_FixedPointCast:
   case CK_FixedPointToBoolean:
+  case CK_FixedPointToIntegral:
+  case CK_IntegralToFixedPoint:
     llvm_unreachable("invalid cast kind for complex value");
 
   case CK_FloatingRealToComplex:

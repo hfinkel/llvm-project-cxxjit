@@ -21,7 +21,7 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Serialization/ASTReader.h"
 #include "clang/Serialization/ASTWriter.h"
-#include "llvm/Bitcode/BitstreamWriter.h"
+#include "llvm/Bitstream/BitstreamWriter.h"
 #include "llvm/Support/ErrorHandling.h"
 using namespace clang;
 using namespace serialization;
@@ -102,6 +102,7 @@ namespace clang {
     void VisitBindingDecl(BindingDecl *D);
     void VisitNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D);
     void VisitTemplateDecl(TemplateDecl *D);
+    void VisitConceptDecl(ConceptDecl *D);
     void VisitRedeclarableTemplateDecl(RedeclarableTemplateDecl *D);
     void VisitClassTemplateDecl(ClassTemplateDecl *D);
     void VisitVarTemplateDecl(VarTemplateDecl *D);
@@ -144,6 +145,7 @@ namespace clang {
     void VisitObjCPropertyDecl(ObjCPropertyDecl *D);
     void VisitObjCPropertyImplDecl(ObjCPropertyImplDecl *D);
     void VisitOMPThreadPrivateDecl(OMPThreadPrivateDecl *D);
+    void VisitOMPAllocateDecl(OMPAllocateDecl *D);
     void VisitOMPRequiresDecl(OMPRequiresDecl *D);
     void VisitOMPDeclareReductionDecl(OMPDeclareReductionDecl *D);
     void VisitOMPDeclareMapperDecl(OMPDeclareMapperDecl *D);
@@ -474,6 +476,9 @@ void ASTDeclWriter::VisitRecordDecl(RecordDecl *D) {
   Record.push_back(D->isNonTrivialToPrimitiveDefaultInitialize());
   Record.push_back(D->isNonTrivialToPrimitiveCopy());
   Record.push_back(D->isNonTrivialToPrimitiveDestroy());
+  Record.push_back(D->hasNonTrivialToPrimitiveDefaultInitializeCUnion());
+  Record.push_back(D->hasNonTrivialToPrimitiveDestructCUnion());
+  Record.push_back(D->hasNonTrivialToPrimitiveCopyCUnion());
   Record.push_back(D->isParamDestroyedInCallee());
   Record.push_back(D->getArgPassingRestrictions());
 
@@ -534,7 +539,6 @@ void ASTDeclWriter::VisitFunctionDecl(FunctionDecl *D) {
   Record.push_back(static_cast<int>(D->getStorageClass())); // FIXME: stable encoding
   Record.push_back(D->isInlineSpecified());
   Record.push_back(D->isInlined());
-  Record.push_back(D->isExplicitSpecified());
   Record.push_back(D->isVirtualAsWritten());
   Record.push_back(D->isPure());
   Record.push_back(D->hasInheritedPrototype());
@@ -545,7 +549,7 @@ void ASTDeclWriter::VisitFunctionDecl(FunctionDecl *D) {
   Record.push_back(D->isDefaulted());
   Record.push_back(D->isExplicitlyDefaulted());
   Record.push_back(D->hasImplicitReturnZero());
-  Record.push_back(D->isConstexpr());
+  Record.push_back(D->getConstexprKind());
   Record.push_back(D->usesSEHTry());
   Record.push_back(D->hasSkippedBody());
   Record.push_back(D->isMultiVersion());
@@ -595,6 +599,16 @@ void ASTDeclWriter::VisitFunctionDecl(FunctionDecl *D) {
 
     Record.AddSourceLocation(FTSInfo->getPointOfInstantiation());
 
+    if (MemberSpecializationInfo *MemberInfo =
+        FTSInfo->getMemberSpecializationInfo()) {
+      Record.push_back(1);
+      Record.AddDeclRef(MemberInfo->getInstantiatedFrom());
+      Record.push_back(MemberInfo->getTemplateSpecializationKind());
+      Record.AddSourceLocation(MemberInfo->getPointOfInstantiation());
+    } else {
+      Record.push_back(0);
+    }
+
     if (D->isCanonicalDecl()) {
       // Write the template that contains the specializations set. We will
       // add a FunctionTemplateSpecializationInfo to it when reading.
@@ -627,7 +641,18 @@ void ASTDeclWriter::VisitFunctionDecl(FunctionDecl *D) {
   Code = serialization::DECL_FUNCTION;
 }
 
+static void addExplicitSpecifier(ExplicitSpecifier ES,
+                                 ASTRecordWriter &Record) {
+  uint64_t Kind = static_cast<uint64_t>(ES.getKind());
+  Kind = Kind << 1 | static_cast<bool>(ES.getExpr());
+  Record.push_back(Kind);
+  if (ES.getExpr()) {
+    Record.AddStmt(ES.getExpr());
+  }
+}
+
 void ASTDeclWriter::VisitCXXDeductionGuideDecl(CXXDeductionGuideDecl *D) {
+  addExplicitSpecifier(D->getExplicitSpecifier(), Record);
   VisitFunctionDecl(D);
   Record.push_back(D->isCopyDeductionCandidate());
   Code = serialization::DECL_CXX_DEDUCTION_GUIDE;
@@ -1110,6 +1135,7 @@ void ASTDeclWriter::VisitBlockDecl(BlockDecl *D) {
   Record.push_back(D->blockMissingReturnType());
   Record.push_back(D->isConversionFromLambda());
   Record.push_back(D->doesNotEscape());
+  Record.push_back(D->canAvoidCopyToHeap());
   Record.push_back(D->capturesCXXThis());
   Record.push_back(D->getNumCaptures());
   for (const auto &capture : D->captures()) {
@@ -1319,19 +1345,15 @@ void ASTDeclWriter::VisitCXXMethodDecl(CXXMethodDecl *D) {
 }
 
 void ASTDeclWriter::VisitCXXConstructorDecl(CXXConstructorDecl *D) {
+  Record.push_back(D->getTraillingAllocKind());
+  addExplicitSpecifier(D->getExplicitSpecifier(), Record);
   if (auto Inherited = D->getInheritedConstructor()) {
     Record.AddDeclRef(Inherited.getShadowDecl());
     Record.AddDeclRef(Inherited.getConstructor());
-    Code = serialization::DECL_CXX_INHERITED_CONSTRUCTOR;
-  } else {
-    Code = serialization::DECL_CXX_CONSTRUCTOR;
   }
 
   VisitCXXMethodDecl(D);
-
-  Code = D->isInheritingConstructor()
-             ? serialization::DECL_CXX_INHERITED_CONSTRUCTOR
-             : serialization::DECL_CXX_CONSTRUCTOR;
+  Code = serialization::DECL_CXX_CONSTRUCTOR;
 }
 
 void ASTDeclWriter::VisitCXXDestructorDecl(CXXDestructorDecl *D) {
@@ -1345,6 +1367,7 @@ void ASTDeclWriter::VisitCXXDestructorDecl(CXXDestructorDecl *D) {
 }
 
 void ASTDeclWriter::VisitCXXConversionDecl(CXXConversionDecl *D) {
+  addExplicitSpecifier(D->getExplicitSpecifier(), Record);
   VisitCXXMethodDecl(D);
   Code = serialization::DECL_CXX_CONVERSION;
 }
@@ -1411,6 +1434,12 @@ void ASTDeclWriter::VisitTemplateDecl(TemplateDecl *D) {
 
   Record.AddDeclRef(D->getTemplatedDecl());
   Record.AddTemplateParameterList(D->getTemplateParameters());
+}
+
+void ASTDeclWriter::VisitConceptDecl(ConceptDecl *D) {
+  VisitTemplateDecl(D);
+  Record.AddStmt(D->getConstraintExpr());
+  Code = serialization::DECL_CONCEPT;
 }
 
 void ASTDeclWriter::VisitRedeclarableTemplateDecl(RedeclarableTemplateDecl *D) {
@@ -1553,6 +1582,9 @@ void ASTDeclWriter::VisitClassScopeFunctionSpecializationDecl(
                                     ClassScopeFunctionSpecializationDecl *D) {
   VisitDecl(D);
   Record.AddDeclRef(D->getSpecialization());
+  Record.push_back(D->hasExplicitTemplateArgs());
+  if (D->hasExplicitTemplateArgs())
+    Record.AddASTTemplateArgumentListInfo(D->getTemplateArgsAsWritten());
   Code = serialization::DECL_CLASS_SCOPE_FUNCTION_SPECIALIZATION;
 }
 
@@ -1743,10 +1775,22 @@ void ASTDeclWriter::VisitOMPThreadPrivateDecl(OMPThreadPrivateDecl *D) {
   Code = serialization::DECL_OMP_THREADPRIVATE;
 }
 
+void ASTDeclWriter::VisitOMPAllocateDecl(OMPAllocateDecl *D) {
+  Record.push_back(D->varlist_size());
+  Record.push_back(D->clauselist_size());
+  VisitDecl(D);
+  for (auto *I : D->varlists())
+    Record.AddStmt(I);
+  OMPClauseWriter ClauseWriter(Record);
+  for (OMPClause *C : D->clauselists())
+    ClauseWriter.writeClause(C);
+  Code = serialization::DECL_OMP_ALLOCATE;
+}
+
 void ASTDeclWriter::VisitOMPRequiresDecl(OMPRequiresDecl *D) {
   Record.push_back(D->clauselist_size());
   VisitDecl(D);
-  OMPClauseWriter ClauseWriter(Record); 
+  OMPClauseWriter ClauseWriter(Record);
   for (OMPClause *C : D->clauselists())
     ClauseWriter.writeClause(C);
   Code = serialization::DECL_OMP_REQUIRES;
@@ -1958,6 +2002,12 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1));
   // isNonTrivialToPrimitiveDestroy
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1));
+  // hasNonTrivialToPrimitiveDefaultInitializeCUnion
+  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1));
+  // hasNonTrivialToPrimitiveDestructCUnion
+  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1));
+  // hasNonTrivialToPrimitiveCopyCUnion
+  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1));
   // isParamDestroyedInCallee
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1));
   // getArgPassingRestrictions
@@ -2129,7 +2179,6 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); // StorageClass
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // Inline
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // InlineSpecified
-  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // ExplicitSpecified
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // VirtualAsWritten
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // Pure
   Abv->Add(BitCodeAbbrevOp(0));                         // HasInheritedProto
@@ -2165,7 +2214,8 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv = std::make_shared<BitCodeAbbrev>();
   Abv->Add(BitCodeAbbrevOp(serialization::EXPR_DECL_REF));
   //Stmt
-  //Expr
+  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // IsOMPStructuredBlock
+  // Expr
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // Type
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //TypeDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //ValueDependent
@@ -2178,8 +2228,8 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //GetDeclFound
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //ExplicitTemplateArgs
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //HadMultipleCandidates
-  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed,
-                           1)); // RefersToEnclosingVariableOrCapture
+  Abv->Add(BitCodeAbbrevOp(0)); // RefersToEnclosingVariableOrCapture
+  Abv->Add(BitCodeAbbrevOp(0)); // NonOdrUseReason
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // DeclRef
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // Location
   DeclRefExprAbbrev = Stream.EmitAbbrev(std::move(Abv));
@@ -2188,7 +2238,8 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv = std::make_shared<BitCodeAbbrev>();
   Abv->Add(BitCodeAbbrevOp(serialization::EXPR_INTEGER_LITERAL));
   //Stmt
-  //Expr
+  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // IsOMPStructuredBlock
+  // Expr
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // Type
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //TypeDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //ValueDependent
@@ -2206,7 +2257,8 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv = std::make_shared<BitCodeAbbrev>();
   Abv->Add(BitCodeAbbrevOp(serialization::EXPR_CHARACTER_LITERAL));
   //Stmt
-  //Expr
+  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // IsOMPStructuredBlock
+  // Expr
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // Type
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //TypeDependent
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //ValueDependent
@@ -2224,6 +2276,7 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv = std::make_shared<BitCodeAbbrev>();
   Abv->Add(BitCodeAbbrevOp(serialization::EXPR_IMPLICIT_CAST));
   // Stmt
+  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // IsOMPStructuredBlock
   // Expr
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // Type
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //TypeDependent

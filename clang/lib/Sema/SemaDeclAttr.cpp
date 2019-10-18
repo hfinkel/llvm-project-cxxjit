@@ -245,11 +245,11 @@ static bool checkUInt32Argument(Sema &S, const AttrInfo &AI, const Expr *Expr,
       !Expr->isIntegerConstantExpr(I, S.Context)) {
     if (Idx != UINT_MAX)
       S.Diag(getAttrLoc(AI), diag::err_attribute_argument_n_type)
-          << AI << Idx << AANT_ArgumentIntegerConstant
+          << &AI << Idx << AANT_ArgumentIntegerConstant
           << Expr->getSourceRange();
     else
       S.Diag(getAttrLoc(AI), diag::err_attribute_argument_type)
-          << AI << AANT_ArgumentIntegerConstant << Expr->getSourceRange();
+          << &AI << AANT_ArgumentIntegerConstant << Expr->getSourceRange();
     return false;
   }
 
@@ -261,7 +261,7 @@ static bool checkUInt32Argument(Sema &S, const AttrInfo &AI, const Expr *Expr,
 
   if (StrictlyUnsigned && I.isSigned() && I.isNegative()) {
     S.Diag(getAttrLoc(AI), diag::err_attribute_requires_positive_integer)
-        << AI << /*non-negative*/ 1;
+        << &AI << /*non-negative*/ 1;
     return false;
   }
 
@@ -900,7 +900,7 @@ static void handleAllocSizeAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   const Expr *SizeExpr = AL.getArgAsExpr(0);
   int SizeArgNoVal;
   // Parameter indices are 1-indexed, hence Index=1
-  if (!checkPositiveIntArgument(S, AL, SizeExpr, SizeArgNoVal, /*Index=*/1))
+  if (!checkPositiveIntArgument(S, AL, SizeExpr, SizeArgNoVal, /*Idx=*/1))
     return;
   if (!checkParamIsIntegerType(S, FD, AL, /*AttrArgNo=*/0))
     return;
@@ -911,7 +911,7 @@ static void handleAllocSizeAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
     const Expr *NumberExpr = AL.getArgAsExpr(1);
     int Val;
     // Parameter indices are 1-based, hence Index=2
-    if (!checkPositiveIntArgument(S, AL, NumberExpr, Val, /*Index=*/2))
+    if (!checkPositiveIntArgument(S, AL, NumberExpr, Val, /*Idx=*/2))
       return;
     if (!checkParamIsIntegerType(S, FD, AL, /*AttrArgNo=*/1))
       return;
@@ -1673,7 +1673,7 @@ void Sema::AddAllocAlignAttr(SourceRange AttrRange, Decl *D, Expr *ParamExpr,
   ParamIdx Idx;
   const auto *FuncDecl = cast<FunctionDecl>(D);
   if (!checkFunctionOrMethodParameterIndex(*this, FuncDecl, TmpAttr,
-                                           /*AttrArgNo=*/1, ParamExpr, Idx))
+                                           /*AttrArgNum=*/1, ParamExpr, Idx))
     return;
 
   QualType Ty = getFunctionOrMethodParamType(D, Idx.getASTIndex());
@@ -2508,6 +2508,7 @@ static void handleAvailabilityAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
               else
                 return VersionTuple(NewMajor, Version.getMinor().getValue());
             }
+            return VersionTuple(NewMajor);
           }
 
           return VersionTuple(2, 0);
@@ -3010,13 +3011,18 @@ static void handleSectionAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
     D->addAttr(NewAttr);
 }
 
-static bool checkCodeSegName(Sema&S, SourceLocation LiteralLoc, StringRef CodeSegName) {
-  std::string Error = S.Context.getTargetInfo().isValidSectionSpecifier(CodeSegName);
+// This is used for `__declspec(code_seg("segname"))` on a decl.
+// `#pragma code_seg("segname")` uses checkSectionName() instead.
+static bool checkCodeSegName(Sema &S, SourceLocation LiteralLoc,
+                             StringRef CodeSegName) {
+  std::string Error =
+      S.Context.getTargetInfo().isValidSectionSpecifier(CodeSegName);
   if (!Error.empty()) {
-    S.Diag(LiteralLoc, diag::err_attribute_section_invalid_for_target) << Error
-           << 0 /*'code-seg'*/;
+    S.Diag(LiteralLoc, diag::err_attribute_section_invalid_for_target)
+        << Error << 0 /*'code-seg'*/;
     return false;
   }
+
   return true;
 }
 
@@ -4635,11 +4641,56 @@ bool Sema::CheckCallingConvAttr(const ParsedAttr &Attrs, CallingConv &CC,
   default: llvm_unreachable("unexpected attribute kind");
   }
 
+  TargetInfo::CallingConvCheckResult A = TargetInfo::CCCR_OK;
   const TargetInfo &TI = Context.getTargetInfo();
-  TargetInfo::CallingConvCheckResult A = TI.checkCallingConvention(CC);
-  if (A != TargetInfo::CCCR_OK) {
-    if (A == TargetInfo::CCCR_Warning)
-      Diag(Attrs.getLoc(), diag::warn_cconv_ignored) << Attrs;
+  // CUDA functions may have host and/or device attributes which indicate
+  // their targeted execution environment, therefore the calling convention
+  // of functions in CUDA should be checked against the target deduced based
+  // on their host/device attributes.
+  if (LangOpts.CUDA) {
+    auto *Aux = Context.getAuxTargetInfo();
+    auto CudaTarget = IdentifyCUDATarget(FD);
+    bool CheckHost = false, CheckDevice = false;
+    switch (CudaTarget) {
+    case CFT_HostDevice:
+      CheckHost = true;
+      CheckDevice = true;
+      break;
+    case CFT_Host:
+      CheckHost = true;
+      break;
+    case CFT_Device:
+    case CFT_Global:
+      CheckDevice = true;
+      break;
+    case CFT_InvalidTarget:
+      llvm_unreachable("unexpected cuda target");
+    }
+    auto *HostTI = LangOpts.CUDAIsDevice ? Aux : &TI;
+    auto *DeviceTI = LangOpts.CUDAIsDevice ? &TI : Aux;
+    if (CheckHost && HostTI)
+      A = HostTI->checkCallingConvention(CC);
+    if (A == TargetInfo::CCCR_OK && CheckDevice && DeviceTI)
+      A = DeviceTI->checkCallingConvention(CC);
+  } else {
+    A = TI.checkCallingConvention(CC);
+  }
+
+  switch (A) {
+  case TargetInfo::CCCR_OK:
+    break;
+
+  case TargetInfo::CCCR_Ignore:
+    // Treat an ignored convention as if it was an explicit C calling convention
+    // attribute. For example, __stdcall on Win x64 functions as __cdecl, so
+    // that command line flags that change the default convention to
+    // __vectorcall don't affect declarations marked __stdcall.
+    CC = CC_C;
+    break;
+
+  case TargetInfo::CCCR_Warning: {
+    Diag(Attrs.getLoc(), diag::warn_cconv_unsupported)
+        << Attrs << (int)CallingConventionIgnoredReason::ForThisTarget;
 
     // This convention is not valid for the target. Use the default function or
     // method calling convention.
@@ -4649,6 +4700,8 @@ bool Sema::CheckCallingConvAttr(const ParsedAttr &Attrs, CallingConv &CC,
       IsVariadic = FD->isVariadic();
     }
     CC = Context.getDefaultCallingConvention(IsVariadic, IsCXXMethod);
+    break;
+  }
   }
 
   Attrs.setProcessingCache((unsigned) CC);
@@ -5873,57 +5926,115 @@ static void handleInterruptAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   }
 }
 
-static void handleAMDGPUFlatWorkGroupSizeAttr(Sema &S, Decl *D,
-                                              const ParsedAttr &AL) {
+static bool
+checkAMDGPUFlatWorkGroupSizeArguments(Sema &S, Expr *MinExpr, Expr *MaxExpr,
+                                      const AMDGPUFlatWorkGroupSizeAttr &Attr) {
+  // Accept template arguments for now as they depend on something else.
+  // We'll get to check them when they eventually get instantiated.
+  if (MinExpr->isValueDependent() || MaxExpr->isValueDependent())
+    return false;
+
   uint32_t Min = 0;
-  Expr *MinExpr = AL.getArgAsExpr(0);
-  if (!checkUInt32Argument(S, AL, MinExpr, Min))
-    return;
+  if (!checkUInt32Argument(S, Attr, MinExpr, Min, 0))
+    return true;
 
   uint32_t Max = 0;
-  Expr *MaxExpr = AL.getArgAsExpr(1);
-  if (!checkUInt32Argument(S, AL, MaxExpr, Max))
-    return;
+  if (!checkUInt32Argument(S, Attr, MaxExpr, Max, 1))
+    return true;
 
   if (Min == 0 && Max != 0) {
-    S.Diag(AL.getLoc(), diag::err_attribute_argument_invalid) << AL << 0;
-    return;
+    S.Diag(Attr.getLocation(), diag::err_attribute_argument_invalid)
+        << &Attr << 0;
+    return true;
   }
   if (Min > Max) {
-    S.Diag(AL.getLoc(), diag::err_attribute_argument_invalid) << AL << 1;
-    return;
+    S.Diag(Attr.getLocation(), diag::err_attribute_argument_invalid)
+        << &Attr << 1;
+    return true;
   }
 
-  D->addAttr(::new (S.Context)
-             AMDGPUFlatWorkGroupSizeAttr(AL.getLoc(), S.Context, Min, Max,
-                                         AL.getAttributeSpellingListIndex()));
+  return false;
+}
+
+void Sema::addAMDGPUFlatWorkGroupSizeAttr(SourceRange AttrRange, Decl *D,
+                                          Expr *MinExpr, Expr *MaxExpr,
+                                          unsigned SpellingListIndex) {
+  AMDGPUFlatWorkGroupSizeAttr TmpAttr(AttrRange, Context, MinExpr, MaxExpr,
+                                      SpellingListIndex);
+
+  if (checkAMDGPUFlatWorkGroupSizeArguments(*this, MinExpr, MaxExpr, TmpAttr))
+    return;
+
+  D->addAttr(::new (Context) AMDGPUFlatWorkGroupSizeAttr(
+      AttrRange, Context, MinExpr, MaxExpr, SpellingListIndex));
+}
+
+static void handleAMDGPUFlatWorkGroupSizeAttr(Sema &S, Decl *D,
+                                              const ParsedAttr &AL) {
+  Expr *MinExpr = AL.getArgAsExpr(0);
+  Expr *MaxExpr = AL.getArgAsExpr(1);
+
+  S.addAMDGPUFlatWorkGroupSizeAttr(AL.getRange(), D, MinExpr, MaxExpr,
+                                   AL.getAttributeSpellingListIndex());
+}
+
+static bool checkAMDGPUWavesPerEUArguments(Sema &S, Expr *MinExpr,
+                                           Expr *MaxExpr,
+                                           const AMDGPUWavesPerEUAttr &Attr) {
+  if (S.DiagnoseUnexpandedParameterPack(MinExpr) ||
+      (MaxExpr && S.DiagnoseUnexpandedParameterPack(MaxExpr)))
+    return true;
+
+  // Accept template arguments for now as they depend on something else.
+  // We'll get to check them when they eventually get instantiated.
+  if (MinExpr->isValueDependent() || (MaxExpr && MaxExpr->isValueDependent()))
+    return false;
+
+  uint32_t Min = 0;
+  if (!checkUInt32Argument(S, Attr, MinExpr, Min, 0))
+    return true;
+
+  uint32_t Max = 0;
+  if (MaxExpr && !checkUInt32Argument(S, Attr, MaxExpr, Max, 1))
+    return true;
+
+  if (Min == 0 && Max != 0) {
+    S.Diag(Attr.getLocation(), diag::err_attribute_argument_invalid)
+        << &Attr << 0;
+    return true;
+  }
+  if (Max != 0 && Min > Max) {
+    S.Diag(Attr.getLocation(), diag::err_attribute_argument_invalid)
+        << &Attr << 1;
+    return true;
+  }
+
+  return false;
+}
+
+void Sema::addAMDGPUWavesPerEUAttr(SourceRange AttrRange, Decl *D,
+                                   Expr *MinExpr, Expr *MaxExpr,
+                                   unsigned SpellingListIndex) {
+  AMDGPUWavesPerEUAttr TmpAttr(AttrRange, Context, MinExpr, MaxExpr,
+                               SpellingListIndex);
+
+  if (checkAMDGPUWavesPerEUArguments(*this, MinExpr, MaxExpr, TmpAttr))
+    return;
+
+  D->addAttr(::new (Context) AMDGPUWavesPerEUAttr(AttrRange, Context, MinExpr,
+                                                  MaxExpr, SpellingListIndex));
 }
 
 static void handleAMDGPUWavesPerEUAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
-  uint32_t Min = 0;
+  if (!checkAttributeAtLeastNumArgs(S, AL, 1) ||
+      !checkAttributeAtMostNumArgs(S, AL, 2))
+    return;
+
   Expr *MinExpr = AL.getArgAsExpr(0);
-  if (!checkUInt32Argument(S, AL, MinExpr, Min))
-    return;
+  Expr *MaxExpr = (AL.getNumArgs() > 1) ? AL.getArgAsExpr(1) : nullptr;
 
-  uint32_t Max = 0;
-  if (AL.getNumArgs() == 2) {
-    Expr *MaxExpr = AL.getArgAsExpr(1);
-    if (!checkUInt32Argument(S, AL, MaxExpr, Max))
-      return;
-  }
-
-  if (Min == 0 && Max != 0) {
-    S.Diag(AL.getLoc(), diag::err_attribute_argument_invalid) << AL << 0;
-    return;
-  }
-  if (Max != 0 && Min > Max) {
-    S.Diag(AL.getLoc(), diag::err_attribute_argument_invalid) << AL << 1;
-    return;
-  }
-
-  D->addAttr(::new (S.Context)
-             AMDGPUWavesPerEUAttr(AL.getLoc(), S.Context, Min, Max,
-                                  AL.getAttributeSpellingListIndex()));
+  S.addAMDGPUWavesPerEUAttr(AL.getRange(), D, MinExpr, MaxExpr,
+                            AL.getAttributeSpellingListIndex());
 }
 
 static void handleAMDGPUNumSGPRAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
@@ -6231,7 +6342,8 @@ static void handleNoSanitizeAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
     if (!S.checkStringLiteralArgumentAttr(AL, I, SanitizerName, &LiteralLoc))
       return;
 
-    if (parseSanitizerValue(SanitizerName, /*AllowGroups=*/true) == 0)
+    if (parseSanitizerValue(SanitizerName, /*AllowGroups=*/true) ==
+        SanitizerMask())
       S.Diag(LiteralLoc, diag::warn_unknown_sanitizer_ignored) << SanitizerName;
     else if (isGlobalVar(D) && SanitizerName != "address")
       S.Diag(D->getLocation(), diag::err_attribute_wrong_decl_type)
@@ -6256,9 +6368,21 @@ static void handleNoSanitizeSpecificAttr(Sema &S, Decl *D,
   if (isGlobalVar(D) && SanitizerName != "address")
     S.Diag(D->getLocation(), diag::err_attribute_wrong_decl_type)
         << AL << ExpectedFunction;
-  D->addAttr(::new (S.Context)
-                 NoSanitizeAttr(AL.getRange(), S.Context, &SanitizerName, 1,
-                                AL.getAttributeSpellingListIndex()));
+
+  // FIXME: Rather than create a NoSanitizeSpecificAttr, this creates a
+  // NoSanitizeAttr object; but we need to calculate the correct spelling list
+  // index rather than incorrectly assume the index for NoSanitizeSpecificAttr
+  // has the same spellings as the index for NoSanitizeAttr. We don't have a
+  // general way to "translate" between the two, so this hack attempts to work
+  // around the issue with hard-coded indicies. This is critical for calling
+  // getSpelling() or prettyPrint() on the resulting semantic attribute object
+  // without failing assertions.
+  unsigned TranslatedSpellingIndex = 0;
+  if (AL.isC2xAttribute() || AL.isCXX11Attribute())
+    TranslatedSpellingIndex = 1;
+
+  D->addAttr(::new (S.Context) NoSanitizeAttr(
+      AL.getRange(), S.Context, &SanitizerName, 1, TranslatedSpellingIndex));
 }
 
 static void handleInternalLinkageAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
@@ -6453,29 +6577,40 @@ static void handleObjCExternallyRetainedAttr(Sema &S, Decl *D,
   handleSimpleAttribute<ObjCExternallyRetainedAttr>(S, D, AL);
 }
 
-static void handleFortifyStdLib(Sema &S, Decl *D, const ParsedAttr &AL) {
-  auto *FD = cast<FunctionDecl>(D);
-  unsigned VariantID = Builtin::getFortifiedVariantFunction(FD->getBuiltinID());
-  if (VariantID == 0) {
-    S.Diag(D->getLocation(), diag::err_fortify_std_lib_bad_decl);
-    return;
+static void handleMIGServerRoutineAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  // Check that the return type is a `typedef int kern_return_t` or a typedef
+  // around it, because otherwise MIG convention checks make no sense.
+  // BlockDecl doesn't store a return type, so it's annoying to check,
+  // so let's skip it for now.
+  if (!isa<BlockDecl>(D)) {
+    QualType T = getFunctionOrMethodResultType(D);
+    bool IsKernReturnT = false;
+    while (const auto *TT = T->getAs<TypedefType>()) {
+      IsKernReturnT = (TT->getDecl()->getName() == "kern_return_t");
+      T = TT->desugar();
+    }
+    if (!IsKernReturnT || T.getCanonicalType() != S.getASTContext().IntTy) {
+      S.Diag(D->getBeginLoc(),
+             diag::warn_mig_server_routine_does_not_return_kern_return_t);
+      return;
+    }
   }
 
-  uint32_t BOSType, Flag;
-  if (!checkUInt32Argument(S, AL, AL.getArgAsExpr(0), BOSType, 0, true) ||
-      !checkUInt32Argument(S, AL, AL.getArgAsExpr(1), Flag, 1, true))
-    return;
+  handleSimpleAttribute<MIGServerRoutineAttr>(S, D, AL);
+}
 
-  if (BOSType > 3) {
-    S.Diag(AL.getArgAsExpr(0)->getBeginLoc(),
-           diag::err_attribute_argument_out_of_range)
-        << AL << 0 << 3;
-    return;
+static void handleMSAllocatorAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  // Warn if the return type is not a pointer or reference type.
+  if (auto *FD = dyn_cast<FunctionDecl>(D)) {
+    QualType RetTy = FD->getReturnType();
+    if (!RetTy->isPointerType() && !RetTy->isReferenceType()) {
+      S.Diag(AL.getLoc(), diag::warn_declspec_allocator_nonpointer)
+          << AL.getRange() << RetTy;
+      return;
+    }
   }
 
-  D->addAttr(::new (S.getASTContext()) FortifyStdLibAttr(
-      AL.getLoc(), S.getASTContext(), BOSType, Flag,
-      AL.getAttributeSpellingListIndex()));
+  handleSimpleAttribute<MSAllocatorAttr>(S, D, AL);
 }
 
 //===----------------------------------------------------------------------===//
@@ -6693,6 +6828,10 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
   case ParsedAttr::AT_CUDAHost:
     handleSimpleAttributeWithExclusions<CUDAHostAttr, CUDAGlobalAttr>(S, D, AL);
     break;
+  case ParsedAttr::AT_HIPPinnedShadow:
+    handleSimpleAttributeWithExclusions<HIPPinnedShadowAttr, CUDADeviceAttr,
+                                        CUDAConstantAttr>(S, D, AL);
+    break;
   case ParsedAttr::AT_GNUInline:
     handleGNUInlineAttr(S, D, AL);
     break;
@@ -6719,6 +6858,9 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     break;
   case ParsedAttr::AT_NoSplitStack:
     handleSimpleAttribute<NoSplitStackAttr>(S, D, AL);
+    break;
+  case ParsedAttr::AT_NoUniqueAddress:
+    handleSimpleAttribute<NoUniqueAddressAttr>(S, D, AL);
     break;
   case ParsedAttr::AT_NonNull:
     if (auto *PVD = dyn_cast<ParmVarDecl>(D))
@@ -6760,7 +6902,8 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     handleNoCfCheckAttr(S, D, AL);
     break;
   case ParsedAttr::AT_NoThrow:
-    handleSimpleAttribute<NoThrowAttr>(S, D, AL);
+    if (!AL.isUsedAsTypeAttr())
+      handleSimpleAttribute<NoThrowAttr>(S, D, AL);
     break;
   case ParsedAttr::AT_CUDAShared:
     handleSharedAttr(S, D, AL);
@@ -6899,6 +7042,9 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     break;
   case ParsedAttr::AT_ObjCSubclassingRestricted:
     handleSimpleAttribute<ObjCSubclassingRestrictedAttr>(S, D, AL);
+    break;
+  case ParsedAttr::AT_ObjCClassStub:
+    handleSimpleAttribute<ObjCClassStubAttr>(S, D, AL);
     break;
   case ParsedAttr::AT_ObjCExplicitProtocolImpl:
     handleObjCSuppresProtocolAttr(S, D, AL);
@@ -7211,8 +7357,12 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     handleObjCExternallyRetainedAttr(S, D, AL);
     break;
 
-  case ParsedAttr::AT_FortifyStdLib:
-    handleFortifyStdLib(S, D, AL);
+  case ParsedAttr::AT_MIGServerRoutine:
+    handleMIGServerRoutineAttr(S, D, AL);
+    break;
+
+  case ParsedAttr::AT_MSAllocator:
+    handleMSAllocatorAttr(S, D, AL);
     break;
   }
 }
@@ -7359,12 +7509,10 @@ NamedDecl * Sema::DeclClonePragmaWeak(NamedDecl *ND, IdentifierInfo *II,
     // FIXME: Mangling?
     // FIXME: Is the qualifier info correct?
     // FIXME: Is the DeclContext correct?
-    NewFD = FunctionDecl::Create(FD->getASTContext(), FD->getDeclContext(),
-                                 Loc, Loc, DeclarationName(II),
-                                 FD->getType(), FD->getTypeSourceInfo(),
-                                 SC_None, false/*isInlineSpecified*/,
-                                 FD->hasPrototype(),
-                                 false/*isConstexprSpecified*/);
+    NewFD = FunctionDecl::Create(
+        FD->getASTContext(), FD->getDeclContext(), Loc, Loc,
+        DeclarationName(II), FD->getType(), FD->getTypeSourceInfo(), SC_None,
+        false /*isInlineSpecified*/, FD->hasPrototype(), CSK_unspecified);
     NewD = NewFD;
 
     if (FD->getQualifier())

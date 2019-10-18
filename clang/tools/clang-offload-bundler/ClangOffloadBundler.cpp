@@ -292,7 +292,7 @@ public:
       ReadChars += TripleSize;
 
       // Check if the offset and size make sense.
-      if (!Size || !Offset || Offset + Size > FC.size())
+      if (!Offset || Offset + Size > FC.size())
         return;
 
       assert(BundlesInfo.find(Triple) == BundlesInfo.end() &&
@@ -462,13 +462,16 @@ public:
     // TODO: Instead of copying the input file as is, deactivate the section
     // that is no longer needed.
 
-    StringRef Content;
-    CurrentSection->getContents(Content);
+    Expected<StringRef> Content = CurrentSection->getContents();
+    if (!Content) {
+      consumeError(Content.takeError());
+      return;
+    }
 
-    if (Content.size() < 2)
+    if (Content->size() < 2)
       OS.write(Input.getBufferStart(), Input.getBufferSize());
     else
-      OS.write(Content.data(), Content.size());
+      OS.write(Content->data(), Content->size());
   }
 
   void WriteHeader(raw_fd_ostream &OS,

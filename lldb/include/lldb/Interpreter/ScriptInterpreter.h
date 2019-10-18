@@ -34,7 +34,7 @@ private:
 
 class ScriptInterpreter : public PluginInterface {
 public:
-  typedef enum {
+  enum ScriptReturnType {
     eScriptReturnTypeCharPtr,
     eScriptReturnTypeBool,
     eScriptReturnTypeShortInt,
@@ -50,10 +50,9 @@ public:
     eScriptReturnTypeChar,
     eScriptReturnTypeCharStrOrNone,
     eScriptReturnTypeOpaqueObject
-  } ScriptReturnType;
+  };
 
-  ScriptInterpreter(CommandInterpreter &interpreter,
-                    lldb::ScriptLanguage script_lang);
+  ScriptInterpreter(Debugger &debugger, lldb::ScriptLanguage script_lang);
 
   ~ScriptInterpreter() override;
 
@@ -247,7 +246,7 @@ public:
                                    lldb::BreakpointSP &bkpt_sp) {
     return StructuredData::GenericSP();
   }
-  
+
   virtual bool
   ScriptedBreakpointResolverSearchCallback(StructuredData::GenericSP implementor_sp,
                                            SymbolContext *sym_ctx)
@@ -460,8 +459,6 @@ public:
 
   int GetMasterFileDescriptor();
 
-  CommandInterpreter &GetCommandInterpreter();
-
   static std::string LanguageToString(lldb::ScriptLanguage language);
 
   static lldb::ScriptLanguage StringToLanguage(const llvm::StringRef &string);
@@ -471,7 +468,7 @@ public:
   lldb::ScriptLanguage GetLanguage() { return m_script_lang; }
 
 protected:
-  CommandInterpreter &m_interpreter;
+  Debugger &m_debugger;
   lldb::ScriptLanguage m_script_lang;
 };
 

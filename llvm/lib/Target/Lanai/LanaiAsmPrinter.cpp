@@ -11,11 +11,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "InstPrinter/LanaiInstPrinter.h"
-#include "Lanai.h"
+#include "MCTargetDesc/LanaiInstPrinter.h"
+#include "LanaiAluCode.h"
+#include "LanaiCondCode.h"
 #include "LanaiInstrInfo.h"
 #include "LanaiMCInstLower.h"
 #include "LanaiTargetMachine.h"
+#include "TargetInfo/LanaiTargetInfo.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -48,8 +50,7 @@ public:
 
   void printOperand(const MachineInstr *MI, int OpNum, raw_ostream &O);
   bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
-                       unsigned AsmVariant, const char *ExtraCode,
-                       raw_ostream &O) override;
+                       const char *ExtraCode, raw_ostream &O) override;
   void EmitInstruction(const MachineInstr *MI) override;
   bool isBlockOnlyReachableByFallthrough(
       const MachineBasicBlock *MBB) const override;
@@ -108,7 +109,6 @@ void LanaiAsmPrinter::printOperand(const MachineInstr *MI, int OpNum,
 
 // PrintAsmOperand - Print out an operand for an inline asm expression.
 bool LanaiAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
-                                      unsigned /*AsmVariant*/,
                                       const char *ExtraCode, raw_ostream &O) {
   // Does this asm operand have a single letter operand modifier?
   if (ExtraCode && ExtraCode[0]) {
@@ -138,7 +138,7 @@ bool LanaiAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
       return false;
     }
     default:
-      return true; // Unknown modifier.
+      return AsmPrinter::PrintAsmOperand(MI, OpNo, ExtraCode, O);
     }
   }
   printOperand(MI, OpNo, O);

@@ -8,7 +8,6 @@
 
 #include "Reader.h"
 #include "Object.h"
-#include "llvm-objcopy.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/COFF.h"
@@ -70,17 +69,19 @@ Error COFFReader::readSections(Object &Obj) const {
     Section &S = Sections.back();
     S.Header = *Sec;
     ArrayRef<uint8_t> Contents;
-    if (auto EC = COFFObj.getSectionContents(Sec, Contents))
-      return errorCodeToError(EC);
+    if (Error E = COFFObj.getSectionContents(Sec, Contents))
+      return E;
     S.setContentsRef(Contents);
     ArrayRef<coff_relocation> Relocs = COFFObj.getRelocations(Sec);
     for (const coff_relocation &R : Relocs)
       S.Relocs.push_back(R);
-    if (auto EC = COFFObj.getSectionName(Sec, S.Name))
-      return errorCodeToError(EC);
+    if (Expected<StringRef> NameOrErr = COFFObj.getSectionName(Sec))
+      S.Name = *NameOrErr;
+    else
+      return NameOrErr.takeError();
     if (Sec->hasExtendedRelocations())
       return createStringError(object_error::parse_failed,
-                               "Extended relocations not supported yet");
+                               "extended relocations not supported yet");
   }
   Obj.addSections(Sections);
   return Error::success();
@@ -134,7 +135,7 @@ Error COFFReader::readSymbols(Object &Obj, bool IsBigObj) const {
       Sym.TargetSectionId = Sections[SymRef.getSectionNumber() - 1].UniqueId;
     else
       return createStringError(object_error::parse_failed,
-                               "Section number out of range");
+                               "section number out of range");
     // For section definitions, check if it is comdat associative, and if
     // it is, find the target section unique id.
     const coff_aux_section_definition *SD = SymRef.getSectionDefinition();
@@ -143,7 +144,7 @@ Error COFFReader::readSymbols(Object &Obj, bool IsBigObj) const {
       int32_t Index = SD->getNumber(IsBigObj);
       if (Index <= 0 || static_cast<uint32_t>(Index - 1) >= Sections.size())
         return createStringError(object_error::parse_failed,
-                                 "Unexpected associative section index");
+                                 "unexpected associative section index");
       Sym.AssociativeComdatTargetSectionId = Sections[Index - 1].UniqueId;
     } else if (WE) {
       // This is a raw symbol index for now, but store it in the Symbol
@@ -170,11 +171,11 @@ Error COFFReader::setSymbolTargets(Object &Obj) const {
     if (Sym.WeakTargetSymbolId) {
       if (*Sym.WeakTargetSymbolId >= RawSymbolTable.size())
         return createStringError(object_error::parse_failed,
-                                 "Weak external reference out of range");
+                                 "weak external reference out of range");
       const Symbol *Target = RawSymbolTable[*Sym.WeakTargetSymbolId];
       if (Target == nullptr)
         return createStringError(object_error::parse_failed,
-                                 "Invalid SymbolTableIndex");
+                                 "invalid SymbolTableIndex");
       Sym.WeakTargetSymbolId = Target->UniqueId;
     }
   }
@@ -186,7 +187,7 @@ Error COFFReader::setSymbolTargets(Object &Obj) const {
       const Symbol *Sym = RawSymbolTable[R.Reloc.SymbolTableIndex];
       if (Sym == nullptr)
         return createStringError(object_error::parse_failed,
-                                 "Invalid SymbolTableIndex");
+                                 "invalid SymbolTableIndex");
       R.Target = Sym->UniqueId;
       R.TargetName = Sym->Name;
     }
@@ -207,7 +208,7 @@ Expected<std::unique_ptr<Object>> COFFReader::create() const {
   } else {
     if (!CBFH)
       return createStringError(object_error::parse_failed,
-                               "No COFF file header returned");
+                               "no COFF file header returned");
     // Only copying the few fields from the bigobj header that we need
     // and won't recreate in the end.
     Obj->CoffFileHeader.Machine = CBFH->Machine;

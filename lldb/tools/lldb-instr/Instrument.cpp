@@ -100,12 +100,24 @@ static std::string GetRecordConstructorMacro(StringRef Class,
   return OS.str();
 }
 
+static std::string GetRecordDummyMacro(StringRef Result, StringRef Class,
+                                       StringRef Method, StringRef Signature,
+                                       StringRef Values) {
+  assert(!Values.empty());
+  std::string Macro;
+  llvm::raw_string_ostream OS(Macro);
+
+  OS << "LLDB_RECORD_DUMMY(" << Result << ", " << Class << ", " << Method;
+  OS << ", (" << Signature << "), " << Values << ");\n\n";
+
+  return OS.str();
+}
+
 static std::string GetRegisterConstructorMacro(StringRef Class,
                                                StringRef Signature) {
   std::string Macro;
   llvm::raw_string_ostream OS(Macro);
-  OS << "LLDB_REGISTER_CONSTRUCTOR(" << Class << ", (" << Signature
-     << "));\n\n";
+  OS << "LLDB_REGISTER_CONSTRUCTOR(" << Class << ", (" << Signature << "));\n";
   return OS.str();
 }
 
@@ -158,28 +170,34 @@ public:
     if (ShouldSkip(Decl))
       return false;
 
+    // Skip CXXMethodDecls that already starts with a macro. This should make
+    // it easier to rerun the tool to find missing macros.
+    Stmt *Body = Decl->getBody();
+    for (auto &C : Body->children()) {
+      if (C->getBeginLoc().isMacroID())
+        return false;
+      break;
+    }
+
     // Print 'bool' instead of '_Bool'.
     PrintingPolicy Policy(Context.getLangOpts());
     Policy.Bool = true;
+
+    // Unsupported signatures get a dummy macro.
+    bool ShouldInsertDummy = false;
 
     // Collect the functions parameter types and names.
     std::vector<std::string> ParamTypes;
     std::vector<std::string> ParamNames;
     for (auto *P : Decl->parameters()) {
       QualType T = P->getType();
-
-      // Currently we don't support functions that have function pointers as an
-      // argument.
-      if (T->isFunctionPointerType())
-        return false;
-
-      // Currently we don't support functions that have void pointers as an
-      // argument.
-      if (T->isVoidPointerType())
-        return false;
-
       ParamTypes.push_back(T.getAsString(Policy));
       ParamNames.push_back(P->getNameAsString());
+
+      // Currently we don't support functions that have void pointers or
+      // function pointers as an argument, in which case we insert a dummy
+      // macro.
+      ShouldInsertDummy |= T->isFunctionPointerType() || T->isVoidPointerType();
     }
 
     // Convert the two lists to string for the macros.
@@ -191,7 +209,13 @@ public:
 
     // Construct the macros.
     std::string Macro;
-    if (isa<CXXConstructorDecl>(Decl)) {
+    if (ShouldInsertDummy) {
+      // Don't insert a register call for dummy macros.
+      Macro = GetRecordDummyMacro(
+          ReturnType.getAsString(Policy), Record->getNameAsString(),
+          Decl->getNameAsString(), ParamTypesStr, ParamNamesStr);
+
+    } else if (isa<CXXConstructorDecl>(Decl)) {
       llvm::outs() << GetRegisterConstructorMacro(Record->getNameAsString(),
                                                   ParamTypesStr);
 
@@ -209,14 +233,6 @@ public:
           Decl->isStatic(), Decl->isConst());
     }
 
-    // If this CXXMethodDecl already starts with a macro we're done.
-    Stmt *Body = Decl->getBody();
-    for (auto &C : Body->children()) {
-      if (C->getBeginLoc().isMacroID())
-        return false;
-      break;
-    }
-
     // Insert the macro at the beginning of the function. We don't attempt to
     // fix the formatting and instead rely on clang-format to fix it after the
     // tool has run. This is also the reason that the macros end with two
@@ -229,7 +245,9 @@ public:
 
     // If the function returns a class or struct, we need to wrap its return
     // statement(s).
-    if (ReturnType->isStructureOrClassType()) {
+    bool ShouldRecordResult = ReturnType->isStructureOrClassType() ||
+                              ReturnType->getPointeeCXXRecordDecl();
+    if (!ShouldInsertDummy && ShouldRecordResult) {
       SBReturnVisitor Visitor(MyRewriter);
       Visitor.TraverseDecl(Decl);
     }
@@ -304,10 +322,18 @@ class SBAction : public ASTFrontendAction {
 public:
   SBAction() = default;
 
-  void EndSourceFileAction() override { MyRewriter.overwriteChangedFiles(); }
+  bool BeginSourceFileAction(CompilerInstance &CI) override {
+    llvm::outs() << "{\n";
+    return true;
+  }
+
+  void EndSourceFileAction() override {
+    llvm::outs() << "}\n";
+    MyRewriter.overwriteChangedFiles();
+  }
 
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
-                                                 StringRef file) override {
+                                                 StringRef File) override {
     MyRewriter.setSourceMgr(CI.getSourceManager(), CI.getLangOpts());
     return llvm::make_unique<SBConsumer>(MyRewriter, CI.getASTContext());
   }

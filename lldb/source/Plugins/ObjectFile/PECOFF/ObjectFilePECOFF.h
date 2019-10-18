@@ -16,7 +16,7 @@
 
 class ObjectFilePECOFF : public lldb_private::ObjectFile {
 public:
-  typedef enum MachineType {
+  enum MachineType {
     MachineUnknown = 0x0,
     MachineAm33 = 0x1d3,
     MachineAmd64 = 0x8664,
@@ -39,7 +39,7 @@ public:
     MachineSh5 = 0x1a8,
     MachineThumb = 0x1c2,
     MachineWcemIpsv2 = 0x169
-  } MachineType;
+  };
 
   ObjectFilePECOFF(const lldb::ModuleSP &module_sp, lldb::DataBufferSP &data_sp,
                    lldb::offset_t data_offset,
@@ -52,9 +52,7 @@ public:
 
   ~ObjectFilePECOFF() override;
 
-  //------------------------------------------------------------------
   // Static Functions
-  //------------------------------------------------------------------
   static void Initialize();
 
   static void Terminate();
@@ -115,7 +113,7 @@ public:
 
   uint32_t GetDependentModules(lldb_private::FileSpecList &files) override;
 
-  virtual lldb_private::Address GetEntryPointAddress() override;
+  lldb_private::Address GetEntryPointAddress() override;
 
   lldb_private::Address GetBaseAddress() override;
 
@@ -123,9 +121,7 @@ public:
 
   ObjectFile::Strata CalculateStrata() override;
 
-  //------------------------------------------------------------------
   // PluginInterface protocol
-  //------------------------------------------------------------------
   lldb_private::ConstString GetPluginName() override;
 
   uint32_t GetPluginVersion() override;
@@ -210,10 +206,10 @@ protected:
         data_dirs; // will contain num_data_dir_entries entries
   } coff_opt_header_t;
 
-  typedef enum coff_data_dir_type {
+  enum coff_data_dir_type {
     coff_data_dir_export_table = 0,
     coff_data_dir_import_table = 1,
-  } coff_data_dir_type;
+  };
 
   typedef struct section_header {
     char name[8];
@@ -290,6 +286,7 @@ private:
   llvm::Optional<lldb_private::FileSpecList> m_deps_filespec;
   typedef llvm::object::OwningBinary<llvm::object::Binary> OWNBINType;
   llvm::Optional<OWNBINType> m_owningbin;
+  lldb_private::UUID m_uuid;
 };
 
 #endif // liblldb_ObjectFilePECOFF_h_

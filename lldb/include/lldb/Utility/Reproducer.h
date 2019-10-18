@@ -75,30 +75,29 @@ public:
 
   const void *DynamicClassID() const override { return &ThisProviderT::ID; }
 
-  llvm::StringRef GetName() const override { return ThisProviderT::info::name; }
-  llvm::StringRef GetFile() const override { return ThisProviderT::info::file; }
+  llvm::StringRef GetName() const override { return ThisProviderT::Info::name; }
+  llvm::StringRef GetFile() const override { return ThisProviderT::Info::file; }
 
 protected:
   using ProviderBase::ProviderBase; // Inherit constructor.
 };
 
-struct FileInfo {
-  static const char *name;
-  static const char *file;
-};
-
 class FileProvider : public Provider<FileProvider> {
 public:
-  typedef FileInfo info;
+  struct Info {
+    static const char *name;
+    static const char *file;
+  };
 
   FileProvider(const FileSpec &directory)
       : Provider(directory),
-        m_collector(directory.CopyByAppendingPathComponent("root")) {}
+        m_collector(directory.CopyByAppendingPathComponent("root"), directory) {
+  }
 
   FileCollector &GetFileCollector() { return m_collector; }
 
   void Keep() override {
-    auto mapping = GetRoot().CopyByAppendingPathComponent(info::file);
+    auto mapping = GetRoot().CopyByAppendingPathComponent(Info::file);
     // Temporary files that are removed during execution can cause copy errors.
     if (auto ec = m_collector.CopyFiles(/*stop_on_error=*/false))
       return;
@@ -109,6 +108,77 @@ public:
 
 private:
   FileCollector m_collector;
+};
+
+/// Provider for the LLDB version number.
+///
+/// When the reproducer is kept, it writes the lldb version to a file named
+/// version.txt in the reproducer root.
+class VersionProvider : public Provider<VersionProvider> {
+public:
+  VersionProvider(const FileSpec &directory) : Provider(directory) {}
+  struct Info {
+    static const char *name;
+    static const char *file;
+  };
+  void SetVersion(std::string version) {
+    assert(m_version.empty());
+    m_version = std::move(version);
+  }
+  void Keep() override;
+  std::string m_version;
+  static char ID;
+};
+
+class DataRecorder {
+public:
+  DataRecorder(const FileSpec &filename, std::error_code &ec)
+      : m_filename(filename.GetFilename().GetStringRef()),
+        m_os(filename.GetPath(), ec, llvm::sys::fs::F_Text), m_record(true) {}
+
+  static llvm::Expected<std::unique_ptr<DataRecorder>>
+  Create(const FileSpec &filename);
+
+  template <typename T> void Record(const T &t, bool newline = false) {
+    if (!m_record)
+      return;
+    m_os << t;
+    if (newline)
+      m_os << '\n';
+    m_os.flush();
+  }
+
+  const FileSpec &GetFilename() { return m_filename; }
+
+  void Stop() {
+    assert(m_record);
+    m_record = false;
+  }
+
+private:
+  FileSpec m_filename;
+  llvm::raw_fd_ostream m_os;
+  bool m_record;
+};
+
+class CommandProvider : public Provider<CommandProvider> {
+public:
+  struct Info {
+    static const char *name;
+    static const char *file;
+  };
+
+  CommandProvider(const FileSpec &directory) : Provider(directory) {}
+
+  DataRecorder *GetNewDataRecorder();
+
+  void Keep() override;
+  void Discard() override;
+
+  static char ID;
+
+private:
+  std::vector<std::unique_ptr<DataRecorder>> m_data_recorders;
 };
 
 /// The generator is responsible for the logic needed to generate a
@@ -201,6 +271,7 @@ public:
   static Reproducer &Instance();
   static llvm::Error Initialize(ReproducerMode mode,
                                 llvm::Optional<FileSpec> root);
+  static bool Initialized();
   static void Terminate();
 
   Reproducer() = default;

@@ -278,6 +278,11 @@ namespace ISD {
     /// multiplication on 2 integers.
     SMULFIX, UMULFIX,
 
+    /// Same as the corresponding unsaturated fixed point instructions, but the
+    /// result is clamped between the min and max values representable by the
+    /// bits of the first 2 operands.
+    SMULFIXSAT,
+
     /// Simple binary floating point operators.
     FADD, FSUB, FMUL, FDIV, FREM,
 
@@ -296,6 +301,26 @@ namespace ISD {
     STRICT_FEXP, STRICT_FEXP2, STRICT_FLOG, STRICT_FLOG10, STRICT_FLOG2,
     STRICT_FRINT, STRICT_FNEARBYINT, STRICT_FMAXNUM, STRICT_FMINNUM,
     STRICT_FCEIL, STRICT_FFLOOR, STRICT_FROUND, STRICT_FTRUNC,
+
+    /// X = STRICT_FP_ROUND(Y, TRUNC) - Rounding 'Y' from a larger floating 
+    /// point type down to the precision of the destination VT.  TRUNC is a 
+    /// flag, which is always an integer that is zero or one.  If TRUNC is 0,
+    /// this is a normal rounding, if it is 1, this FP_ROUND is known to not
+    /// change the value of Y.
+    ///
+    /// The TRUNC = 1 case is used in cases where we know that the value will
+    /// not be modified by the node, because Y is not using any of the extra
+    /// precision of source type.  This allows certain transformations like
+    /// STRICT_FP_EXTEND(STRICT_FP_ROUND(X,1)) -> X which are not safe for
+    /// STRICT_FP_EXTEND(STRICT_FP_ROUND(X,0)) because the extra bits aren't
+    /// removed.
+    /// It is used to limit optimizations while the DAG is being optimized.
+    STRICT_FP_ROUND,
+
+    /// X = STRICT_FP_EXTEND(Y) - Extend a smaller FP type into a larger FP
+    /// type.
+    /// It is used to limit optimizations while the DAG is being optimized.
+    STRICT_FP_EXTEND,
 
     /// FMA - Perform a * b + c with no intermediate rounding step.
     FMA,
@@ -585,6 +610,8 @@ namespace ISD {
     FNEG, FABS, FSQRT, FCBRT, FSIN, FCOS, FPOWI, FPOW,
     FLOG, FLOG2, FLOG10, FEXP, FEXP2,
     FCEIL, FTRUNC, FRINT, FNEARBYINT, FROUND, FFLOOR,
+    LROUND, LLROUND, LRINT, LLRINT,
+
     /// FMINNUM/FMAXNUM - Perform floating-point minimum or maximum on two
     /// values.
     //
@@ -872,11 +899,14 @@ namespace ISD {
     VECREDUCE_STRICT_FADD, VECREDUCE_STRICT_FMUL,
     /// These reductions are non-strict, and have a single vector operand.
     VECREDUCE_FADD, VECREDUCE_FMUL,
+    /// FMIN/FMAX nodes can have flags, for NaN/NoNaN variants.
+    VECREDUCE_FMAX, VECREDUCE_FMIN,
+    /// Integer reductions may have a result type larger than the vector element
+    /// type. However, the reduction is performed using the vector element type
+    /// and the value in the top bits is unspecified.
     VECREDUCE_ADD, VECREDUCE_MUL,
     VECREDUCE_AND, VECREDUCE_OR, VECREDUCE_XOR,
     VECREDUCE_SMAX, VECREDUCE_SMIN, VECREDUCE_UMAX, VECREDUCE_UMIN,
-    /// FMIN/FMAX nodes can have flags, for NaN/NoNaN variants.
-    VECREDUCE_FMAX, VECREDUCE_FMIN,
 
     /// BUILTIN_OP_END - This must be the last enum value in this list.
     /// The target-specific pre-isel opcode values start here.

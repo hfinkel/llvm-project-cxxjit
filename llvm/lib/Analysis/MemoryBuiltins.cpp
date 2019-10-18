@@ -263,6 +263,19 @@ bool llvm::isAllocLikeFn(const Value *V, const TargetLibraryInfo *TLI,
   return getAllocationData(V, AllocLike, TLI, LookThroughBitCast).hasValue();
 }
 
+/// Tests if a value is a call or invoke to a library function that
+/// reallocates memory (e.g., realloc).
+bool llvm::isReallocLikeFn(const Value *V, const TargetLibraryInfo *TLI,
+                     bool LookThroughBitCast) {
+  return getAllocationData(V, ReallocLike, TLI, LookThroughBitCast).hasValue();
+}
+
+/// Tests if a functions is a call or invoke to a library function that
+/// reallocates memory (e.g., realloc).
+bool llvm::isReallocLikeFn(const Function *F, const TargetLibraryInfo *TLI) {
+  return getAllocationDataForFunction(F, ReallocLike, TLI).hasValue();
+}
+
 /// extractMallocCall - Returns the corresponding CallInst if the instruction
 /// is a malloc call.  Since CallInst::CreateMalloc() only creates calls, we
 /// ignore InvokeInst here.
@@ -358,19 +371,8 @@ const CallInst *llvm::extractCallocCall(const Value *I,
   return isCallocLikeFn(I, TLI) ? cast<CallInst>(I) : nullptr;
 }
 
-/// isFreeCall - Returns non-null if the value is a call to the builtin free()
-const CallInst *llvm::isFreeCall(const Value *I, const TargetLibraryInfo *TLI) {
-  bool IsNoBuiltinCall;
-  const Function *Callee =
-      getCalledFunction(I, /*LookThroughBitCast=*/false, IsNoBuiltinCall);
-  if (Callee == nullptr || IsNoBuiltinCall)
-    return nullptr;
-
-  StringRef FnName = Callee->getName();
-  LibFunc TLIFn;
-  if (!TLI || !TLI->getLibFunc(FnName, TLIFn) || !TLI->has(TLIFn))
-    return nullptr;
-
+/// isLibFreeFunction - Returns true if the function is a builtin free()
+bool llvm::isLibFreeFunction(const Function *F, const LibFunc TLIFn) {
   unsigned ExpectedNumParams;
   if (TLIFn == LibFunc_free ||
       TLIFn == LibFunc_ZdlPv || // operator delete(void*)
@@ -401,21 +403,38 @@ const CallInst *llvm::isFreeCall(const Value *I, const TargetLibraryInfo *TLI) {
            TLIFn == LibFunc_ZdlPvSt11align_val_tRKSt9nothrow_t) // delete[](void*, align_val_t, nothrow)
     ExpectedNumParams = 3;
   else
-    return nullptr;
+    return false;
 
   // Check free prototype.
   // FIXME: workaround for PR5130, this will be obsolete when a nobuiltin
   // attribute will exist.
-  FunctionType *FTy = Callee->getFunctionType();
+  FunctionType *FTy = F->getFunctionType();
   if (!FTy->getReturnType()->isVoidTy())
-    return nullptr;
+    return false;
   if (FTy->getNumParams() != ExpectedNumParams)
-    return nullptr;
-  if (FTy->getParamType(0) != Type::getInt8PtrTy(Callee->getContext()))
+    return false;
+  if (FTy->getParamType(0) != Type::getInt8PtrTy(F->getContext()))
+    return false;
+
+  return true;
+}
+
+/// isFreeCall - Returns non-null if the value is a call to the builtin free()
+const CallInst *llvm::isFreeCall(const Value *I, const TargetLibraryInfo *TLI) {
+  bool IsNoBuiltinCall;
+  const Function *Callee =
+      getCalledFunction(I, /*LookThroughBitCast=*/false, IsNoBuiltinCall);
+  if (Callee == nullptr || IsNoBuiltinCall)
     return nullptr;
 
-  return dyn_cast<CallInst>(I);
+  StringRef FnName = Callee->getName();
+  LibFunc TLIFn;
+  if (!TLI || !TLI->getLibFunc(FnName, TLIFn) || !TLI->has(TLIFn))
+    return nullptr;
+
+  return isLibFreeFunction(Callee, TLIFn) ? dyn_cast<CallInst>(I) : nullptr;
 }
+
 
 //===----------------------------------------------------------------------===//
 //  Utility functions to compute size of objects.
@@ -705,7 +724,7 @@ SizeOffsetType ObjectSizeOffsetVisitor::visitGlobalVariable(GlobalVariable &GV){
   if (!GV.hasDefinitiveInitializer())
     return unknown();
 
-  APInt Size(IntTyBits, DL.getTypeAllocSize(GV.getType()->getElementType()));
+  APInt Size(IntTyBits, DL.getTypeAllocSize(GV.getValueType()));
   return std::make_pair(align(Size, GV.getAlignment()), Zero);
 }
 
@@ -765,7 +784,10 @@ SizeOffsetType ObjectSizeOffsetVisitor::visitInstruction(Instruction &I) {
 ObjectSizeOffsetEvaluator::ObjectSizeOffsetEvaluator(
     const DataLayout &DL, const TargetLibraryInfo *TLI, LLVMContext &Context,
     ObjectSizeOpts EvalOpts)
-    : DL(DL), TLI(TLI), Context(Context), Builder(Context, TargetFolder(DL)),
+    : DL(DL), TLI(TLI), Context(Context),
+      Builder(Context, TargetFolder(DL),
+              IRBuilderCallbackInserter(
+                  [&](Instruction *I) { InsertedInstructions.insert(I); })),
       EvalOpts(EvalOpts) {
   // IntTy and Zero must be set for each compute() since the address space may
   // be different for later objects.
@@ -788,9 +810,16 @@ SizeOffsetEvalType ObjectSizeOffsetEvaluator::compute(Value *V) {
       if (CacheIt != CacheMap.end() && anyKnown(CacheIt->second))
         CacheMap.erase(CacheIt);
     }
+
+    // Erase any instructions we inserted as part of the traversal.
+    for (Instruction *I : InsertedInstructions) {
+      I->replaceAllUsesWith(UndefValue::get(I->getType()));
+      I->eraseFromParent();
+    }
   }
 
   SeenVals.clear();
+  InsertedInstructions.clear();
   return Result;
 }
 
@@ -934,24 +963,28 @@ SizeOffsetEvalType ObjectSizeOffsetEvaluator::visitPHINode(PHINode &PHI) {
     if (!bothKnown(EdgeData)) {
       OffsetPHI->replaceAllUsesWith(UndefValue::get(IntTy));
       OffsetPHI->eraseFromParent();
+      InsertedInstructions.erase(OffsetPHI);
       SizePHI->replaceAllUsesWith(UndefValue::get(IntTy));
       SizePHI->eraseFromParent();
+      InsertedInstructions.erase(SizePHI);
       return unknown();
     }
     SizePHI->addIncoming(EdgeData.first, PHI.getIncomingBlock(i));
     OffsetPHI->addIncoming(EdgeData.second, PHI.getIncomingBlock(i));
   }
 
-  Value *Size = SizePHI, *Offset = OffsetPHI, *Tmp;
-  if ((Tmp = SizePHI->hasConstantValue())) {
+  Value *Size = SizePHI, *Offset = OffsetPHI;
+  if (Value *Tmp = SizePHI->hasConstantValue()) {
     Size = Tmp;
     SizePHI->replaceAllUsesWith(Size);
     SizePHI->eraseFromParent();
+    InsertedInstructions.erase(SizePHI);
   }
-  if ((Tmp = OffsetPHI->hasConstantValue())) {
+  if (Value *Tmp = OffsetPHI->hasConstantValue()) {
     Offset = Tmp;
     OffsetPHI->replaceAllUsesWith(Offset);
     OffsetPHI->eraseFromParent();
+    InsertedInstructions.erase(OffsetPHI);
   }
   return std::make_pair(Size, Offset);
 }

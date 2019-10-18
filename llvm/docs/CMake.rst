@@ -266,8 +266,12 @@ LLVM-specific variables
 **LLVM_ENABLE_THREADS**:BOOL
   Build with threads support, if available. Defaults to ON.
 
-**LLVM_ENABLE_CXX1Y**:BOOL
-  Build in C++1y mode, if available. Defaults to OFF.
+**LLVM_ENABLE_UNWIND_TABLES**:BOOL
+  Enable unwind tables in the binary.  Disabling unwind tables can reduce the
+  size of the libraries.  Defaults to ON.
+
+**LLVM_CXX_STD**:STRING
+  Build with the specified C++ standard. Defaults to "c++11".
 
 **LLVM_ENABLE_ASSERTIONS**:BOOL
   Enables code assertions. Defaults to ON if and only if ``CMAKE_BUILD_TYPE``
@@ -529,7 +533,7 @@ LLVM-specific variables
   `share/doc/llvm/ocaml-html`.
 
 **LLVM_CREATE_XCODE_TOOLCHAIN**:BOOL
-  OS X Only: If enabled CMake will generate a target named
+  macOS Only: If enabled CMake will generate a target named
   'install-xcode-toolchain'. This target will create a directory at
   $CMAKE_INSTALL_PREFIX/Toolchains containing an xctoolchain directory which can
   be used to override the default system tools.
@@ -593,6 +597,9 @@ LLVM-specific variables
 
 **LLVM_USE_NEWPM**:BOOL
   If enabled, use the experimental new pass manager.
+
+**LLVM_ENABLE_BINDINGS**:BOOL
+  If disabled, do not try to build the OCaml and go bindings.
 
 CMake Caches
 ============
@@ -658,10 +665,10 @@ cross-compiling.
 Embedding LLVM in your project
 ==============================
 
-From LLVM 3.5 onwards both the CMake and autoconf/Makefile build systems export
-LLVM libraries as importable CMake targets. This means that clients of LLVM can
-now reliably use CMake to develop their own LLVM-based projects against an
-installed version of LLVM regardless of how it was built.
+From LLVM 3.5 onwards the CMake build system exports LLVM libraries as
+importable CMake targets. This means that clients of LLVM can now reliably use
+CMake to develop their own LLVM-based projects against an installed version of
+LLVM regardless of how it was built.
 
 Here is a simple example of a CMakeLists.txt file that imports the LLVM libraries
 and uses them to build a simple application ``simple-tool``.

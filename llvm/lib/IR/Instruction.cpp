@@ -138,7 +138,9 @@ void Instruction::dropPoisonGeneratingFlags() {
     cast<GetElementPtrInst>(this)->setIsInBounds(false);
     break;
   }
+  // TODO: FastMathFlags!
 }
+
 
 bool Instruction::isExact() const {
   return cast<PossiblyExactOperator>(this)->isExact();
@@ -675,6 +677,13 @@ void Instruction::setSuccessor(unsigned idx, BasicBlock *B) {
   llvm_unreachable("not a terminator");
 }
 
+void Instruction::replaceSuccessorWith(BasicBlock *OldBB, BasicBlock *NewBB) {
+  for (unsigned Idx = 0, NumSuccessors = Instruction::getNumSuccessors();
+       Idx != NumSuccessors; ++Idx)
+    if (getSuccessor(Idx) == OldBB)
+      setSuccessor(Idx, NewBB);
+}
+
 Instruction *Instruction::cloneImpl() const {
   llvm_unreachable("Subclass of Instruction failed to implement cloneImpl");
 }
@@ -733,49 +742,6 @@ Instruction *Instruction::clone() const {
   New->SubclassOptionalData = SubclassOptionalData;
   New->copyMetadata(*this);
   return New;
-}
-
-void Instruction::updateProfWeight(uint64_t S, uint64_t T) {
-  auto *ProfileData = getMetadata(LLVMContext::MD_prof);
-  if (ProfileData == nullptr)
-    return;
-
-  auto *ProfDataName = dyn_cast<MDString>(ProfileData->getOperand(0));
-  if (!ProfDataName || (!ProfDataName->getString().equals("branch_weights") &&
-                        !ProfDataName->getString().equals("VP")))
-    return;
-
-  MDBuilder MDB(getContext());
-  SmallVector<Metadata *, 3> Vals;
-  Vals.push_back(ProfileData->getOperand(0));
-  APInt APS(128, S), APT(128, T);
-  if (ProfDataName->getString().equals("branch_weights"))
-    for (unsigned i = 1; i < ProfileData->getNumOperands(); i++) {
-      // Using APInt::div may be expensive, but most cases should fit 64 bits.
-      APInt Val(128,
-                mdconst::dyn_extract<ConstantInt>(ProfileData->getOperand(i))
-                    ->getValue()
-                    .getZExtValue());
-      Val *= APS;
-      Vals.push_back(MDB.createConstant(
-          ConstantInt::get(Type::getInt64Ty(getContext()),
-                           Val.udiv(APT).getLimitedValue())));
-    }
-  else if (ProfDataName->getString().equals("VP"))
-    for (unsigned i = 1; i < ProfileData->getNumOperands(); i += 2) {
-      // The first value is the key of the value profile, which will not change.
-      Vals.push_back(ProfileData->getOperand(i));
-      // Using APInt::div may be expensive, but most cases should fit 64 bits.
-      APInt Val(128,
-                mdconst::dyn_extract<ConstantInt>(ProfileData->getOperand(i + 1))
-                    ->getValue()
-                    .getZExtValue());
-      Val *= APS;
-      Vals.push_back(MDB.createConstant(
-          ConstantInt::get(Type::getInt64Ty(getContext()),
-                           Val.udiv(APT).getLimitedValue())));
-    }
-  setMetadata(LLVMContext::MD_prof, MDNode::get(getContext(), Vals));
 }
 
 void Instruction::setProfWeight(uint64_t W) {

@@ -749,7 +749,8 @@ void ValueEnumerator::organizeMetadata() {
 
   // Rebuild MDs, index the metadata ranges for each function in FunctionMDs,
   // and fix up MetadataMap.
-  std::vector<const Metadata *> OldMDs = std::move(MDs);
+  std::vector<const Metadata *> OldMDs;
+  MDs.swap(OldMDs);
   MDs.reserve(OldMDs.size());
   for (unsigned I = 0, E = Order.size(); I != E && !Order[I].F; ++I) {
     auto *MD = Order[I].get(OldMDs);
@@ -948,9 +949,11 @@ void ValueEnumerator::incorporateFunction(const Function &F) {
   incorporateFunctionMetadata(F);
 
   // Adding function arguments to the value table.
-  for (const auto &I : F.args())
+  for (const auto &I : F.args()) {
     EnumerateValue(&I);
-
+    if (I.hasAttribute(Attribute::ByVal))
+      EnumerateType(I.getParamByValType());
+  }
   FirstFuncConstantID = Values.size();
 
   // Add all function-level constants to the value table.

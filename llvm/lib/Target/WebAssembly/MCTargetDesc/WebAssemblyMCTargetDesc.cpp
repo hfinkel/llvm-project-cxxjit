@@ -11,10 +11,11 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#include "WebAssemblyMCTargetDesc.h"
-#include "InstPrinter/WebAssemblyInstPrinter.h"
-#include "WebAssemblyMCAsmInfo.h"
-#include "WebAssemblyTargetStreamer.h"
+#include "MCTargetDesc/WebAssemblyMCTargetDesc.h"
+#include "MCTargetDesc/WebAssemblyInstPrinter.h"
+#include "MCTargetDesc/WebAssemblyMCAsmInfo.h"
+#include "MCTargetDesc/WebAssemblyTargetStreamer.h"
+#include "TargetInfo/WebAssemblyTargetInfo.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
@@ -145,8 +146,8 @@ wasm::ValType WebAssembly::toValType(const MVT &Ty) {
   case MVT::v4f32:
   case MVT::v2f64:
     return wasm::ValType::V128;
-  case MVT::ExceptRef:
-    return wasm::ValType::EXCEPT_REF;
+  case MVT::exnref:
+    return wasm::ValType::EXNREF;
   default:
     llvm_unreachable("unexpected type");
   }

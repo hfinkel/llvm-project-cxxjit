@@ -16,6 +16,7 @@
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/CodeGen/ScheduleHazardRecognizer.h"
+#include "llvm/CodeGen/TargetSchedule.h"
 #include <list>
 
 namespace llvm {
@@ -46,6 +47,7 @@ private:
   const GCNSubtarget &ST;
   const SIInstrInfo &TII;
   const SIRegisterInfo &TRI;
+  TargetSchedModel TSchedModel;
 
   /// RegUnits of uses in the current soft memory clause.
   BitVector ClauseUses;
@@ -59,6 +61,10 @@ private:
   }
 
   void addClauseInst(const MachineInstr &MI);
+
+  // Advance over a MachineInstr bundle. Look for hazards in the bundled
+  // instructions.
+  void processBundle();
 
   int getWaitStatesSince(IsHazardFn IsHazard, int Limit);
   int getWaitStatesSinceDef(unsigned Reg, IsHazardFn IsHazardDef, int Limit);
@@ -79,6 +85,18 @@ private:
   int checkInlineAsmHazards(MachineInstr *IA);
   int checkAnyInstHazards(MachineInstr *MI);
   int checkReadM0Hazards(MachineInstr *SMovRel);
+  int checkNSAtoVMEMHazard(MachineInstr *MI);
+  int checkFPAtomicToDenormModeHazard(MachineInstr *MI);
+  void fixHazards(MachineInstr *MI);
+  bool fixVcmpxPermlaneHazards(MachineInstr *MI);
+  bool fixVMEMtoScalarWriteHazards(MachineInstr *MI);
+  bool fixSMEMtoVectorWriteHazards(MachineInstr *MI);
+  bool fixVcmpxExecWARHazard(MachineInstr *MI);
+  bool fixLdsBranchVmemWARHazard(MachineInstr *MI);
+
+  int checkMAIHazards(MachineInstr *MI);
+  int checkMAILdStHazards(MachineInstr *MI);
+
 public:
   GCNHazardRecognizer(const MachineFunction &MF);
   // We can only issue one instruction per cycle.

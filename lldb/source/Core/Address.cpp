@@ -161,7 +161,7 @@ static bool ReadAddress(ExecutionContextScope *exe_scope,
 static bool DumpUInt(ExecutionContextScope *exe_scope, const Address &address,
                      uint32_t byte_size, Stream *strm) {
   if (exe_scope == nullptr || byte_size == 0)
-    return 0;
+    return false;
   std::vector<uint8_t> buf(byte_size, 0);
 
   if (ReadBytes(exe_scope, address, &buf[0], buf.size()) == buf.size()) {
@@ -927,7 +927,6 @@ size_t Address::MemorySize() const {
   return sizeof(Address);
 }
 
-//----------------------------------------------------------------------
 // NOTE: Be careful using this operator. It can correctly compare two
 // addresses from the same Module correctly. It can't compare two addresses
 // from different modules in any meaningful way, but it will compare the module
@@ -939,7 +938,6 @@ size_t Address::MemorySize() const {
 //   address results to make much sense
 //
 // This basically lets Address objects be used in ordered collection classes.
-//----------------------------------------------------------------------
 
 bool lldb_private::operator<(const Address &lhs, const Address &rhs) {
   ModuleSP lhs_module_sp(lhs.GetModule());

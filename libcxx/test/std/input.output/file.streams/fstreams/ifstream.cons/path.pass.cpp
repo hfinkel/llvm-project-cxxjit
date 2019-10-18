@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 // UNSUPPORTED: c++98, c++03, c++11, c++14
+// XFAIL: dylib-has-no-filesystem
 
 // <fstream>
 
@@ -19,6 +20,8 @@
 #include <fstream>
 #include <filesystem>
 #include <cassert>
+
+#include "test_macros.h"
 
 namespace fs = std::filesystem;
 

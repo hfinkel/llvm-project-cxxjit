@@ -15,9 +15,7 @@
 using namespace lldb;
 using namespace lldb_private;
 
-//----------------------------------------------------------------------
 // ThreadPlanShouldStopHere constructor
-//----------------------------------------------------------------------
 ThreadPlanShouldStopHere::ThreadPlanShouldStopHere(ThreadPlan *owner)
     : m_callbacks(), m_baton(nullptr), m_owner(owner),
       m_flags(ThreadPlanShouldStopHere::eNone) {
@@ -132,7 +130,7 @@ ThreadPlanSP ThreadPlanShouldStopHere::DefaultStepFromHereCallback(
                     "Queueing StepInRange plan to step through line 0 code.");
 
       return_plan_sp = current_plan->GetThread().QueueThreadPlanForStepInRange(
-          false, range, sc, NULL, eOnlyDuringStepping, status,
+          false, range, sc, nullptr, eOnlyDuringStepping, status,
           eLazyBoolCalculate, eLazyBoolNo);
     }
   }

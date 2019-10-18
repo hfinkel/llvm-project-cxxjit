@@ -42,6 +42,9 @@ class MCSectionWasm final : public MCSection {
   // segment
   uint32_t SegmentIndex = 0;
 
+  // Whether this data segment is passive
+  bool IsPassive = false;
+
   friend class MCContext;
   MCSectionWasm(StringRef Section, SectionKind K, const MCSymbolWasm *group,
                 unsigned UniqueID, MCSymbol *Begin)
@@ -63,7 +66,8 @@ public:
   bool isVirtualSection() const override;
 
   bool isWasmData() const {
-    return Kind.isGlobalWriteableData() || Kind.isReadOnly();
+    return Kind.isGlobalWriteableData() || Kind.isReadOnly() ||
+           Kind.isThreadLocal();
   }
 
   bool isUnique() const { return UniqueID != ~0U; }
@@ -75,6 +79,14 @@ public:
   uint32_t getSegmentIndex() const { return SegmentIndex; }
   void setSegmentIndex(uint32_t Index) { SegmentIndex = Index; }
 
+  bool getPassive() const {
+    assert(isWasmData());
+    return IsPassive;
+  }
+  void setPassive(bool V = true) {
+    assert(isWasmData());
+    IsPassive = V;
+  }
   static bool classof(const MCSection *S) { return S->getVariant() == SV_Wasm; }
 };
 

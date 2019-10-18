@@ -22,7 +22,6 @@
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/FileSystemOptions.h"
 #include "clang/Basic/LLVM.h"
-#include "clang/Basic/MemoryBufferCache.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Basic/TargetOptions.h"
@@ -49,6 +48,7 @@
 #include "clang/Sema/Template.h"
 #include "clang/Sema/TemplateDeduction.h"
 #include "clang/Serialization/ASTReader.h"
+#include "clang/Serialization/InMemoryModuleCache.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/SmallString.h"
@@ -608,7 +608,7 @@ struct CompilerData {
   IntrusiveRefCntPtr<DiagnosticsEngine>   Diagnostics;
   IntrusiveRefCntPtr<FileManager>         FileMgr;
   IntrusiveRefCntPtr<SourceManager>       SourceMgr;
-  IntrusiveRefCntPtr<MemoryBufferCache>   PCMCache;
+  IntrusiveRefCntPtr<InMemoryModuleCache>   ModuleCache;
   std::unique_ptr<HeaderSearch>           HeaderInfo;
   std::unique_ptr<PCHContainerReader>     PCHContainerRdr;
   IntrusiveRefCntPtr<TargetInfo>          Target;
@@ -690,7 +690,7 @@ struct CompilerData {
     PCHContainerRdr.reset(new RawPCHContainerReader);
     SourceMgr = new SourceManager(*Diagnostics, *FileMgr,
                                   /*UserFilesAreVolatile*/ false);
-    PCMCache = new MemoryBufferCache;
+    ModuleCache = new InMemoryModuleCache;
     HSOpts = std::make_shared<HeaderSearchOptions>();
     HSOpts->ModuleFormat = PCHContainerRdr->getFormat();
     HeaderInfo.reset(new HeaderSearch(HSOpts,
@@ -704,7 +704,7 @@ struct CompilerData {
 
     PP = std::make_shared<Preprocessor>(
         PPOpts, *Diagnostics, *Invocation->getLangOpts(),
-        *SourceMgr, *PCMCache, *HeaderInfo, ModuleLoader,
+        *SourceMgr, *HeaderInfo, ModuleLoader,
         /*IILookup=*/nullptr,
         /*OwnsHeaderSearch=*/false);
 
@@ -717,7 +717,7 @@ struct CompilerData {
                          PP->getIdentifierTable(), PP->getSelectorTable(),
                          PP->getBuiltinInfo());
 
-    Reader = new ASTReader(*PP, Ctx.get(), *PCHContainerRdr, {},
+    Reader = new ASTReader(*PP, *ModuleCache, Ctx.get(), *PCHContainerRdr, {},
                            /*isysroot=*/"",
                            /*DisableValidation=*/ false,
                            /*AllowPCHWithCompilerErrors*/ false);

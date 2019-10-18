@@ -1,7 +1,7 @@
-// RUN: %clang_cc1 -verify -fopenmp -ferror-limit 200 %s -Wno-openmp-target
+// RUN: %clang_cc1 -verify -fopenmp -ferror-limit 200 %s -Wno-openmp-target -Wuninitialized
 
-// RUN: %clang_cc1 -verify -fopenmp-simd -ferror-limit 200 %s -Wno-openmp-target
-// RUN: %clang_cc1 -DCCODE -verify -fopenmp -ferror-limit 200 -x c %s -Wno-openmp-target
+// RUN: %clang_cc1 -verify -fopenmp-simd -ferror-limit 200 %s -Wno-openmp-target -Wuninitialized
+// RUN: %clang_cc1 -DCCODE -verify -fopenmp -ferror-limit 200 -x c %s -Wno-openmp-target -Wuninitialized
 #ifdef CCODE
 void foo(int arg) {
   const int n = 0;
@@ -56,6 +56,8 @@ struct SA {
     #pragma omp target teams map(b[-1:]) // expected-error {{array section must be a subset of the original array}}
     {}
     #pragma omp target teams map(b[:-1]) // expected-error {{section length is evaluated to a negative value -1}}
+    {}
+    #pragma omp target teams map(b[true:true])
     {}
 
     #pragma omp target teams map(always, tofrom: c,f)

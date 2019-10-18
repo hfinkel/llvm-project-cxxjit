@@ -26,9 +26,9 @@ public:
                          JITSymbolResolver &Resolver)
       : RuntimeDyldMachOCRTPBase(MM, Resolver) {}
 
-  unsigned getMaxStubSize() override { return 8; }
+  unsigned getMaxStubSize() const override { return 8; }
 
-  unsigned getStubAlignment() override { return 1; }
+  unsigned getStubAlignment() override { return 8; }
 
   Expected<relocation_iterator>
   processRelocationRef(unsigned SectionID, relocation_iterator RelI,

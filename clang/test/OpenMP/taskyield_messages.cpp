@@ -1,10 +1,10 @@
-// RUN: %clang_cc1 -verify -fopenmp -ferror-limit 100 %s
+// RUN: %clang_cc1 -verify -fopenmp -ferror-limit 100 %s -Wuninitialized
 
-// RUN: %clang_cc1 -verify -fopenmp-simd -ferror-limit 100 %s
+// RUN: %clang_cc1 -verify -fopenmp-simd -ferror-limit 100 %s -Wuninitialized
 
 template <class T>
 T tmain(T argc) {
-#pragma omp taskyield
+#pragma omp taskyield allocate(argc) // expected-error {{unexpected OpenMP clause 'allocate' in directive '#pragma omp taskyield'}}
   ;
 #pragma omp taskyield untied  // expected-error {{unexpected OpenMP clause 'untied' in directive '#pragma omp taskyield'}}
 #pragma omp taskyield unknown // expected-warning {{extra tokens at the end of '#pragma omp taskyield' are ignored}}

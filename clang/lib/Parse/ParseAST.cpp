@@ -15,7 +15,6 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ExternalASTSource.h"
 #include "clang/AST/Stmt.h"
-#include "clang/Basic/MemoryBufferCache.h"
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Parse/Parser.h"
 #include "clang/Sema/CodeCompleteConsumer.h"
@@ -23,9 +22,10 @@
 #include "clang/Sema/SemaConsumer.h"
 #include "clang/Sema/TemplateInstCallback.h"
 #include "clang/Serialization/ASTWriter.h"
-#include "llvm/Bitcode/BitstreamWriter.h"
+#include "clang/Serialization/InMemoryModuleCache.h"
+#include "llvm/Bitstream/BitstreamWriter.h"
+#include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/CrashRecoveryContext.h"
-
 #include <cstdio>
 #include <memory>
 
@@ -154,6 +154,7 @@ void clang::ParseAST(Sema &S, bool PrintStats, bool SkipFunctionBodies) {
   bool HaveLexer = S.getPreprocessor().getCurrentLexer();
 
   if (HaveLexer) {
+    llvm::TimeTraceScope TimeScope("Frontend", StringRef(""));
     P.Initialize();
     Parser::DeclGroupPtrTy ADecl;
     for (bool AtEOF = P.ParseFirstTopLevelDecl(ADecl); !AtEOF;
@@ -172,8 +173,8 @@ void clang::ParseAST(Sema &S, bool PrintStats, bool SkipFunctionBodies) {
 
   if (S.getLangOpts().isJITEnabled()) {
     llvm::BitstreamWriter Stream(S.getASTContext().ASTBufferForJIT);
-    MemoryBufferCache PCMCache;
-    ASTWriter Writer(Stream, S.getASTContext().ASTBufferForJIT, PCMCache, {},
+    InMemoryModuleCache ModuleCache;
+    ASTWriter Writer(Stream, S.getASTContext().ASTBufferForJIT, ModuleCache, {},
                      /*IncludeTimestamps*/true,
                      /*TreatAllFilesAsTransient*/true);
     Writer.WriteAST(S, std::string(), nullptr, "", /*hasErrors*/ false);

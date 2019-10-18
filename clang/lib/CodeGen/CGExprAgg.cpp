@@ -165,10 +165,11 @@ public:
   void VisitImplicitValueInitExpr(ImplicitValueInitExpr *E);
   void VisitNoInitExpr(NoInitExpr *E) { } // Do nothing.
   void VisitCXXDefaultArgExpr(CXXDefaultArgExpr *DAE) {
+    CodeGenFunction::CXXDefaultArgExprScope Scope(CGF, DAE);
     Visit(DAE->getExpr());
   }
   void VisitCXXDefaultInitExpr(CXXDefaultInitExpr *DIE) {
-    CodeGenFunction::CXXDefaultInitExprScope Scope(CGF);
+    CodeGenFunction::CXXDefaultInitExprScope Scope(CGF, DIE);
     Visit(DIE->getExpr());
   }
   void VisitCXXBindTemporaryExpr(CXXBindTemporaryExpr *E);
@@ -710,6 +711,25 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
     break;
   }
 
+  case CK_LValueToRValueBitCast: {
+    if (Dest.isIgnored()) {
+      CGF.EmitAnyExpr(E->getSubExpr(), AggValueSlot::ignored(),
+                      /*ignoreResult=*/true);
+      break;
+    }
+
+    LValue SourceLV = CGF.EmitLValue(E->getSubExpr());
+    Address SourceAddress =
+        Builder.CreateElementBitCast(SourceLV.getAddress(), CGF.Int8Ty);
+    Address DestAddress =
+        Builder.CreateElementBitCast(Dest.getAddress(), CGF.Int8Ty);
+    llvm::Value *SizeVal = llvm::ConstantInt::get(
+        CGF.SizeTy,
+        CGF.getContext().getTypeSizeInChars(E->getType()).getQuantity());
+    Builder.CreateMemCpy(DestAddress, SourceAddress, SizeVal);
+    break;
+  }
+
   case CK_DerivedToBase:
   case CK_BaseToDerived:
   case CK_UncheckedDerivedToBase: {
@@ -783,6 +803,8 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
     RValue rvalue = RValue::getAggregate(valueAddr, atomicSlot.isVolatile());
     return EmitFinalDestCopy(valueType, rvalue);
   }
+  case CK_AddressSpaceConversion:
+     return Visit(E->getSubExpr());
 
   case CK_LValueToRValue:
     // If we're loading from a volatile type, force the destination
@@ -793,6 +815,7 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
     }
 
     LLVM_FALLTHROUGH;
+
 
   case CK_NoOp:
   case CK_UserDefinedConversion:
@@ -849,10 +872,12 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
   case CK_CopyAndAutoreleaseBlockObject:
   case CK_BuiltinFnToFnPtr:
   case CK_ZeroToOCLOpaqueType:
-  case CK_AddressSpaceConversion:
+
   case CK_IntToOCLSampler:
   case CK_FixedPointCast:
   case CK_FixedPointToBoolean:
+  case CK_FixedPointToIntegral:
+  case CK_IntegralToFixedPoint:
     llvm_unreachable("cast kind invalid for aggregate types");
   }
 }
@@ -1346,7 +1371,8 @@ static bool isSimpleZero(const Expr *E, CodeGenFunction &CGF) {
   // (int*)0 - Null pointer expressions.
   if (const CastExpr *ICE = dyn_cast<CastExpr>(E))
     return ICE->getCastKind() == CK_NullToPointer &&
-        CGF.getTypes().isPointerZeroInitializable(E->getType());
+           CGF.getTypes().isPointerZeroInitializable(E->getType()) &&
+           !E->HasSideEffects(CGF.getContext());
   // '\0'
   if (const CharacterLiteral *CL = dyn_cast<CharacterLiteral>(E))
     return CL->getValue() == 0;
@@ -1469,6 +1495,13 @@ void AggExprEmitter::VisitInitListExpr(InitListExpr *E) {
   // initializers throws an exception.
   SmallVector<EHScopeStack::stable_iterator, 16> cleanups;
   llvm::Instruction *cleanupDominator = nullptr;
+  auto addCleanup = [&](const EHScopeStack::stable_iterator &cleanup) {
+    cleanups.push_back(cleanup);
+    if (!cleanupDominator) // create placeholder once needed
+      cleanupDominator = CGF.Builder.CreateAlignedLoad(
+          CGF.Int8Ty, llvm::Constant::getNullValue(CGF.Int8PtrTy),
+          CharUnits::One());
+  };
 
   unsigned curInitIndex = 0;
 
@@ -1487,13 +1520,13 @@ void AggExprEmitter::VisitInitListExpr(InitListExpr *E) {
           AggValueSlot::IsDestructed,
           AggValueSlot::DoesNotNeedGCBarriers,
           AggValueSlot::IsNotAliased,
-          CGF.overlapForBaseInit(CXXRD, BaseRD, Base.isVirtual()));
+          CGF.getOverlapForBaseInit(CXXRD, BaseRD, Base.isVirtual()));
       CGF.EmitAggExpr(E->getInit(curInitIndex++), AggSlot);
 
       if (QualType::DestructionKind dtorKind =
               Base.getType().isDestructedType()) {
         CGF.pushDestroy(dtorKind, V, Base.getType());
-        cleanups.push_back(CGF.EHStack.stable_begin());
+        addCleanup(CGF.EHStack.stable_begin());
       }
     }
   }
@@ -1570,15 +1603,9 @@ void AggExprEmitter::VisitInitListExpr(InitListExpr *E) {
           = field->getType().isDestructedType()) {
       assert(LV.isSimple());
       if (CGF.needsEHCleanup(dtorKind)) {
-        if (!cleanupDominator)
-          cleanupDominator = CGF.Builder.CreateAlignedLoad(
-              CGF.Int8Ty,
-              llvm::Constant::getNullValue(CGF.Int8PtrTy),
-              CharUnits::One()); // placeholder
-
         CGF.pushDestroy(EHCleanup, LV.getAddress(), field->getType(),
                         CGF.getDestroyer(dtorKind), false);
-        cleanups.push_back(CGF.EHStack.stable_begin());
+        addCleanup(CGF.EHStack.stable_begin());
         pushedCleanup = true;
       }
     }
@@ -1594,6 +1621,8 @@ void AggExprEmitter::VisitInitListExpr(InitListExpr *E) {
 
   // Deactivate all the partial cleanups in reverse order, which
   // generally means popping them.
+  assert((cleanupDominator || cleanups.empty()) &&
+         "Missing cleanupDominator before deactivating cleanup blocks");
   for (unsigned i = cleanups.size(); i != 0; --i)
     CGF.DeactivateCleanupBlock(cleanups[i-1], cleanupDominator);
 
@@ -1839,15 +1868,32 @@ LValue CodeGenFunction::EmitAggExprToLValue(const Expr *E) {
   return LV;
 }
 
-AggValueSlot::Overlap_t CodeGenFunction::overlapForBaseInit(
-    const CXXRecordDecl *RD, const CXXRecordDecl *BaseRD, bool IsVirtual) {
-  // Virtual bases are initialized first, in address order, so there's never
-  // any overlap during their initialization.
-  //
-  // FIXME: Under P0840, this is no longer true: the tail padding of a vbase
-  // of a field could be reused by a vbase of a containing class.
-  if (IsVirtual)
+AggValueSlot::Overlap_t
+CodeGenFunction::getOverlapForFieldInit(const FieldDecl *FD) {
+  if (!FD->hasAttr<NoUniqueAddressAttr>() || !FD->getType()->isRecordType())
     return AggValueSlot::DoesNotOverlap;
+
+  // If the field lies entirely within the enclosing class's nvsize, its tail
+  // padding cannot overlap any already-initialized object. (The only subobjects
+  // with greater addresses that might already be initialized are vbases.)
+  const RecordDecl *ClassRD = FD->getParent();
+  const ASTRecordLayout &Layout = getContext().getASTRecordLayout(ClassRD);
+  if (Layout.getFieldOffset(FD->getFieldIndex()) +
+          getContext().getTypeSize(FD->getType()) <=
+      (uint64_t)getContext().toBits(Layout.getNonVirtualSize()))
+    return AggValueSlot::DoesNotOverlap;
+
+  // The tail padding may contain values we need to preserve.
+  return AggValueSlot::MayOverlap;
+}
+
+AggValueSlot::Overlap_t CodeGenFunction::getOverlapForBaseInit(
+    const CXXRecordDecl *RD, const CXXRecordDecl *BaseRD, bool IsVirtual) {
+  // If the most-derived object is a field declared with [[no_unique_address]],
+  // the tail padding of any virtual base could be reused for other subobjects
+  // of that field's class.
+  if (IsVirtual)
+    return AggValueSlot::MayOverlap;
 
   // If the base class is laid out entirely within the nvsize of the derived
   // class, its tail padding cannot yet be initialized, so we can issue

@@ -135,6 +135,9 @@ def FeatureQPX       : SubtargetFeature<"qpx","HasQPX", "true",
 def FeatureVSX       : SubtargetFeature<"vsx","HasVSX", "true",
                                         "Enable VSX instructions",
                                         [FeatureAltivec]>;
+def FeatureTwoConstNR :
+  SubtargetFeature<"two-const-nr", "NeedsTwoConstNR", "true",
+                   "Requires two constant Newton-Raphson computation">;
 def FeatureP8Altivec : SubtargetFeature<"power8-altivec", "HasP8Altivec", "true",
                                         "Enable POWER8 Altivec instructions",
                                         [FeatureAltivec]>;
@@ -161,8 +164,12 @@ def FeatureHTM : SubtargetFeature<"htm", "HasHTM", "true",
                                   "Enable Hardware Transactional Memory instructions">;
 def FeatureMFTB   : SubtargetFeature<"", "FeatureMFTB", "true",
                                         "Implement mftb using the mfspr instruction">;
-def FeatureFusion : SubtargetFeature<"fusion", "HasFusion", "true",
-                                     "Target supports add/load integer fusion.">;
+def FeaturePPCPreRASched:
+  SubtargetFeature<"ppc-prera-sched", "UsePPCPreRASchedStrategy", "true",
+                   "Use PowerPC pre-RA scheduling strategy">;
+def FeaturePPCPostRASched:
+  SubtargetFeature<"ppc-postra-sched", "UsePPCPostRASchedStrategy", "true",
+                   "Use PowerPC post-RA scheduling strategy">;
 def FeatureFloat128 :
   SubtargetFeature<"float128", "HasFloat128", "true",
                    "Enable the __float128 data type for IEEE-754R Binary128.",
@@ -221,16 +228,15 @@ def ProcessorFeatures {
        FeaturePOPCNTD, FeatureCMPB, FeatureLDBRX,
        Feature64Bit /*, Feature64BitRegs */,
        FeatureBPERMD, FeatureExtDiv,
-       FeatureMFTB, DeprecatedDST];
+       FeatureMFTB, DeprecatedDST, FeatureTwoConstNR];
   list<SubtargetFeature> Power8SpecificFeatures =
       [DirectivePwr8, FeatureP8Altivec, FeatureP8Vector, FeatureP8Crypto,
-       FeatureHTM, FeatureDirectMove, FeatureICBT, FeaturePartwordAtomic,
-       FeatureFusion];
+       FeatureHTM, FeatureDirectMove, FeatureICBT, FeaturePartwordAtomic];
   list<SubtargetFeature> Power8FeatureList =
       !listconcat(Power7FeatureList, Power8SpecificFeatures);
   list<SubtargetFeature> Power9SpecificFeatures =
       [DirectivePwr9, FeatureP9Altivec, FeatureP9Vector, FeatureISA3_0,
-       FeatureVectorsUseTwoUnits];
+       FeatureVectorsUseTwoUnits, FeaturePPCPreRASched, FeaturePPCPostRASched];
   list<SubtargetFeature> Power9FeatureList =
       !listconcat(Power8FeatureList, Power9SpecificFeatures);
 }
@@ -286,10 +292,9 @@ def getNonRecordFormOpcode : InstrMapping {
 
 def getAltVSXFMAOpcode : InstrMapping {
   let FilterClass = "AltVSXFMARel";
-  // Instructions with the same BaseName and Interpretation64Bit values
-  // form a row.
+  // Instructions with the same BaseName value form a row.
   let RowFields = ["BaseName"];
-  // Instructions with the same RC value form a column.
+  // Instructions with the same IsVSXFMAAlt value form a column.
   let ColFields = ["IsVSXFMAAlt"];
   // The key column are the (default) addend-killing instructions.
   let KeyCol = ["0"];

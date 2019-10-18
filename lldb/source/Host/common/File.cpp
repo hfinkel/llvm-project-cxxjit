@@ -65,11 +65,11 @@ static const char *GetStreamOpenModeFromOptions(uint32_t options) {
   } else if (options & File::eOpenOptionWrite) {
     return "w";
   }
-  return NULL;
+  return nullptr;
 }
 
 int File::kInvalidDescriptor = -1;
-FILE *File::kInvalidStream = NULL;
+FILE *File::kInvalidStream = nullptr;
 
 File::~File() { Close(); }
 
@@ -621,9 +621,7 @@ Status File::Write(const void *buf, size_t &num_bytes, off_t &offset) {
   return error;
 }
 
-//------------------------------------------------------------------
 // Print some formatted output to the stream.
-//------------------------------------------------------------------
 size_t File::Printf(const char *format, ...) {
   va_list args;
   va_start(args, format);
@@ -632,15 +630,13 @@ size_t File::Printf(const char *format, ...) {
   return result;
 }
 
-//------------------------------------------------------------------
 // Print some formatted output to the stream.
-//------------------------------------------------------------------
 size_t File::PrintfVarArg(const char *format, va_list args) {
   size_t result = 0;
   if (DescriptorIsValid()) {
-    char *s = NULL;
+    char *s = nullptr;
     result = vasprintf(&s, format, args);
-    if (s != NULL) {
+    if (s != nullptr) {
       if (result > 0) {
         size_t s_len = result;
         Write(s, s_len);

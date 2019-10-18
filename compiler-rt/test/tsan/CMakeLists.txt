@@ -31,12 +31,15 @@ foreach(arch ${TSAN_TEST_ARCH})
   string(TOLOWER "-${arch}" TSAN_TEST_CONFIG_SUFFIX)
   get_test_cc_for_arch(${arch} TSAN_TEST_TARGET_CC TSAN_TEST_TARGET_CFLAGS)
 
+  string(REPLACE ";" " " LIBDISPATCH_CFLAGS_STRING " ${COMPILER_RT_TEST_LIBDISPATCH_CFLAGS}")
+  string(APPEND TSAN_TEST_TARGET_CFLAGS ${LIBDISPATCH_CFLAGS_STRING})
+
   string(TOUPPER ${arch} ARCH_UPPER_CASE)
   set(CONFIG_NAME ${ARCH_UPPER_CASE}Config)
 
   configure_lit_site_cfg(
-    ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.in
-    ${CMAKE_CURRENT_BINARY_DIR}/${CONFIG_NAME}/lit.site.cfg)
+    ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.py.in
+    ${CMAKE_CURRENT_BINARY_DIR}/${CONFIG_NAME}/lit.site.cfg.py)
   list(APPEND TSAN_TESTSUITES ${CMAKE_CURRENT_BINARY_DIR}/${CONFIG_NAME})
 endforeach()
 
@@ -58,8 +61,8 @@ if(APPLE)
   string(TOUPPER ${arch} ARCH_UPPER_CASE)
   set(CONFIG_NAME "IOSSim${ARCH_UPPER_CASE}Config")
   configure_lit_site_cfg(
-    ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.in
-    ${CMAKE_CURRENT_BINARY_DIR}/${CONFIG_NAME}/lit.site.cfg
+    ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.py.in
+    ${CMAKE_CURRENT_BINARY_DIR}/${CONFIG_NAME}/lit.site.cfg.py
     )
   add_lit_testsuite(check-tsan-iossim-${arch} "ThreadSanitizer iOS Simulator ${arch} tests"
     ${CMAKE_CURRENT_BINARY_DIR}/${CONFIG_NAME}/
@@ -73,8 +76,8 @@ if(APPLE)
   string(TOUPPER ${arch} ARCH_UPPER_CASE)
   set(CONFIG_NAME "IOS${ARCH_UPPER_CASE}Config")
   configure_lit_site_cfg(
-    ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.in
-    ${CMAKE_CURRENT_BINARY_DIR}/${CONFIG_NAME}/lit.site.cfg
+    ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.py.in
+    ${CMAKE_CURRENT_BINARY_DIR}/${CONFIG_NAME}/lit.site.cfg.py
     )
   add_lit_testsuite(check-tsan-ios-${arch} "ThreadSanitizer iOS Simulator ${arch} tests"
     ${CMAKE_CURRENT_BINARY_DIR}/${CONFIG_NAME}/
@@ -85,8 +88,8 @@ endif()
 
 if(COMPILER_RT_INCLUDE_TESTS)
   configure_lit_site_cfg(
-    ${CMAKE_CURRENT_SOURCE_DIR}/Unit/lit.site.cfg.in
-    ${CMAKE_CURRENT_BINARY_DIR}/Unit/lit.site.cfg)
+    ${CMAKE_CURRENT_SOURCE_DIR}/Unit/lit.site.cfg.py.in
+    ${CMAKE_CURRENT_BINARY_DIR}/Unit/lit.site.cfg.py)
   list(APPEND TSAN_TEST_DEPS TsanUnitTests)
   list(APPEND TSAN_TESTSUITES ${CMAKE_CURRENT_BINARY_DIR}/Unit)
 endif()

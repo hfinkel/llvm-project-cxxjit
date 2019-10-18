@@ -630,7 +630,7 @@ static Instruction *combineLoadToOperationType(InstCombiner &IC, LoadInst &LI) {
   // infinite loop).
   if (!Ty->isIntegerTy() && Ty->isSized() &&
       DL.isLegalInteger(DL.getTypeStoreSizeInBits(Ty)) &&
-      DL.getTypeStoreSizeInBits(Ty) == DL.getTypeSizeInBits(Ty) &&
+      DL.typeSizeEqualsStoreSize(Ty) &&
       !DL.isNonIntegralPointerType(Ty) &&
       !isMinMaxWithLoads(
           peekThroughBitcast(LI.getPointerOperand(), /*OneUseOnly=*/true))) {
@@ -1064,8 +1064,10 @@ Instruction *InstCombiner::visitLoadInst(LoadInst &LI) {
     if (SelectInst *SI = dyn_cast<SelectInst>(Op)) {
       // load (select (Cond, &V1, &V2))  --> select(Cond, load &V1, load &V2).
       unsigned Align = LI.getAlignment();
-      if (isSafeToLoadUnconditionally(SI->getOperand(1), Align, DL, SI) &&
-          isSafeToLoadUnconditionally(SI->getOperand(2), Align, DL, SI)) {
+      if (isSafeToLoadUnconditionally(SI->getOperand(1), LI.getType(), Align,
+                                      DL, SI) &&
+          isSafeToLoadUnconditionally(SI->getOperand(2), LI.getType(), Align,
+                                      DL, SI)) {
         LoadInst *V1 =
             Builder.CreateLoad(LI.getType(), SI->getOperand(1),
                                SI->getOperand(1)->getName() + ".val");
@@ -1437,6 +1439,12 @@ Instruction *InstCombiner::visitStoreInst(StoreInst &SI) {
       }
     }
   }
+
+  // If we have a store to a location which is known constant, we can conclude
+  // that the store must be storing the constant value (else the memory
+  // wouldn't be constant), and this must be a noop.
+  if (AA->pointsToConstantMemory(Ptr))
+    return eraseInstFromFunction(SI);
 
   // Do really simple DSE, to catch cases where there are several consecutive
   // stores to the same location, separated by a few arithmetic operations. This

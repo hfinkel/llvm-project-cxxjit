@@ -63,8 +63,9 @@ llvm::Error FileSystem::Initialize(const FileSpec &mapping) {
   if (!buffer)
     return llvm::errorCodeToError(buffer.getError());
 
-  InstanceImpl().emplace(
-      llvm::vfs::getVFSFromYAML(std::move(buffer.get()), nullptr, ""), true);
+  InstanceImpl().emplace(llvm::vfs::getVFSFromYAML(std::move(buffer.get()),
+                                                   nullptr, mapping.GetPath()),
+                         true);
 
   return llvm::Error::success();
 }
@@ -241,17 +242,21 @@ void FileSystem::Resolve(SmallVectorImpl<char> &path) {
   if (path.empty())
     return;
 
-  // Resolve tilde.
-  SmallString<128> original_path(path.begin(), path.end());
+  // Resolve tilde in path.
+  SmallString<128> resolved(path.begin(), path.end());
   StandardTildeExpressionResolver Resolver;
-  Resolver.ResolveFullPath(original_path, path);
+  Resolver.ResolveFullPath(llvm::StringRef(path.begin(), path.size()),
+                           resolved);
 
   // Try making the path absolute if it exists.
-  SmallString<128> absolute_path(path.begin(), path.end());
-  MakeAbsolute(path);
-  if (!Exists(path)) {
-    path.clear();
-    path.append(original_path.begin(), original_path.end());
+  SmallString<128> absolute(resolved.begin(), resolved.end());
+  MakeAbsolute(absolute);
+
+  path.clear();
+  if (Exists(absolute)) {
+    path.append(absolute.begin(), absolute.end());
+  } else {
+    path.append(resolved.begin(), resolved.end());
   }
 }
 
@@ -264,7 +269,10 @@ void FileSystem::Resolve(FileSpec &file_spec) {
   Resolve(path);
 
   // Update the FileSpec with the resolved path.
-  file_spec.SetPath(path);
+  if (file_spec.GetFilename().IsEmpty())
+    file_spec.GetDirectory().SetString(path);
+  else
+    file_spec.SetPath(path);
   file_spec.SetIsResolved(true);
 }
 
@@ -305,12 +313,12 @@ FileSystem::CreateDataBuffer(const FileSpec &file_spec, uint64_t size,
 
 bool FileSystem::ResolveExecutableLocation(FileSpec &file_spec) {
   // If the directory is set there's nothing to do.
-  const ConstString &directory = file_spec.GetDirectory();
+  ConstString directory = file_spec.GetDirectory();
   if (directory)
     return false;
 
   // We cannot look for a file if there's no file name.
-  const ConstString &filename = file_spec.GetFilename();
+  ConstString filename = file_spec.GetFilename();
   if (!filename)
     return false;
 

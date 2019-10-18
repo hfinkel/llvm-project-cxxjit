@@ -19,13 +19,14 @@
 #include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
 #include "lldb/Host/Pipe.h"
+#include "lldb/Host/ProcessLaunchInfo.h"
 #include "lldb/Host/Socket.h"
 #include "lldb/Host/StringConvert.h"
 #include "lldb/Host/ThreadLauncher.h"
 #include "lldb/Host/common/TCPSocket.h"
 #include "lldb/Host/posix/ConnectionFileDescriptorPosix.h"
 #include "lldb/Target/Platform.h"
-#include "lldb/Target/Process.h"
+#include "lldb/Utility/Event.h"
 #include "lldb/Utility/FileSpec.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/RegularExpression.h"
@@ -53,9 +54,7 @@ using namespace lldb;
 using namespace lldb_private;
 using namespace lldb_private::process_gdb_remote;
 
-//----------------------------------------------------------------------
 // GDBRemoteCommunication constructor
-//----------------------------------------------------------------------
 GDBRemoteCommunication::GDBRemoteCommunication(const char *comm_name,
                                                const char *listener_name)
     : Communication(comm_name),
@@ -69,9 +68,7 @@ GDBRemoteCommunication::GDBRemoteCommunication(const char *comm_name,
       m_listen_url() {
 }
 
-//----------------------------------------------------------------------
 // Destructor
-//----------------------------------------------------------------------
 GDBRemoteCommunication::~GDBRemoteCommunication() {
   if (IsConnected()) {
     Disconnect();
@@ -101,7 +98,7 @@ size_t GDBRemoteCommunication::SendAck() {
   Log *log(ProcessGDBRemoteLog::GetLogIfAllCategoriesSet(GDBR_LOG_PACKETS));
   ConnectionStatus status = eConnectionStatusSuccess;
   char ch = '+';
-  const size_t bytes_written = Write(&ch, 1, status, NULL);
+  const size_t bytes_written = Write(&ch, 1, status, nullptr);
   if (log)
     log->Printf("<%4" PRIu64 "> send packet: %c", (uint64_t)bytes_written, ch);
   m_history.AddPacket(ch, GDBRemoteCommunicationHistory::ePacketTypeSend,
@@ -113,7 +110,7 @@ size_t GDBRemoteCommunication::SendNack() {
   Log *log(ProcessGDBRemoteLog::GetLogIfAllCategoriesSet(GDBR_LOG_PACKETS));
   ConnectionStatus status = eConnectionStatusSuccess;
   char ch = '-';
-  const size_t bytes_written = Write(&ch, 1, status, NULL);
+  const size_t bytes_written = Write(&ch, 1, status, nullptr);
   if (log)
     log->Printf("<%4" PRIu64 "> send packet: %c", (uint64_t)bytes_written, ch);
   m_history.AddPacket(ch, GDBRemoteCommunicationHistory::ePacketTypeSend,
@@ -141,7 +138,7 @@ GDBRemoteCommunication::SendRawPacketNoLock(llvm::StringRef packet,
     ConnectionStatus status = eConnectionStatusSuccess;
     const char *packet_data = packet.data();
     const size_t packet_length = packet.size();
-    size_t bytes_written = Write(packet_data, packet_length, status, NULL);
+    size_t bytes_written = Write(packet_data, packet_length, status, nullptr);
     if (log) {
       size_t binary_start_offset = 0;
       if (strncmp(packet_data, "$vFile:pwrite:", strlen("$vFile:pwrite:")) ==
@@ -277,7 +274,7 @@ GDBRemoteCommunication::WaitForPacketNoLock(StringExtractorGDBRemote &packet,
   Log *log(ProcessGDBRemoteLog::GetLogIfAllCategoriesSet(GDBR_LOG_PACKETS));
 
   // Check for a packet from our cache first without trying any reading...
-  if (CheckForPacket(NULL, 0, packet) != PacketType::Invalid)
+  if (CheckForPacket(nullptr, 0, packet) != PacketType::Invalid)
     return PacketResult::Success;
 
   bool timed_out = false;
@@ -300,7 +297,6 @@ GDBRemoteCommunication::WaitForPacketNoLock(StringExtractorGDBRemote &packet,
       case eConnectionStatusTimedOut:
       case eConnectionStatusInterrupted:
         if (sync_on_timeout) {
-          //------------------------------------------------------------------
           /// Sync the remote GDB server and make sure we get a response that
           /// corresponds to what we send.
           ///
@@ -323,7 +319,6 @@ GDBRemoteCommunication::WaitForPacketNoLock(StringExtractorGDBRemote &packet,
           /// packets. So if we timeout, we need to ensure that we can get
           /// back on track. If we can't get back on track, we must
           /// disconnect.
-          //------------------------------------------------------------------
           bool sync_success = false;
           bool got_actual_response = false;
           // We timed out, we need to sync back up with the
@@ -475,7 +470,7 @@ bool GDBRemoteCommunication::DecompressPacket() {
       content_length = hash_mark_idx - content_start;
       std::string bufsize_str(m_bytes.data() + 2, i - 2 - 1);
       errno = 0;
-      decompressed_bufsize = ::strtoul(bufsize_str.c_str(), NULL, 10);
+      decompressed_bufsize = ::strtoul(bufsize_str.c_str(), nullptr, 10);
       if (errno != 0 || decompressed_bufsize == ULONG_MAX) {
         m_bytes.erase(0, size_of_first_packet);
         return false;
@@ -488,7 +483,7 @@ bool GDBRemoteCommunication::DecompressPacket() {
     packet_checksum_cstr[0] = m_bytes[checksum_idx];
     packet_checksum_cstr[1] = m_bytes[checksum_idx + 1];
     packet_checksum_cstr[2] = '\0';
-    long packet_checksum = strtol(packet_checksum_cstr, NULL, 16);
+    long packet_checksum = strtol(packet_checksum_cstr, nullptr, 16);
 
     long actual_checksum = CalculcateChecksum(
         llvm::StringRef(m_bytes).substr(1, hash_mark_idx - 1));
@@ -546,7 +541,7 @@ bool GDBRemoteCommunication::DecompressPacket() {
 #if defined(HAVE_LIBCOMPRESSION)
   if (m_compression_type == CompressionType::ZlibDeflate ||
       m_compression_type == CompressionType::LZFSE ||
-      m_compression_type == CompressionType::LZ4 || 
+      m_compression_type == CompressionType::LZ4 ||
       m_compression_type == CompressionType::LZMA) {
     compression_algorithm compression_type;
     if (m_compression_type == CompressionType::LZFSE)
@@ -583,7 +578,7 @@ bool GDBRemoteCommunication::DecompressPacket() {
     if (decompressed_bufsize != ULONG_MAX && decompressed_buffer != nullptr) {
       decompressed_bytes = compression_decode_buffer(
           decompressed_buffer, decompressed_bufsize,
-          (uint8_t *)unescaped_content.data(), unescaped_content.size(), 
+          (uint8_t *)unescaped_content.data(), unescaped_content.size(),
           m_decompression_scratch, compression_type);
     }
   }
@@ -853,7 +848,7 @@ GDBRemoteCommunication::CheckForPacket(const uint8_t *src, size_t src_len,
             ::isxdigit(m_bytes[checksum_idx + 1])) {
           if (GetSendAcks()) {
             const char *packet_checksum_cstr = &m_bytes[checksum_idx];
-            char packet_checksum = strtol(packet_checksum_cstr, NULL, 16);
+            char packet_checksum = strtol(packet_checksum_cstr, nullptr, 16);
             char actual_checksum = CalculcateChecksum(
                 llvm::StringRef(m_bytes).slice(content_start, content_end));
             success = packet_checksum == actual_checksum;
@@ -893,22 +888,23 @@ GDBRemoteCommunication::CheckForPacket(const uint8_t *src, size_t src_len,
 
 Status GDBRemoteCommunication::StartListenThread(const char *hostname,
                                                  uint16_t port) {
-  Status error;
-  if (m_listen_thread.IsJoinable()) {
-    error.SetErrorString("listen thread already running");
-  } else {
-    char listen_url[512];
-    if (hostname && hostname[0])
-      snprintf(listen_url, sizeof(listen_url), "listen://%s:%i", hostname,
-               port);
-    else
-      snprintf(listen_url, sizeof(listen_url), "listen://%i", port);
-    m_listen_url = listen_url;
-    SetConnection(new ConnectionFileDescriptor());
-    m_listen_thread = ThreadLauncher::LaunchThread(
-        listen_url, GDBRemoteCommunication::ListenThread, this, &error);
-  }
-  return error;
+  if (m_listen_thread.IsJoinable())
+    return Status("listen thread already running");
+
+  char listen_url[512];
+  if (hostname && hostname[0])
+    snprintf(listen_url, sizeof(listen_url), "listen://%s:%i", hostname, port);
+  else
+    snprintf(listen_url, sizeof(listen_url), "listen://%i", port);
+  m_listen_url = listen_url;
+  SetConnection(new ConnectionFileDescriptor());
+  llvm::Expected<HostThread> listen_thread = ThreadLauncher::LaunchThread(
+      listen_url, GDBRemoteCommunication::ListenThread, this);
+  if (!listen_thread)
+    return Status(listen_thread.takeError());
+  m_listen_thread = *listen_thread;
+
+  return Status();
 }
 
 bool GDBRemoteCommunication::JoinListenThread() {
@@ -928,9 +924,9 @@ GDBRemoteCommunication::ListenThread(lldb::thread_arg_t arg) {
     // Do the listen on another thread so we can continue on...
     if (connection->Connect(comm->m_listen_url.c_str(), &error) !=
         eConnectionStatusSuccess)
-      comm->SetConnection(NULL);
+      comm->SetConnection(nullptr);
   }
-  return NULL;
+  return {};
 }
 
 Status GDBRemoteCommunication::StartDebugserverProcess(
@@ -1283,7 +1279,7 @@ GDBRemoteCommunication::ConnectLocally(GDBRemoteCommunication &client,
 
   llvm::SmallString<32> remote_addr;
   llvm::raw_svector_ostream(remote_addr)
-      << "connect://localhost:" << listen_socket.GetLocalPortNumber();
+      << "connect://127.0.0.1:" << listen_socket.GetLocalPortNumber();
 
   std::unique_ptr<ConnectionFileDescriptor> conn_up(
       new ConnectionFileDescriptor());

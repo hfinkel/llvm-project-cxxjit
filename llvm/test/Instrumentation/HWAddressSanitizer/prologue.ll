@@ -1,14 +1,14 @@
 ; Test -hwasan-with-ifunc flag.
 ;
-; RUN: opt -hwasan -hwasan-allow-ifunc -S < %s | \
+; RUN: opt -hwasan -S < %s | \
 ; RUN:     FileCheck %s --check-prefixes=CHECK,CHECK-NOGLOBAL,CHECK-TLS,CHECK-HISTORY
-; RUN: opt -hwasan -hwasan-allow-ifunc -S -hwasan-with-ifunc=0 -hwasan-with-tls=1 -hwasan-record-stack-history=1 < %s | \
+; RUN: opt -hwasan -S -hwasan-with-ifunc=0 -hwasan-with-tls=1 -hwasan-record-stack-history=1 < %s | \
 ; RUN:     FileCheck %s --check-prefixes=CHECK,CHECK-NOGLOBAL,CHECK-TLS,CHECK-HISTORY
-; RUN: opt -hwasan -hwasan-allow-ifunc -S -hwasan-with-ifunc=0 -hwasan-with-tls=1 -hwasan-record-stack-history=0 < %s | \
+; RUN: opt -hwasan -S -hwasan-with-ifunc=0 -hwasan-with-tls=1 -hwasan-record-stack-history=0 < %s | \
 ; RUN:     FileCheck %s --check-prefixes=CHECK,CHECK-NOGLOBAL,CHECK-IFUNC,CHECK-NOHISTORY
-; RUN: opt -hwasan -hwasan-allow-ifunc -S -hwasan-with-ifunc=0 -hwasan-with-tls=0 < %s | \
+; RUN: opt -hwasan -S -hwasan-with-ifunc=0 -hwasan-with-tls=0 < %s | \
 ; RUN:     FileCheck %s --check-prefixes=CHECK,CHECK-GLOBAL,CHECK-NOHISTORY
-; RUN: opt -hwasan -hwasan-allow-ifunc -S -hwasan-with-ifunc=1  -hwasan-with-tls=0 < %s | \
+; RUN: opt -hwasan -S -hwasan-with-ifunc=1  -hwasan-with-tls=0 < %s | \
 ; RUN:     FileCheck %s --check-prefixes=CHECK,CHECk-NOGLOBAL,CHECK-IFUNC,CHECK-NOHISTORY
 
 target datalayout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128"
@@ -56,9 +56,11 @@ define void @test_alloca() sanitize_hwaddress {
 ; CHECK-TLS:   %[[B:[^ ]*]] = getelementptr i8, i8* %[[A]], i32 48
 ; CHECK-TLS:   %[[C:[^ ]*]] = bitcast i8* %[[B]] to i64*
 ; CHECK-TLS:   %[[D:[^ ]*]] = load i64, i64* %[[C]]
+; CHECK-TLS:   %[[E:[^ ]*]] = ashr i64 %[[D]], 3
 
 ; CHECK-NOHISTORY-NOT: store i64
 
+; CHECK-HISTORY: call i64 @llvm.read_register.i64(metadata [[MD:![0-9]*]])
 ; CHECK-HISTORY: %[[PTR:[^ ]*]] = inttoptr i64 %[[D]] to i64*
 ; CHECK-HISTORY: store i64 %{{.*}}, i64* %[[PTR]]
 ; CHECK-HISTORY: %[[D1:[^ ]*]] = ashr i64 %[[D]], 56
@@ -68,8 +70,10 @@ define void @test_alloca() sanitize_hwaddress {
 ; CHECK-HISTORY: %[[D5:[^ ]*]] = and i64 %[[D4]], %[[D3]]
 ; CHECK-HISTORY: store i64 %[[D5]], i64* %[[C]]
 
-; CHECK-TLS:   %[[E:[^ ]*]] = or i64 %[[D]], 4294967295
-; CHECK-TLS:   = add i64 %[[E]], 1
+; CHECK-TLS:   %[[F:[^ ]*]] = or i64 %[[D]], 4294967295
+; CHECK-TLS:   = add i64 %[[F]], 1
+
+; CHECK-HISTORY: = xor i64 %[[E]], 0
 
 ; CHECK-NOHISTORY-NOT: store i64
 
@@ -79,3 +83,5 @@ entry:
   call void @use(i32* %x)
   ret void
 }
+
+; CHECK-HISTORY: [[MD]] = !{!"pc"}

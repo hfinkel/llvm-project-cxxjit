@@ -60,8 +60,6 @@ lldb::InstrumentationRuntimeType ThreadSanitizerRuntime::GetTypeStatic() {
 
 ThreadSanitizerRuntime::~ThreadSanitizerRuntime() { Deactivate(); }
 
-static constexpr std::chrono::seconds g_retrieve_data_function_timeout(2);
-
 const char *thread_sanitizer_retrieve_report_data_prefix = R"(
 extern "C"
 {
@@ -318,7 +316,7 @@ ThreadSanitizerRuntime::RetrieveReportData(ExecutionContextRef exe_ctx_ref) {
   options.SetTryAllThreads(true);
   options.SetStopOthers(true);
   options.SetIgnoreBreakpoints(true);
-  options.SetTimeout(g_retrieve_data_function_timeout);
+  options.SetTimeout(process_sp->GetUtilityExpressionTimeout());
   options.SetPrefix(thread_sanitizer_retrieve_report_data_prefix);
   options.SetAutoApplyFixIts(false);
   options.SetLanguage(eLanguageTypeObjC_plus_plus);
@@ -902,7 +900,7 @@ void ThreadSanitizerRuntime::Activate() {
   const Symbol *symbol = GetRuntimeModuleSP()->FindFirstSymbolWithNameAndType(
       symbol_name, eSymbolTypeCode);
 
-  if (symbol == NULL)
+  if (symbol == nullptr)
     return;
 
   if (!symbol->ValueIsAddress() || !symbol->GetAddressRef().IsValid())
@@ -1032,10 +1030,8 @@ static void AddThreadsForPath(const std::string &path,
             o->GetObjectForDotSeparatedPath("thread_os_id");
         tid_t tid = thread_id_obj ? thread_id_obj->GetIntegerValue() : 0;
 
-        uint32_t stop_id = 0;
-        bool stop_id_is_valid = false;
         HistoryThread *history_thread =
-            new HistoryThread(*process_sp, tid, pcs, stop_id, stop_id_is_valid);
+            new HistoryThread(*process_sp, tid, pcs);
         ThreadSP new_thread_sp(history_thread);
         new_thread_sp->SetName(GenerateThreadName(path, o, info).c_str());
 

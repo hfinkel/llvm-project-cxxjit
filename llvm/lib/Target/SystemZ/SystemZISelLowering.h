@@ -162,6 +162,10 @@ enum NodeType : unsigned {
   // Transaction end.  Just the chain operand.  Returns CC value and chain.
   TEND,
 
+  // Create a vector constant by filling byte N of the result with bit
+  // 15-N of the single operand.
+  BYTE_MASK,
+
   // Create a vector constant by replicating an element-sized RISBG-style mask.
   // The first operand specifies the starting set bit and the second operand
   // specifies the ending set bit.  Both operands count from the MSB of the
@@ -277,6 +281,8 @@ enum NodeType : unsigned {
   VISTR_CC,
   VSTRC_CC,
   VSTRCZ_CC,
+  VSTRS_CC,
+  VSTRSZ_CC,
 
   // Test Data Class.
   //
@@ -335,6 +341,9 @@ enum NodeType : unsigned {
 
   // Byte swapping load/store.  Same operands as regular load/store.
   LRV, STRV,
+
+  // Element swapping load/store.  Same operands as regular load/store.
+  VLER, VSTER,
 
   // Prefetch from the second operand using the 4-bit control code in
   // the first operand.  The code is 1 for a load prefetch and 2 for
@@ -396,7 +405,8 @@ public:
   EVT getSetCCResultType(const DataLayout &DL, LLVMContext &,
                          EVT) const override;
   bool isFMAFasterThanFMulAndFAdd(EVT VT) const override;
-  bool isFPImmLegal(const APFloat &Imm, EVT VT) const override;
+  bool isFPImmLegal(const APFloat &Imm, EVT VT,
+                    bool ForCodeSize) const override;
   bool isLegalICmpImmediate(int64_t Imm) const override;
   bool isLegalAddImmediate(int64_t Imm) const override;
   bool isLegalAddressingMode(const DataLayout &DL, const AddrMode &AM, Type *Ty,
@@ -404,6 +414,7 @@ public:
                              Instruction *I = nullptr) const override;
   bool allowsMisalignedMemoryAccesses(EVT VT, unsigned AS,
                                       unsigned Align,
+                                      MachineMemOperand::Flags Flags,
                                       bool *Fast) const override;
   bool isTruncateFree(Type *, Type *) const override;
   bool isTruncateFree(EVT, EVT) const override;
@@ -513,9 +524,6 @@ public:
     return true;
   }
 
-  static bool tryBuildVectorByteMask(BuildVectorSDNode *BVN, uint64_t &Mask);
-  static bool analyzeFPImm(const APFloat &Imm, unsigned BitWidth,
-                 unsigned &Start, unsigned &End, const SystemZInstrInfo *TII);
 private:
   const SystemZSubtarget &Subtarget;
 
@@ -568,6 +576,9 @@ private:
   SDValue lowerPREFETCH(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerINTRINSIC_W_CHAIN(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG) const;
+  bool isVectorElementLoad(SDValue Op) const;
+  SDValue buildVector(SelectionDAG &DAG, const SDLoc &DL, EVT VT,
+                      SmallVectorImpl<SDValue> &Elems) const;
   SDValue lowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerVECTOR_SHUFFLE(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerSCALAR_TO_VECTOR(SDValue Op, SelectionDAG &DAG) const;
@@ -587,8 +598,10 @@ private:
   SDValue combineSIGN_EXTEND(SDNode *N, DAGCombinerInfo &DCI) const;
   SDValue combineSIGN_EXTEND_INREG(SDNode *N, DAGCombinerInfo &DCI) const;
   SDValue combineMERGE(SDNode *N, DAGCombinerInfo &DCI) const;
+  bool canLoadStoreByteSwapped(EVT VT) const;
   SDValue combineLOAD(SDNode *N, DAGCombinerInfo &DCI) const;
   SDValue combineSTORE(SDNode *N, DAGCombinerInfo &DCI) const;
+  SDValue combineVECTOR_SHUFFLE(SDNode *N, DAGCombinerInfo &DCI) const;
   SDValue combineEXTRACT_VECTOR_ELT(SDNode *N, DAGCombinerInfo &DCI) const;
   SDValue combineJOIN_DWORDS(SDNode *N, DAGCombinerInfo &DCI) const;
   SDValue combineFP_ROUND(SDNode *N, DAGCombinerInfo &DCI) const;
@@ -641,8 +654,27 @@ private:
                                          MachineBasicBlock *MBB,
                                          unsigned Opcode) const;
 
+  MachineMemOperand::Flags getMMOFlags(const Instruction &I) const override;
   const TargetRegisterClass *getRepRegClassFor(MVT VT) const override;
 };
+
+struct SystemZVectorConstantInfo {
+private:
+  APInt IntBits;             // The 128 bits as an integer.
+  APInt SplatBits;           // Smallest splat value.
+  APInt SplatUndef;          // Bits correspoding to undef operands of the BVN.
+  unsigned SplatBitSize = 0;
+  bool isFP128 = false;
+
+public:
+  unsigned Opcode = 0;
+  SmallVector<unsigned, 2> OpVals;
+  MVT VecVT;
+  SystemZVectorConstantInfo(APFloat FPImm);
+  SystemZVectorConstantInfo(BuildVectorSDNode *BVN);
+  bool isVectorConstantLegal(const SystemZSubtarget &Subtarget);
+};
+
 } // end namespace llvm
 
 #endif

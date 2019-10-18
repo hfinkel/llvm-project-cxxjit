@@ -43,6 +43,10 @@ bool AArch64PreLegalizerCombinerInfo::combine(GISelChangeObserver &Observer,
   switch (MI.getOpcode()) {
   default:
     return false;
+  case TargetOpcode::COPY:
+    return Helper.tryCombineCopy(MI);
+  case TargetOpcode::G_BR:
+    return Helper.tryCombineBr(MI);
   case TargetOpcode::G_LOAD:
   case TargetOpcode::G_SEXTLOAD:
   case TargetOpcode::G_ZEXTLOAD:

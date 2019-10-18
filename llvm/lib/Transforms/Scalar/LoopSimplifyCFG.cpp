@@ -352,12 +352,9 @@ private:
     // Construct split preheader and the dummy switch to thread edges from it to
     // dead exits.
     BasicBlock *Preheader = L.getLoopPreheader();
-    BasicBlock *NewPreheader = Preheader->splitBasicBlock(
-        Preheader->getTerminator(),
-        Twine(Preheader->getName()).concat("-split"));
-    DTUpdates.push_back({DominatorTree::Delete, Preheader, L.getHeader()});
-    DTUpdates.push_back({DominatorTree::Insert, NewPreheader, L.getHeader()});
-    DTUpdates.push_back({DominatorTree::Insert, Preheader, NewPreheader});
+    BasicBlock *NewPreheader = llvm::SplitBlock(
+        Preheader, Preheader->getTerminator(), &DT, &LI, MSSAU);
+
     IRBuilder<> Builder(Preheader->getTerminator());
     SwitchInst *DummySwitch =
         Builder.CreateSwitch(Builder.getInt32(0), NewPreheader);
@@ -382,8 +379,6 @@ private:
 
     assert(L.getLoopPreheader() == NewPreheader && "Malformed CFG?");
     if (Loop *OuterLoop = LI.getLoopFor(Preheader)) {
-      OuterLoop->addBasicBlockToLoop(NewPreheader, LI);
-
       // When we break dead edges, the outer loop may become unreachable from
       // the current loop. We need to fix loop info accordingly. For this, we
       // find the most nested loop that still contains L and remove L from all
@@ -412,9 +407,20 @@ private:
         assert(FixLCSSALoop && "Should be a loop!");
         // We need all DT updates to be done before forming LCSSA.
         DTU.applyUpdates(DTUpdates);
+        if (MSSAU)
+          MSSAU->applyUpdates(DTUpdates, DT);
         DTUpdates.clear();
         formLCSSARecursively(*FixLCSSALoop, DT, &LI, &SE);
       }
+    }
+
+    if (MSSAU) {
+      // Clear all updates now. Facilitates deletes that follow.
+      DTU.applyUpdates(DTUpdates);
+      MSSAU->applyUpdates(DTUpdates, DT);
+      DTUpdates.clear();
+      if (VerifyMemorySSA)
+        MSSAU->getMemorySSA()->verifyMemorySSA();
     }
   }
 
@@ -422,8 +428,8 @@ private:
   /// relevant updates to DT and LI.
   void deleteDeadLoopBlocks() {
     if (MSSAU) {
-      SmallPtrSet<BasicBlock *, 8> DeadLoopBlocksSet(DeadLoopBlocks.begin(),
-                                                     DeadLoopBlocks.end());
+      SmallSetVector<BasicBlock *, 8> DeadLoopBlocksSet(DeadLoopBlocks.begin(),
+                                                        DeadLoopBlocks.end());
       MSSAU->removeBlocks(DeadLoopBlocksSet);
     }
 
@@ -587,9 +593,18 @@ public:
       DTUpdates.clear();
     }
 
+    if (MSSAU && VerifyMemorySSA)
+      MSSAU->getMemorySSA()->verifyMemorySSA();
+
 #ifndef NDEBUG
     // Make sure that we have preserved all data structures after the transform.
-    assert(DT.verify() && "DT broken after transform!");
+#if defined(EXPENSIVE_CHECKS)
+    assert(DT.verify(DominatorTree::VerificationLevel::Full) &&
+           "DT broken after transform!");
+#else
+    assert(DT.verify(DominatorTree::VerificationLevel::Fast) &&
+           "DT broken after transform!");
+#endif
     assert(DT.isReachableFromEntry(Header));
     LI.verify(DT);
 #endif
@@ -686,7 +701,10 @@ PreservedAnalyses LoopSimplifyCFGPass::run(Loop &L, LoopAnalysisManager &AM,
   if (DeleteCurrentLoop)
     LPMU.markLoopAsDeleted(L, "loop-simplifycfg");
 
-  return getLoopPassPreservedAnalyses();
+  auto PA = getLoopPassPreservedAnalyses();
+  if (EnableMSSALoopDependency)
+    PA.preserve<MemorySSAAnalysis>();
+  return PA;
 }
 
 namespace {

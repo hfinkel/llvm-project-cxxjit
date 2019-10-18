@@ -15,7 +15,6 @@
 #include "MICmnStreamStderr.h"
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmnBase constructor.
 // Type:    Method.
 // Args:    None.
@@ -27,17 +26,15 @@ CMICmnBase::CMICmnBase()
       m_pLog(&CMICmnLog::Instance()), m_clientUsageRefCnt(0) {}
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmnBase destructor.
 // Type:    Overrideable.
 // Args:    None.
 // Return:  None.
 // Throws:  None.
 //--
-CMICmnBase::~CMICmnBase() { m_pLog = NULL; }
+CMICmnBase::~CMICmnBase() { m_pLog = nullptr; }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Retrieve whether *this object has an error description set.
 // Type:    Method.
 // Args:    None.
@@ -49,7 +46,6 @@ bool CMICmnBase::HaveErrorDescription() const {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Retrieve MI's last error condition.
 // Type:    Method.
 // Args:    None.
@@ -61,7 +57,6 @@ const CMIUtilString &CMICmnBase::GetErrorDescription() const {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Set MI's error condition description. This may be accessed by
 // clients and
 //          seen by users.  Message is available to the client using the server
@@ -81,7 +76,6 @@ void CMICmnBase::SetErrorDescription(const CMIUtilString &vrTxt) const {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Set MI's error condition description. This may be accessed by
 // clients and
 //          seen by users.  Message is available to the client using the server
@@ -97,7 +91,6 @@ void CMICmnBase::SetErrorDescriptionNoLog(const CMIUtilString &vrTxt) const {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Clear MI's error condition description.
 // Type:    Method.
 // Args:    None.
@@ -109,7 +102,6 @@ void CMICmnBase::ClrErrorDescription() const {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Set MI's error condition description. This may be accessed by
 // clients and
 //          seen by users. Message is available to the client using the server

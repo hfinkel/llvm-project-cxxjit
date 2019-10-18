@@ -16,6 +16,7 @@
 #include "clang/Driver/Options.h"
 #include "clang/Driver/SanitizerArgs.h"
 #include "llvm/Option/ArgList.h"
+#include "llvm/Support/VirtualFileSystem.h"
 
 using namespace clang::driver;
 using namespace clang::driver::tools;
@@ -423,8 +424,23 @@ ToolChain::CXXStdlibType NetBSD::GetDefaultCXXStdlibType() const {
 
 void NetBSD::addLibCxxIncludePaths(const llvm::opt::ArgList &DriverArgs,
                                    llvm::opt::ArgStringList &CC1Args) const {
-  addSystemInclude(DriverArgs, CC1Args,
-                   getDriver().SysRoot + "/usr/include/c++/");
+  const std::string Candidates[] = {
+    // directory relative to build tree
+    getDriver().Dir + "/../include/c++/v1",
+    // system install with full upstream path
+    getDriver().SysRoot + "/usr/include/c++/v1",
+    // system install from src
+    getDriver().SysRoot + "/usr/include/c++",
+  };
+
+  for (const auto &IncludePath : Candidates) {
+    if (!getVFS().exists(IncludePath + "/__config"))
+      continue;
+
+    // Use the first candidate that looks valid.
+    addSystemInclude(DriverArgs, CC1Args, IncludePath);
+    return;
+  }
 }
 
 void NetBSD::addLibStdCxxIncludePaths(const llvm::opt::ArgList &DriverArgs,
@@ -448,6 +464,8 @@ SanitizerMask NetBSD::getSupportedSanitizers() const {
   SanitizerMask Res = ToolChain::getSupportedSanitizers();
   if (IsX86 || IsX86_64) {
     Res |= SanitizerKind::Address;
+    Res |= SanitizerKind::PointerCompare;
+    Res |= SanitizerKind::PointerSubtract;
     Res |= SanitizerKind::Function;
     Res |= SanitizerKind::Leak;
     Res |= SanitizerKind::SafeStack;
@@ -456,7 +474,6 @@ SanitizerMask NetBSD::getSupportedSanitizers() const {
   }
   if (IsX86_64) {
     Res |= SanitizerKind::DataFlow;
-    Res |= SanitizerKind::Efficiency;
     Res |= SanitizerKind::Fuzzer;
     Res |= SanitizerKind::FuzzerNoLink;
     Res |= SanitizerKind::HWAddress;

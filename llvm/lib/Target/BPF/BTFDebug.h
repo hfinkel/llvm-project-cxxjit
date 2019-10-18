@@ -32,10 +32,12 @@ class MachineFunction;
 class BTFTypeBase {
 protected:
   uint8_t Kind;
+  bool IsCompleted;
   uint32_t Id;
   struct BTF::CommonType BTFType;
 
 public:
+  BTFTypeBase() : IsCompleted(false) {}
   virtual ~BTFTypeBase() = default;
   void setId(uint32_t Id) { this->Id = Id; }
   uint32_t getId() { return Id; }
@@ -54,11 +56,13 @@ public:
 /// volatile, typedef and restrict.
 class BTFTypeDerived : public BTFTypeBase {
   const DIDerivedType *DTy;
+  bool NeedsFixup;
 
 public:
-  BTFTypeDerived(const DIDerivedType *Ty, unsigned Tag);
+  BTFTypeDerived(const DIDerivedType *Ty, unsigned Tag, bool NeedsFixup);
   void completeType(BTFDebug &BDebug);
   void emitType(MCStreamer &OS);
+  void setPointeeType(uint32_t PointeeType);
 };
 
 /// Handle struct or union forward declaration.
@@ -100,14 +104,18 @@ public:
 
 /// Handle array type.
 class BTFTypeArray : public BTFTypeBase {
-  const DICompositeType *ATy;
+  const DIType *ElemTyNoQual;
+  uint32_t ElemSize;
   struct BTF::BTFArray ArrayInfo;
+  uint32_t ElemTypeNoQual;
 
 public:
-  BTFTypeArray(const DICompositeType *ATy);
+  BTFTypeArray(const DIType *Ty, uint32_t ElemTypeId,
+               uint32_t ElemSize, uint32_t NumElems);
   uint32_t getSize() { return BTFTypeBase::getSize() + BTF::BTFArraySize; }
   void completeType(BTFDebug &BDebug);
   void emitType(MCStreamer &OS);
+  void getLocInfo(uint32_t Loc, uint32_t &LocOffset, uint32_t &ElementTypeId);
 };
 
 /// Handle struct/union type.
@@ -115,6 +123,7 @@ class BTFTypeStruct : public BTFTypeBase {
   const DICompositeType *STy;
   bool HasBitField;
   std::vector<struct BTF::BTFMember> Members;
+  std::vector<uint32_t> MemberTypeNoQual;
 
 public:
   BTFTypeStruct(const DICompositeType *STy, bool IsStruct, bool HasBitField,
@@ -124,6 +133,9 @@ public:
   }
   void completeType(BTFDebug &BDebug);
   void emitType(MCStreamer &OS);
+  std::string getName();
+  void getMemberInfo(uint32_t Loc, uint32_t &Offset, uint32_t &MemberType);
+  uint32_t getStructSize();
 };
 
 /// Handle function pointer.
@@ -149,6 +161,37 @@ class BTFTypeFunc : public BTFTypeBase {
 public:
   BTFTypeFunc(StringRef FuncName, uint32_t ProtoTypeId);
   uint32_t getSize() { return BTFTypeBase::getSize(); }
+  void completeType(BTFDebug &BDebug);
+  void emitType(MCStreamer &OS);
+};
+
+/// Handle variable instances
+class BTFKindVar : public BTFTypeBase {
+  StringRef Name;
+  uint32_t Info;
+
+public:
+  BTFKindVar(StringRef VarName, uint32_t TypeId, uint32_t VarInfo);
+  uint32_t getSize() { return BTFTypeBase::getSize() + 4; }
+  void completeType(BTFDebug &BDebug);
+  void emitType(MCStreamer &OS);
+};
+
+/// Handle data sections
+class BTFKindDataSec : public BTFTypeBase {
+  AsmPrinter *Asm;
+  std::string Name;
+  std::vector<std::tuple<uint32_t, const MCSymbol *, uint32_t>> Vars;
+
+public:
+  BTFKindDataSec(AsmPrinter *AsmPrt, std::string SecName);
+  uint32_t getSize() {
+    return BTFTypeBase::getSize() + BTF::BTFDataSecVarSize * Vars.size();
+  }
+  void addVar(uint32_t Id, const MCSymbol *Sym, uint32_t Size) {
+    Vars.push_back(std::make_tuple(Id, Sym, Size));
+  }
+  std::string getName() { return Name; }
   void completeType(BTFDebug &BDebug);
   void emitType(MCStreamer &OS);
 };
@@ -188,6 +231,19 @@ struct BTFLineInfo {
   uint32_t ColumnNum;   ///< the column number
 };
 
+/// Represent one offset relocation.
+struct BTFOffsetReloc {
+  const MCSymbol *Label;  ///< MCSymbol identifying insn for the reloc
+  uint32_t TypeID;        ///< Type ID
+  uint32_t OffsetNameOff; ///< The string to traverse types
+};
+
+/// Represent one extern relocation.
+struct BTFExternReloc {
+  const MCSymbol *Label;  ///< MCSymbol identifying insn for the reloc
+  uint32_t ExternNameOff; ///< The extern variable name
+};
+
 /// Collect and emit BTF information.
 class BTFDebug : public DebugHandlerBase {
   MCStreamer &OS;
@@ -195,17 +251,26 @@ class BTFDebug : public DebugHandlerBase {
   bool LineInfoGenerated;
   uint32_t SecNameOff;
   uint32_t ArrayIndexTypeId;
+  bool MapDefNotCollected;
   BTFStringTable StringTable;
   std::vector<std::unique_ptr<BTFTypeBase>> TypeEntries;
   std::unordered_map<const DIType *, uint32_t> DIToIdMap;
-  std::unordered_map<uint32_t, std::vector<BTFFuncInfo>> FuncInfoTable;
-  std::unordered_map<uint32_t, std::vector<BTFLineInfo>> LineInfoTable;
+  std::map<uint32_t, std::vector<BTFFuncInfo>> FuncInfoTable;
+  std::map<uint32_t, std::vector<BTFLineInfo>> LineInfoTable;
+  std::map<uint32_t, std::vector<BTFOffsetReloc>> OffsetRelocTable;
+  std::map<uint32_t, std::vector<BTFExternReloc>> ExternRelocTable;
   StringMap<std::vector<std::string>> FileContent;
+  std::map<std::string, std::unique_ptr<BTFKindDataSec>> DataSecEntries;
+  std::vector<BTFTypeStruct *> StructTypes;
+  std::vector<BTFTypeArray *> ArrayTypes;
+  std::map<std::string, int64_t> AccessOffsets;
+  std::map<StringRef, std::pair<bool, std::vector<BTFTypeDerived *>>>
+      FixupDerivedTypes;
 
   /// Add types to TypeEntries.
   /// @{
   /// Add types to TypeEntries and DIToIdMap.
-  void addType(std::unique_ptr<BTFTypeBase> TypeEntry, const DIType *Ty);
+  uint32_t addType(std::unique_ptr<BTFTypeBase> TypeEntry, const DIType *Ty);
   /// Add types to TypeEntries only and return type id.
   uint32_t addType(std::unique_ptr<BTFTypeBase> TypeEntry);
   /// @}
@@ -213,17 +278,23 @@ class BTFDebug : public DebugHandlerBase {
   /// IR type visiting functions.
   /// @{
   void visitTypeEntry(const DIType *Ty);
-  void visitBasicType(const DIBasicType *BTy);
+  void visitTypeEntry(const DIType *Ty, uint32_t &TypeId, bool CheckPointer,
+                      bool SeenPointer);
+  void visitBasicType(const DIBasicType *BTy, uint32_t &TypeId);
   void visitSubroutineType(
       const DISubroutineType *STy, bool ForSubprog,
       const std::unordered_map<uint32_t, StringRef> &FuncArgNames,
       uint32_t &TypeId);
-  void visitFwdDeclType(const DICompositeType *CTy, bool IsUnion);
-  void visitCompositeType(const DICompositeType *CTy);
-  void visitStructType(const DICompositeType *STy, bool IsStruct);
-  void visitArrayType(const DICompositeType *ATy);
-  void visitEnumType(const DICompositeType *ETy);
-  void visitDerivedType(const DIDerivedType *DTy);
+  void visitFwdDeclType(const DICompositeType *CTy, bool IsUnion,
+                        uint32_t &TypeId);
+  void visitCompositeType(const DICompositeType *CTy, uint32_t &TypeId);
+  void visitStructType(const DICompositeType *STy, bool IsStruct,
+                       uint32_t &TypeId);
+  void visitArrayType(const DICompositeType *ATy, uint32_t &TypeId);
+  void visitEnumType(const DICompositeType *ETy, uint32_t &TypeId);
+  void visitDerivedType(const DIDerivedType *DTy, uint32_t &TypeId,
+                        bool CheckPointer, bool SeenPointer);
+  void visitMapDefType(const DIType *Ty, uint32_t &TypeId);
   /// @}
 
   /// Get the file content for the subprogram. Certain lines of the file
@@ -233,6 +304,23 @@ class BTFDebug : public DebugHandlerBase {
   /// Construct a line info.
   void constructLineInfo(const DISubprogram *SP, MCSymbol *Label, uint32_t Line,
                          uint32_t Column);
+
+  /// Generate types and variables for globals.
+  void processGlobals(bool ProcessingMapDef);
+
+  /// Generate one offset relocation record.
+  void generateOffsetReloc(const MachineInstr *MI, const MCSymbol *ORSym,
+                           DIType *RootTy, StringRef AccessPattern);
+
+  /// Set the to-be-traversed Struct/Array Type based on TypeId.
+  void setTypeFromId(uint32_t TypeId, BTFTypeStruct **PrevStructType,
+                     BTFTypeArray **PrevArrayType);
+
+  /// Populating unprocessed struct type.
+  unsigned populateStructType(const DIType *Ty);
+
+  /// Process LD_imm64 instructions.
+  void processLDimm64(const MachineInstr *MI);
 
   /// Emit common header of .BTF and .BTF.ext sections.
   void emitCommonHeader();
@@ -252,6 +340,9 @@ protected:
 
 public:
   BTFDebug(AsmPrinter *AP);
+
+  ///
+  bool InstLower(const MachineInstr *MI, MCInst &OutMI);
 
   /// Get the special array index type id.
   uint32_t getArrayIndexTypeId() {

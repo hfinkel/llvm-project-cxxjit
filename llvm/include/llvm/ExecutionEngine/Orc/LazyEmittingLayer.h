@@ -34,8 +34,8 @@ namespace orc {
 
 /// Lazy-emitting IR layer.
 ///
-///   This layer accepts LLVM IR Modules (via addModule), but does not
-/// immediately emit them the layer below. Instead, emissing to the base layer
+///   This layer accepts LLVM IR Modules (via addModule) but does not
+/// immediately emit them the layer below. Instead, emission to the base layer
 /// is deferred until the first time the client requests the address (via
 /// JITSymbol::getAddress) for a symbol contained in this layer.
 template <typename BaseLayerT> class LazyEmittingLayer {
@@ -196,7 +196,14 @@ private:
 public:
 
   /// Construct a lazy emitting layer.
-  LazyEmittingLayer(BaseLayerT &BaseLayer) : BaseLayer(BaseLayer) {}
+  LLVM_ATTRIBUTE_DEPRECATED(
+      LazyEmittingLayer(BaseLayerT &BaseLayer),
+      "ORCv1 layers (including LazyEmittingLayer) are deprecated. Please use "
+      "ORCv2, where lazy emission is the default");
+
+  /// Construct a lazy emitting layer.
+  LazyEmittingLayer(ORCv1DeprecationAcknowledgement, BaseLayerT &BaseLayer)
+      : BaseLayer(BaseLayer) {}
 
   /// Add the given module to the lazy emitting layer.
   Error addModule(VModuleKey K, std::unique_ptr<Module> M) {
@@ -253,6 +260,10 @@ public:
     return ModuleMap[K]->emitAndFinalize(BaseLayer);
   }
 };
+
+template <typename BaseLayerT>
+LazyEmittingLayer<BaseLayerT>::LazyEmittingLayer(BaseLayerT &BaseLayer)
+    : BaseLayer(BaseLayer) {}
 
 } // end namespace orc
 } // end namespace llvm

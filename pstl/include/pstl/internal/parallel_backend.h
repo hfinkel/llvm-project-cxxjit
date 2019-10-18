@@ -1,5 +1,5 @@
 // -*- C++ -*-
-//===-- parallel_backend.h ------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,13 +7,25 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef __PSTL_parallel_backend_H
-#define __PSTL_parallel_backend_H
+#ifndef _PSTL_PARALLEL_BACKEND_H
+#define _PSTL_PARALLEL_BACKEND_H
 
-#if __PSTL_PAR_BACKEND_TBB
-#include "parallel_backend_tbb.h"
+#include "pstl_config.h"
+
+#if defined(_PSTL_PAR_BACKEND_SERIAL)
+#    include "parallel_backend_serial.h"
+namespace __pstl
+{
+namespace __par_backend = __serial_backend;
+}
+#elif defined(_PSTL_PAR_BACKEND_TBB)
+#    include "parallel_backend_tbb.h"
+namespace __pstl
+{
+namespace __par_backend = __tbb_backend;
+}
 #else
-__PSTL_PRAGMA_MESSAGE("Parallel backend was not specified");
+_PSTL_PRAGMA_MESSAGE("Parallel backend was not specified");
 #endif
 
-#endif /* __PSTL_parallel_backend_H */
+#endif /* _PSTL_PARALLEL_BACKEND_H */

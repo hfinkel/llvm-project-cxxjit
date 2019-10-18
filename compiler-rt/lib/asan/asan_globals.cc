@@ -115,11 +115,12 @@ int GetGlobalsForAddress(uptr addr, Global *globals, u32 *reg_sites,
     if (flags()->report_globals >= 2)
       ReportGlobal(g, "Search");
     if (IsAddressNearGlobal(addr, g)) {
-      globals[res] = g;
+      internal_memcpy(&globals[res], &g, sizeof(g));
       if (reg_sites)
         reg_sites[res] = FindRegistrationSite(&g);
       res++;
-      if (res == max_globals) break;
+      if (res == max_globals)
+        break;
     }
   }
   return res;

@@ -59,10 +59,6 @@ using namespace llvm;
 
 #define DEBUG_TYPE "ppc-vsx-swaps"
 
-namespace llvm {
-  void initializePPCVSXSwapRemovalPass(PassRegistry&);
-}
-
 namespace {
 
 // A PPCVSXSwapEntry is created for each machine instruction that
@@ -426,6 +422,7 @@ bool PPCVSXSwapRemoval::gatherVectorInstructions() {
       // of opcodes having a common attribute in TableGen.  Should this
       // change, this is a prime candidate to use such a mechanism.
       case PPC::INLINEASM:
+      case PPC::INLINEASM_BR:
       case PPC::EXTRACT_SUBREG:
       case PPC::INSERT_SUBREG:
       case PPC::COPY_TO_REGCLASS:

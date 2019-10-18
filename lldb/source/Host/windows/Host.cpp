@@ -13,11 +13,13 @@
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
-#include "lldb/Target/Process.h"
+#include "lldb/Host/ProcessLaunchInfo.h"
 #include "lldb/Utility/DataBufferHeap.h"
 #include "lldb/Utility/DataExtractor.h"
 #include "lldb/Utility/Log.h"
+#include "lldb/Utility/ProcessInfo.h"
 #include "lldb/Utility/Status.h"
+#include "lldb/Utility/StreamString.h"
 #include "lldb/Utility/StructuredData.h"
 
 #include "llvm/Support/ConvertUTF.h"
@@ -170,7 +172,7 @@ bool Host::GetProcessInfo(lldb::pid_t pid, ProcessInstanceInfo &process_info) {
   return true;
 }
 
-HostThread Host::StartMonitoringChildProcess(
+llvm::Expected<HostThread> Host::StartMonitoringChildProcess(
     const Host::MonitorChildProcessCallback &callback, lldb::pid_t pid,
     bool monitor_signals) {
   return HostThread();

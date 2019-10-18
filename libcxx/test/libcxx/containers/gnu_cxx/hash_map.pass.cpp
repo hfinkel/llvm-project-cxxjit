@@ -11,7 +11,16 @@
 #pragma clang diagnostic ignored "-W#warnings"
 #endif
 
+// Poison the std:: names we might use inside __gnu_cxx to ensure they're
+// properly qualified.
+struct allocator;
+struct pair;
+struct equal_to;
+struct unique_ptr;
 #include <ext/hash_map>
+
+#include "test_macros.h"
+
 
 namespace __gnu_cxx {
 template class hash_map<int, int>;

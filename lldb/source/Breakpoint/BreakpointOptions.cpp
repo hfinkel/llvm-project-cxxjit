@@ -119,9 +119,7 @@ bool BreakpointOptions::NullCallback(void *baton,
   return true;
 }
 
-//----------------------------------------------------------------------
 // BreakpointOptions constructor
-//----------------------------------------------------------------------
 BreakpointOptions::BreakpointOptions(bool all_flags_set)
     : m_callback(BreakpointOptions::NullCallback), m_callback_baton_sp(),
       m_baton_is_command_baton(false), m_callback_is_synchronous(false),
@@ -147,9 +145,7 @@ BreakpointOptions::BreakpointOptions(const char *condition, bool enabled,
     }
 }
 
-//----------------------------------------------------------------------
 // BreakpointOptions copy constructor
-//----------------------------------------------------------------------
 BreakpointOptions::BreakpointOptions(const BreakpointOptions &rhs)
     : m_callback(rhs.m_callback), m_callback_baton_sp(rhs.m_callback_baton_sp),
       m_baton_is_command_baton(rhs.m_baton_is_command_baton),
@@ -163,9 +159,7 @@ BreakpointOptions::BreakpointOptions(const BreakpointOptions &rhs)
   m_condition_text_hash = rhs.m_condition_text_hash;
 }
 
-//----------------------------------------------------------------------
 // BreakpointOptions assignment operator
-//----------------------------------------------------------------------
 const BreakpointOptions &BreakpointOptions::
 operator=(const BreakpointOptions &rhs) {
   m_callback = rhs.m_callback;
@@ -236,9 +230,7 @@ void BreakpointOptions::CopyOverSetOptions(const BreakpointOptions &incoming)
   }
 }
 
-//----------------------------------------------------------------------
 // Destructor
-//----------------------------------------------------------------------
 BreakpointOptions::~BreakpointOptions() = default;
 
 std::unique_ptr<BreakpointOptions> BreakpointOptions::CreateFromStructuredData(
@@ -253,55 +245,50 @@ std::unique_ptr<BreakpointOptions> BreakpointOptions::CreateFromStructuredData(
 
   const char *key = GetKey(OptionNames::EnabledState);
   bool success;
-  if (key) {
+  if (key && options_dict.HasKey(key)) {
     success = options_dict.GetValueForKeyAsBoolean(key, enabled);
     if (!success) {
-      error.SetErrorStringWithFormat("%s key is not a boolean.",
-                                   GetKey(OptionNames::EnabledState));
+      error.SetErrorStringWithFormat("%s key is not a boolean.", key);
       return nullptr;
     }
     set_options.Set(eEnabled);
   }
 
   key = GetKey(OptionNames::OneShotState);
-  if (key) {
+  if (key && options_dict.HasKey(key)) {
     success = options_dict.GetValueForKeyAsBoolean(key, one_shot);
     if (!success) {
-      error.SetErrorStringWithFormat("%s key is not a boolean.",
-                                     GetKey(OptionNames::OneShotState));
+      error.SetErrorStringWithFormat("%s key is not a boolean.", key);
       return nullptr;
       }
       set_options.Set(eOneShot);
   }
   
   key = GetKey(OptionNames::AutoContinue);
-  if (key) {
+  if (key && options_dict.HasKey(key)) {
     success = options_dict.GetValueForKeyAsBoolean(key, auto_continue);
     if (!success) {
-      error.SetErrorStringWithFormat("%s key is not a boolean.",
-                                     GetKey(OptionNames::AutoContinue));
+      error.SetErrorStringWithFormat("%s key is not a boolean.", key);
       return nullptr;
       }
       set_options.Set(eAutoContinue);
   }
   
   key = GetKey(OptionNames::IgnoreCount);
-  if (key) {
+  if (key && options_dict.HasKey(key)) {
     success = options_dict.GetValueForKeyAsInteger(key, ignore_count);
     if (!success) {
-      error.SetErrorStringWithFormat("%s key is not an integer.",
-                                     GetKey(OptionNames::IgnoreCount));
+      error.SetErrorStringWithFormat("%s key is not an integer.", key);
       return nullptr;
     }
     set_options.Set(eIgnoreCount);
   }
 
   key = GetKey(OptionNames::ConditionText);
-  if (key) {
+  if (key && options_dict.HasKey(key)) {
     success = options_dict.GetValueForKeyAsString(key, condition_ref);
     if (!success) {
-      error.SetErrorStringWithFormat("%s key is not an string.",
-                                     GetKey(OptionNames::ConditionText));
+      error.SetErrorStringWithFormat("%s key is not an string.", key);
       return nullptr;
     }
     set_options.Set(eCondition);
@@ -329,8 +316,7 @@ std::unique_ptr<BreakpointOptions> BreakpointOptions::CreateFromStructuredData(
     if (cmd_data_up->interpreter == eScriptLanguageNone)
       bp_options->SetCommandDataCallback(cmd_data_up);
     else {
-      ScriptInterpreter *interp =
-          target.GetDebugger().GetCommandInterpreter().GetScriptInterpreter();
+      ScriptInterpreter *interp = target.GetDebugger().GetScriptInterpreter();
       if (!interp) {
         error.SetErrorStringWithFormat(
             "Can't set script commands - no script interpreter");
@@ -411,9 +397,7 @@ StructuredData::ObjectSP BreakpointOptions::SerializeToStructuredData() {
   return options_dict_sp;
 }
 
-//------------------------------------------------------------------
 // Callbacks
-//------------------------------------------------------------------
 void BreakpointOptions::SetCallback(BreakpointHitCallback callback,
                                     const lldb::BatonSP &callback_baton_sp,
                                     bool callback_is_synchronous) {
@@ -662,6 +646,7 @@ bool BreakpointOptions::BreakpointOptionsCallbackFunction(
       options.SetStopOnError(data->stop_on_error);
       options.SetEchoCommands(true);
       options.SetPrintResults(true);
+      options.SetPrintErrors(true);
       options.SetAddToHistory(false);
 
       debugger.GetCommandInterpreter().HandleCommands(commands, &exe_ctx,

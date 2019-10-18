@@ -25,12 +25,12 @@ uint8_t *ExpressionVariable::GetValueBytes() {
     return const_cast<uint8_t *>(
         m_frozen_sp->GetDataExtractor().GetDataStart());
   }
-  return NULL;
+  return nullptr;
 }
 
 PersistentExpressionState::~PersistentExpressionState() {}
 
-lldb::addr_t PersistentExpressionState::LookupSymbol(const ConstString &name) {
+lldb::addr_t PersistentExpressionState::LookupSymbol(ConstString name) {
   SymbolMap::iterator si = m_symbol_map.find(name.GetCString());
 
   if (si != m_symbol_map.end())

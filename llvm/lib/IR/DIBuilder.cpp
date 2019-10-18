@@ -166,8 +166,8 @@ createImportedModule(LLVMContext &C, dwarf::Tag Tag, DIScope *Context,
   if (Line)
     assert(File && "Source location has line number but no file");
   unsigned EntitiesCount = C.pImpl->DIImportedEntitys.size();
-  auto *M =
-      DIImportedEntity::get(C, Tag, Context, DINodeRef(NS), File, Line, Name);
+  auto *M = DIImportedEntity::get(C, Tag, Context, cast_or_null<DINode>(NS),
+                                  File, Line, Name);
   if (EntitiesCount < C.pImpl->DIImportedEntitys.size())
     // A new Imported Entity was just added to the context.
     // Add it to the Imported Modules list.
@@ -803,6 +803,13 @@ DISubprogram *DIBuilder::createMethod(
     AllSubprograms.push_back(SP);
   trackIfUnresolved(SP);
   return SP;
+}
+
+DICommonBlock *DIBuilder::createCommonBlock(
+    DIScope *Scope, DIGlobalVariable *Decl, StringRef Name, DIFile *File,
+    unsigned LineNo) {
+  return DICommonBlock::get(
+      VMContext, Scope, Decl, Name, File, LineNo);
 }
 
 DINamespace *DIBuilder::createNameSpace(DIScope *Scope, StringRef Name,

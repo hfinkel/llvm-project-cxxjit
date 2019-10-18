@@ -12,20 +12,18 @@
 #include "lldb/Initialization/SystemInitializerCommon.h"
 
 namespace lldb_private {
-//------------------------------------------------------------------
 /// Initializes lldb.
 ///
 /// This class is responsible for initializing all of lldb system
 /// services needed to use the full LLDB application.  This class is
 /// not intended to be used externally, but is instead used
 /// internally by SBDebugger to initialize the system.
-//------------------------------------------------------------------
 class SystemInitializerTest : public SystemInitializerCommon {
 public:
   SystemInitializerTest();
   ~SystemInitializerTest() override;
 
-  llvm::Error Initialize(const InitializerOptions &options) override;
+  llvm::Error Initialize() override;
   void Terminate() override;
 };
 

@@ -215,7 +215,6 @@ static bool ShouldUpgradeX86Intrinsic(Function *F, StringRef Name) {
       Name == "avx512.mask.cvtps2pd.256" || // Added in 7.0
       Name == "avx512.cvtusi2sd" || // Added in 7.0
       Name.startswith("avx512.mask.permvar.") || // Added in 7.0
-      Name.startswith("avx512.mask.permvar.") || // Added in 7.0
       Name == "sse2.pmulu.dq" || // Added in 7.0
       Name == "sse41.pmuldq" || // Added in 7.0
       Name == "avx2.pmulu.dq" || // Added in 7.0
@@ -386,8 +385,6 @@ static bool ShouldUpgradeX86Intrinsic(Function *F, StringRef Name) {
       Name.startswith("avx512.mask.prol.") ||  // Added in 8.0
       Name.startswith("avx512.ptestm") || //Added in 6.0
       Name.startswith("avx512.ptestnm") || //Added in 6.0
-      Name.startswith("sse2.pavg") || // Added in 6.0
-      Name.startswith("avx2.pavg") || // Added in 6.0
       Name.startswith("avx512.mask.pavg")) // Added in 6.0
     return true;
 
@@ -493,6 +490,12 @@ static bool UpgradeX86IntrinsicFunction(Function *F, StringRef Name,
 static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
   assert(F && "Illegal to upgrade a non-existent Function.");
 
+  // Upgrade intrinsics "clang.arc.use" which doesn't start with "llvm.".
+  if (F->getName() == "clang.arc.use") {
+    NewFn = nullptr;
+    return true;
+  }
+
   // Quickly eliminate it, if it's not a candidate.
   StringRef Name = F->getName();
   if (Name.size() <= 8 || !Name.startswith("llvm."))
@@ -562,6 +565,17 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
       NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::thread_pointer);
       return true;
     }
+    if (Name.startswith("aarch64.neon.addp")) {
+      if (F->arg_size() != 2)
+        break; // Invalid IR.
+      auto fArgs = F->getFunctionType()->params();
+      VectorType *ArgTy = dyn_cast<VectorType>(fArgs[0]);
+      if (ArgTy && ArgTy->getElementType()->isFloatingPointTy()) {
+        NewFn = Intrinsic::getDeclaration(F->getParent(),
+                                          Intrinsic::aarch64_neon_faddp, fArgs);
+        return true;
+      }
+    }
     break;
   }
 
@@ -585,6 +599,26 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
       rename(F);
       NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::dbg_value);
       return true;
+    }
+    break;
+  }
+  case 'e': {
+    SmallVector<StringRef, 2> Groups;
+    Regex R("^experimental.vector.reduce.([a-z]+)\\.[fi][0-9]+");
+    if (R.match(Name, &Groups)) {
+      Intrinsic::ID ID = Intrinsic::not_intrinsic;
+      if (Groups[1] == "fadd")
+        ID = Intrinsic::experimental_vector_reduce_v2_fadd;
+      if (Groups[1] == "fmul")
+        ID = Intrinsic::experimental_vector_reduce_v2_fmul;
+
+      if (ID != Intrinsic::not_intrinsic) {
+        rename(F);
+        auto Args = F->getFunctionType()->params();
+        Type *Tys[] = {F->getFunctionType()->getReturnType(), Args[1]};
+        NewFn = Intrinsic::getDeclaration(F->getParent(), ID, Tys);
+        return true;
+      }
     }
     break;
   }
@@ -730,6 +764,8 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
                         .Cases("clz.ll", "popc.ll", "h2f", true)
                         .Cases("max.i", "max.ll", "max.ui", "max.ull", true)
                         .Cases("min.i", "min.ll", "min.ui", "min.ull", true)
+                        .StartsWith("atomic.load.add.f32.p", true)
+                        .StartsWith("atomic.load.add.f64.p", true)
                         .Default(false);
       if (Expand) {
         NewFn = nullptr;
@@ -791,9 +827,35 @@ bool llvm::UpgradeIntrinsicFunction(Function *F, Function *&NewFn) {
   return Upgraded;
 }
 
-bool llvm::UpgradeGlobalVariable(GlobalVariable *GV) {
-  // Nothing to do yet.
-  return false;
+GlobalVariable *llvm::UpgradeGlobalVariable(GlobalVariable *GV) {
+  if (!(GV->hasName() && (GV->getName() == "llvm.global_ctors" ||
+                          GV->getName() == "llvm.global_dtors")) ||
+      !GV->hasInitializer())
+    return nullptr;
+  ArrayType *ATy = dyn_cast<ArrayType>(GV->getValueType());
+  if (!ATy)
+    return nullptr;
+  StructType *STy = dyn_cast<StructType>(ATy->getElementType());
+  if (!STy || STy->getNumElements() != 2)
+    return nullptr;
+
+  LLVMContext &C = GV->getContext();
+  IRBuilder<> IRB(C);
+  auto EltTy = StructType::get(STy->getElementType(0), STy->getElementType(1),
+                               IRB.getInt8PtrTy());
+  Constant *Init = GV->getInitializer();
+  unsigned N = Init->getNumOperands();
+  std::vector<Constant *> NewCtors(N);
+  for (unsigned i = 0; i != N; ++i) {
+    auto Ctor = cast<Constant>(Init->getOperand(i));
+    NewCtors[i] = ConstantStruct::get(
+        EltTy, Ctor->getAggregateElement(0u), Ctor->getAggregateElement(1),
+        Constant::getNullValue(IRB.getInt8PtrTy()));
+  }
+  Constant *NewInit = ConstantArray::get(ArrayType::get(EltTy, N), NewCtors);
+
+  return new GlobalVariable(NewInit->getType(), false, GV->getLinkage(),
+                            NewInit, GV->getName());
 }
 
 // Handles upgrading SSE2/AVX2/AVX512BW PSLLDQ intrinsics by converting them
@@ -1530,6 +1592,21 @@ static bool upgradeAVX512MaskToSelect(StringRef Name, IRBuilder<> &Builder,
       IID = Intrinsic::x86_avx512_conflict_q_512;
     else
       llvm_unreachable("Unexpected intrinsic");
+  } else if (Name.startswith("pavg.")) {
+    if (Name[5] == 'b' && VecWidth == 128)
+      IID = Intrinsic::x86_sse2_pavg_b;
+    else if (Name[5] == 'b' && VecWidth == 256)
+      IID = Intrinsic::x86_avx2_pavg_b;
+    else if (Name[5] == 'b' && VecWidth == 512)
+      IID = Intrinsic::x86_avx512_pavg_b_512;
+    else if (Name[5] == 'w' && VecWidth == 128)
+      IID = Intrinsic::x86_sse2_pavg_w;
+    else if (Name[5] == 'w' && VecWidth == 256)
+      IID = Intrinsic::x86_avx2_pavg_w;
+    else if (Name[5] == 'w' && VecWidth == 512)
+      IID = Intrinsic::x86_avx512_pavg_w_512;
+    else
+      llvm_unreachable("Unexpected intrinsic");
   } else
     return false;
 
@@ -1570,6 +1647,14 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
   if (!NewFn) {
     // Get the Function's name.
     StringRef Name = F->getName();
+
+    // clang.arc.use is an old name for llvm.arc.clang.arc.use. It is dropped
+    // from upgrader because the optimizer now only recognizes intrinsics for
+    // ARC runtime calls.
+    if (Name == "clang.arc.use") {
+      CI->eraseFromParent();
+      return;
+    }
 
     assert(Name.startswith("llvm.") && "Intrinsic doesn't start with 'llvm.'");
     Name = Name.substr(5);
@@ -2949,25 +3034,6 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       LoadInst *LI = Builder.CreateAlignedLoad(VTy, BC, VTy->getBitWidth() / 8);
       LI->setMetadata(M->getMDKindID("nontemporal"), Node);
       Rep = LI;
-    } else if (IsX86 &&
-               (Name.startswith("sse2.pavg") || Name.startswith("avx2.pavg") ||
-                Name.startswith("avx512.mask.pavg"))) {
-      // llvm.x86.sse2.pavg.b/w, llvm.x86.avx2.pavg.b/w,
-      // llvm.x86.avx512.mask.pavg.b/w
-      Value *A = CI->getArgOperand(0);
-      Value *B = CI->getArgOperand(1);
-      VectorType *ZextType = VectorType::getExtendedElementVectorType(
-          cast<VectorType>(A->getType()));
-      Value *ExtendedA = Builder.CreateZExt(A, ZextType);
-      Value *ExtendedB = Builder.CreateZExt(B, ZextType);
-      Value *Sum = Builder.CreateAdd(ExtendedA, ExtendedB);
-      Value *AddOne = Builder.CreateAdd(Sum, ConstantInt::get(ZextType, 1));
-      Value *ShiftR = Builder.CreateLShr(AddOne, ConstantInt::get(ZextType, 1));
-      Rep = Builder.CreateTrunc(ShiftR, A->getType());
-      if (CI->getNumArgOperands() > 2) {
-        Rep = EmitX86Select(Builder, CI->getArgOperand(3), Rep,
-                            CI->getArgOperand(2));
-      }
     } else if (IsX86 && (Name.startswith("fma.vfmadd.") ||
                          Name.startswith("fma.vfmsub.") ||
                          Name.startswith("fma.vfnmadd.") ||
@@ -3362,6 +3428,12 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       Value *Cmp = Builder.CreateICmpSGE(
           Arg, llvm::Constant::getNullValue(Arg->getType()), "abs.cond");
       Rep = Builder.CreateSelect(Cmp, Arg, Neg, "abs");
+    } else if (IsNVVM && (Name.startswith("atomic.load.add.f32.p") ||
+                          Name.startswith("atomic.load.add.f64.p"))) {
+      Value *Ptr = CI->getArgOperand(0);
+      Value *Val = CI->getArgOperand(1);
+      Rep = Builder.CreateAtomicRMW(AtomicRMWInst::FAdd, Ptr, Val,
+                                    AtomicOrdering::SequentiallyConsistent);
     } else if (IsNVVM && (Name == "max.i" || Name == "max.ll" ||
                           Name == "max.ui" || Name == "max.ull")) {
       Value *Arg0 = CI->getArgOperand(0);
@@ -3423,7 +3495,28 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
     DefaultCase();
     return;
   }
-
+  case Intrinsic::experimental_vector_reduce_v2_fmul: {
+    SmallVector<Value *, 2> Args;
+    if (CI->isFast())
+      Args.push_back(ConstantFP::get(CI->getOperand(0)->getType(), 1.0));
+    else
+      Args.push_back(CI->getOperand(0));
+    Args.push_back(CI->getOperand(1));
+    NewCall = Builder.CreateCall(NewFn, Args);
+    cast<Instruction>(NewCall)->copyFastMathFlags(CI);
+    break;
+  }
+  case Intrinsic::experimental_vector_reduce_v2_fadd: {
+    SmallVector<Value *, 2> Args;
+    if (CI->isFast())
+      Args.push_back(Constant::getNullValue(CI->getOperand(0)->getType()));
+    else
+      Args.push_back(CI->getOperand(0));
+    Args.push_back(CI->getOperand(1));
+    NewCall = Builder.CreateCall(NewFn, Args);
+    cast<Instruction>(NewCall)->copyFastMathFlags(CI);
+    break;
+  }
   case Intrinsic::arm_neon_vld1:
   case Intrinsic::arm_neon_vld2:
   case Intrinsic::arm_neon_vld3:
@@ -3740,8 +3833,8 @@ bool llvm::UpgradeDebugInfo(Module &M) {
 
 bool llvm::UpgradeRetainReleaseMarker(Module &M) {
   bool Changed = false;
-  NamedMDNode *ModRetainReleaseMarker =
-      M.getNamedMetadata("clang.arc.retainAutoreleasedReturnValueMarker");
+  const char *MarkerKey = "clang.arc.retainAutoreleasedReturnValueMarker";
+  NamedMDNode *ModRetainReleaseMarker = M.getNamedMetadata(MarkerKey);
   if (ModRetainReleaseMarker) {
     MDNode *Op = ModRetainReleaseMarker->getOperand(0);
     if (Op) {
@@ -3751,11 +3844,11 @@ bool llvm::UpgradeRetainReleaseMarker(Module &M) {
         ID->getString().split(ValueComp, "#");
         if (ValueComp.size() == 2) {
           std::string NewValue = ValueComp[0].str() + ";" + ValueComp[1].str();
-          Metadata *Ops[1] = {MDString::get(M.getContext(), NewValue)};
-          ModRetainReleaseMarker->setOperand(0,
-                                             MDNode::get(M.getContext(), Ops));
-          Changed = true;
+          ID = MDString::get(M.getContext(), NewValue);
         }
+        M.addModuleFlag(Module::Error, MarkerKey, ID);
+        M.eraseNamedMetadata(ModRetainReleaseMarker);
+        Changed = true;
       }
     }
   }

@@ -402,7 +402,6 @@ static void AsanInitInternal() {
   asan_init_is_running = true;
 
   CacheBinaryName();
-  CheckASLR();
 
   // Initialize flags. This must be done early, because most of the
   // initialization steps look at flags().
@@ -450,6 +449,7 @@ static void AsanInitInternal() {
   SetLowLevelAllocateCallback(OnLowLevelAllocate);
 
   InitializeAsanInterceptors();
+  CheckASLR();
 
   // Enable system log ("adb logcat") on Android.
   // Doing this before interceptors are initialized crashes in:
@@ -595,6 +595,19 @@ void NOINLINE __asan_handle_no_return() {
   PoisonShadow(bottom, top - bottom, 0);
   if (curr_thread && curr_thread->has_fake_stack())
     curr_thread->fake_stack()->HandleNoReturn();
+}
+
+extern "C" void *__asan_extra_spill_area() {
+  AsanThread *t = GetCurrentThread();
+  CHECK(t);
+  return t->extra_spill_area();
+}
+
+void __asan_handle_vfork(void *sp) {
+  AsanThread *t = GetCurrentThread();
+  CHECK(t);
+  uptr bottom = t->stack_bottom();
+  PoisonShadow(bottom, (uptr)sp - bottom, 0);
 }
 
 void NOINLINE __asan_set_death_callback(void (*callback)(void)) {

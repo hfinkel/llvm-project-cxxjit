@@ -25,6 +25,16 @@
 namespace llvm {
 namespace mca {
 
+DispatchStage::DispatchStage(const MCSubtargetInfo &Subtarget,
+                             const MCRegisterInfo &MRI,
+                             unsigned MaxDispatchWidth, RetireControlUnit &R,
+                             RegisterFile &F)
+    : DispatchWidth(MaxDispatchWidth), AvailableEntries(MaxDispatchWidth),
+      CarryOver(0U), CarriedOver(), STI(Subtarget), RCU(R), PRF(F) {
+  if (!DispatchWidth)
+    DispatchWidth = Subtarget.getSchedModel().IssueWidth;
+}
+
 void DispatchStage::notifyInstructionDispatched(const InstRef &IR,
                                                 ArrayRef<unsigned> UsedRegs,
                                                 unsigned UOps) const {
@@ -59,7 +69,10 @@ bool DispatchStage::checkRCU(const InstRef &IR) const {
 }
 
 bool DispatchStage::canDispatch(const InstRef &IR) const {
-  return checkRCU(IR) && checkPRF(IR) && checkNextStage(IR);
+  bool CanDispatch = checkRCU(IR);
+  CanDispatch &= checkPRF(IR);
+  CanDispatch &= checkNextStage(IR);
+  return CanDispatch;
 }
 
 Error DispatchStage::dispatch(InstRef IR) {
@@ -82,11 +95,11 @@ Error DispatchStage::dispatch(InstRef IR) {
     AvailableEntries = 0;
 
   // Check if this is an optimizable reg-reg move.
-  bool IsEliminated = false;
   if (IS.isOptimizableMove()) {
     assert(IS.getDefs().size() == 1 && "Expected a single input!");
     assert(IS.getUses().size() == 1 && "Expected a single output!");
-    IsEliminated = PRF.tryEliminateMove(IS.getDefs()[0], IS.getUses()[0]);
+    if (PRF.tryEliminateMove(IS.getDefs()[0], IS.getUses()[0]))
+      IS.setEliminated();
   }
 
   // A dependency-breaking instruction doesn't have to wait on the register
@@ -98,7 +111,7 @@ Error DispatchStage::dispatch(InstRef IR) {
   //
   // We also don't update data dependencies for instructions that have been
   // eliminated at register renaming stage.
-  if (!IsEliminated) {
+  if (!IS.isEliminated()) {
     for (ReadState &RS : IS.getUses())
       PRF.addRegisterRead(RS, STI);
   }

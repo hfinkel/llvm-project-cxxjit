@@ -34,7 +34,6 @@
 #include "MIDriverBase.h"
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdGdbExit constructor.
 // Type:    Method.
 // Args:    None.
@@ -50,7 +49,6 @@ CMICmdCmdGdbExit::CMICmdCmdGdbExit() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdGdbExit destructor.
 // Type:    Overrideable.
 // Args:    None.
@@ -60,7 +58,6 @@ CMICmdCmdGdbExit::CMICmdCmdGdbExit() {
 CMICmdCmdGdbExit::~CMICmdCmdGdbExit() {}
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command does work in this
 // function.
 //          The command is likely to communicate with the LLDB SBDebugger in
@@ -80,7 +77,6 @@ bool CMICmdCmdGdbExit::Execute() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command prepares a MI Record
 // Result
 //          for the work carried out in the Execute().
@@ -109,7 +105,6 @@ bool CMICmdCmdGdbExit::Acknowledge() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Required by the CMICmdFactory when registering *this command. The
 // factory
 //          calls this function to create an instance of *this command.
@@ -120,12 +115,8 @@ bool CMICmdCmdGdbExit::Acknowledge() {
 //--
 CMICmdBase *CMICmdCmdGdbExit::CreateSelf() { return new CMICmdCmdGdbExit(); }
 
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdListThreadGroups constructor.
 // Type:    Method.
 // Args:    None.
@@ -145,7 +136,6 @@ CMICmdCmdListThreadGroups::CMICmdCmdListThreadGroups()
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdListThreadGroups destructor.
 // Type:    Overrideable.
 // Args:    None.
@@ -157,7 +147,6 @@ CMICmdCmdListThreadGroups::~CMICmdCmdListThreadGroups() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The parses the command line
 // options
 //          arguments to extract values for each of those arguments.
@@ -182,7 +171,6 @@ bool CMICmdCmdListThreadGroups::ParseArgs() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command does work in this
 // function.
 //          The command is likely to communicate with the LLDB SBDebugger in
@@ -253,7 +241,6 @@ bool CMICmdCmdListThreadGroups::Execute() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command prepares a MI Record
 // Result
 //          for the work carried out in the Execute().
@@ -339,7 +326,9 @@ bool CMICmdCmdListThreadGroups::Acknowledge() {
       const char *pDir = sbTrgt.GetExecutable().GetDirectory();
       const char *pFileName = sbTrgt.GetExecutable().GetFilename();
       const CMIUtilString strFile(
-          CMIUtilString::Format("%s/%s", pDir, pFileName));
+          CMIUtilString::Format("%s/%s",
+                                CMIUtilString::WithNullAsEmpty(pDir),
+                                CMIUtilString::WithNullAsEmpty(pFileName)));
       const CMICmnMIValueConst miValueConst4(strFile);
       const CMICmnMIValueResult miValueResult4("executable", miValueConst4);
       miTuple.Add(miValueResult4);
@@ -385,7 +374,6 @@ bool CMICmdCmdListThreadGroups::Acknowledge() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Required by the CMICmdFactory when registering *this command. The
 // factory
 //          calls this function to create an instance of *this command.
@@ -398,12 +386,8 @@ CMICmdBase *CMICmdCmdListThreadGroups::CreateSelf() {
   return new CMICmdCmdListThreadGroups();
 }
 
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdInterpreterExec constructor.
 // Type:    Method.
 // Args:    None.
@@ -421,7 +405,6 @@ CMICmdCmdInterpreterExec::CMICmdCmdInterpreterExec()
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdInterpreterExec destructor.
 // Type:    Overrideable.
 // Args:    None.
@@ -431,7 +414,6 @@ CMICmdCmdInterpreterExec::CMICmdCmdInterpreterExec()
 CMICmdCmdInterpreterExec::~CMICmdCmdInterpreterExec() {}
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The parses the command line
 // options
 //          arguments to extract values for each of those arguments.
@@ -450,7 +432,6 @@ bool CMICmdCmdInterpreterExec::ParseArgs() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command does work in this
 // function.
 //          The command is likely to communicate with the LLDB SBDebugger in
@@ -466,8 +447,7 @@ bool CMICmdCmdInterpreterExec::Execute() {
   CMICMDBASE_GETOPTION(pArgCommand, String, m_constStrArgNamedCommand);
 
   // Handle the interpreter parameter by do nothing on purpose (set to 'handled'
-  // in
-  // the arg definition above)
+  // in the arg definition above)
   const CMIUtilString &rStrInterpreter(pArgInterpreter->GetValue());
   MIunused(rStrInterpreter);
 
@@ -483,7 +463,6 @@ bool CMICmdCmdInterpreterExec::Execute() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command prepares a MI Record
 // Result
 //          for the work carried out in the Execute().
@@ -521,7 +500,6 @@ bool CMICmdCmdInterpreterExec::Acknowledge() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Required by the CMICmdFactory when registering *this command. The
 // factory
 //          calls this function to create an instance of *this command.
@@ -534,12 +512,8 @@ CMICmdBase *CMICmdCmdInterpreterExec::CreateSelf() {
   return new CMICmdCmdInterpreterExec();
 }
 
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdInferiorTtySet constructor.
 // Type:    Method.
 // Args:    None.
@@ -555,7 +529,6 @@ CMICmdCmdInferiorTtySet::CMICmdCmdInferiorTtySet() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdInferiorTtySet destructor.
 // Type:    Overrideable.
 // Args:    None.
@@ -565,7 +538,6 @@ CMICmdCmdInferiorTtySet::CMICmdCmdInferiorTtySet() {
 CMICmdCmdInferiorTtySet::~CMICmdCmdInferiorTtySet() {}
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command does work in this
 // function.
 //          The command is likely to communicate with the LLDB SBDebugger in
@@ -583,7 +555,6 @@ bool CMICmdCmdInferiorTtySet::Execute() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command prepares a MI Record
 // Result
 //          for the work carried out in the Execute().
@@ -602,7 +573,6 @@ bool CMICmdCmdInferiorTtySet::Acknowledge() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Required by the CMICmdFactory when registering *this command. The
 // factory
 //          calls this function to create an instance of *this command.

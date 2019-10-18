@@ -340,7 +340,7 @@ static bool canMoveAboveCall(Instruction *I, CallInst *CI, AliasAnalysis *AA) {
       // being loaded from.
       const DataLayout &DL = L->getModule()->getDataLayout();
       if (isModSet(AA->getModRefInfo(CI, MemoryLocation::get(L))) ||
-          !isSafeToLoadUnconditionally(L->getPointerOperand(),
+          !isSafeToLoadUnconditionally(L->getPointerOperand(), L->getType(),
                                        L->getAlignment(), DL, L))
         return false;
     }
@@ -678,7 +678,7 @@ static bool eliminateRecursiveTailCall(
 
   BB->getInstList().erase(Ret);  // Remove return.
   BB->getInstList().erase(CI);   // Remove call.
-  DTU.insertEdge(BB, OldEntry);
+  DTU.applyUpdates({{DominatorTree::Insert, BB, OldEntry}});
   ++NumEliminated;
   return true;
 }

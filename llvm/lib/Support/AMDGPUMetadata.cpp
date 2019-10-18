@@ -65,6 +65,8 @@ struct ScalarEnumerationTraits<ValueKind> {
     YIO.enumCase(EN, "HiddenDefaultQueue", ValueKind::HiddenDefaultQueue);
     YIO.enumCase(EN, "HiddenCompletionAction",
                  ValueKind::HiddenCompletionAction);
+    YIO.enumCase(EN, "HiddenMultiGridSyncArg",
+		 ValueKind::HiddenMultiGridSyncArg);
   }
 };
 
@@ -218,19 +220,5 @@ std::error_code toString(Metadata HSAMetadata, std::string &String) {
 }
 
 } // end namespace HSAMD
-
-namespace PALMD {
-
-std::error_code toString(const Metadata &PALMetadata, std::string &String) {
-  raw_string_ostream Stream(String);
-  for (auto I = PALMetadata.begin(), E = PALMetadata.end(); I != E; ++I) {
-    Stream << Twine(I == PALMetadata.begin() ? " 0x" : ",0x");
-    Stream << Twine::utohexstr(*I);
-  }
-  Stream.flush();
-  return std::error_code();
-}
-
-} // end namespace PALMD
 } // end namespace AMDGPU
 } // end namespace llvm

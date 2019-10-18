@@ -24,7 +24,7 @@
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Bitcode/BitstreamReader.h"
+#include "llvm/Bitstream/BitstreamReader.h"
 #include "llvm/Support/Endian.h"
 #include <cassert>
 #include <cstdint>
@@ -174,7 +174,7 @@ public:
   unsigned Generation;
 
   /// The memory buffer that stores the data associated with
-  /// this AST file, owned by the PCMCache in the ModuleManager.
+  /// this AST file, owned by the InMemoryModuleCache.
   llvm::MemoryBuffer *Buffer;
 
   /// The size of this file, in bits.

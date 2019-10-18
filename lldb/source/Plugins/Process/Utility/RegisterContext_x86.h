@@ -16,9 +16,7 @@
 #include "llvm/Support/Compiler.h"
 
 namespace lldb_private {
-//---------------------------------------------------------------------------
 // i386 ehframe, dwarf regnums
-//---------------------------------------------------------------------------
 
 // Register numbers seen in eh_frame (eRegisterKindEHFrame) on i386 systems
 // (non-Darwin)
@@ -131,9 +129,7 @@ enum {
   dwarf_bnd3_i386,
 };
 
-//---------------------------------------------------------------------------
 // AMD x86_64, AMD64, Intel EM64T, or Intel 64 ehframe, dwarf regnums
-//---------------------------------------------------------------------------
 
 // EHFrame and DWARF Register numbers (eRegisterKindEHFrame &
 // eRegisterKindDWARF)
@@ -241,9 +237,7 @@ enum {
   // dwarf_k7_x86_64,
 };
 
-//---------------------------------------------------------------------------
 // Generic floating-point registers
-//---------------------------------------------------------------------------
 
 struct MMSReg {
   uint8_t bytes[10];
@@ -282,9 +276,7 @@ struct FXSAVE {
   uint8_t padding2[40];
 };
 
-//---------------------------------------------------------------------------
 // Extended floating-point registers
-//---------------------------------------------------------------------------
 
 struct YMMHReg {
   uint8_t bytes[16]; // 16 * 8 bits for the high bytes of each YMM register
@@ -360,6 +352,22 @@ union FPR {
 };
 
 LLVM_ENABLE_BITMASK_ENUMS_IN_NAMESPACE();
+
+// Convenience function to combine YMM register data from XSAVE-style input.
+inline YMMReg XStateToYMM(const void* xmm_bytes, const void* ymmh_bytes) {
+  YMMReg ret;
+
+  ::memcpy(ret.bytes, xmm_bytes, sizeof(XMMReg));
+  ::memcpy(ret.bytes + sizeof(XMMReg), ymmh_bytes, sizeof(YMMHReg));
+
+  return ret;
+}
+
+// Convenience function to copy YMM register data into XSAVE-style output.
+inline void YMMToXState(const YMMReg& input, void* xmm_bytes, void* ymmh_bytes) {
+  ::memcpy(xmm_bytes, input.bytes, sizeof(XMMReg));
+  ::memcpy(ymmh_bytes, input.bytes + sizeof(XMMReg), sizeof(YMMHReg));
+}
 
 } // namespace lldb_private
 

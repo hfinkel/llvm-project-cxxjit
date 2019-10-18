@@ -301,7 +301,7 @@ bool ToolInvocation::run() {
       DiagConsumer ? DiagConsumer : &DiagnosticPrinter, false);
 
   const std::unique_ptr<driver::Driver> Driver(
-      newDriver(&Diagnostics, BinaryName, Files->getVirtualFileSystem()));
+      newDriver(&Diagnostics, BinaryName, &Files->getVirtualFileSystem()));
   // The "input file not found" diagnostics from the driver are useful.
   // The driver is only aware of the VFS working directory, but some clients
   // change this at the FileManager level instead.
@@ -481,7 +481,7 @@ int ClangTool::run(ToolAction *Action) {
       if (OverlayFileSystem->setCurrentWorkingDirectory(
               CompileCommand.Directory))
         llvm::report_fatal_error("Cannot chdir into \"" +
-                                 Twine(CompileCommand.Directory) + "\n!");
+                                 Twine(CompileCommand.Directory) + "\"!");
 
       // Now fill the in-memory VFS with the relative file mappings so it will
       // have the correct relative paths. We never remove mappings but that
@@ -517,7 +517,8 @@ int ClangTool::run(ToolAction *Action) {
 
       if (!Invocation.run()) {
         // FIXME: Diagnostics should be used instead.
-        llvm::errs() << "Error while processing " << File << ".\n";
+        if (PrintErrorMessage)
+          llvm::errs() << "Error while processing " << File << ".\n";
         ProcessingFailed = true;
       }
     }
@@ -567,6 +568,10 @@ int ClangTool::buildASTs(std::vector<std::unique_ptr<ASTUnit>> &ASTs) {
 
 void ClangTool::setRestoreWorkingDir(bool RestoreCWD) {
   this->RestoreCWD = RestoreCWD;
+}
+
+void ClangTool::setPrintErrorMessage(bool PrintErrorMessage) {
+  this->PrintErrorMessage = PrintErrorMessage;
 }
 
 namespace clang {

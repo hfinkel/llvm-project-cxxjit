@@ -116,7 +116,7 @@ Parser::ParseStatementOrDeclaration(StmtVector &Stmts,
 }
 
 namespace {
-class StatementFilterCCC : public CorrectionCandidateCallback {
+class StatementFilterCCC final : public CorrectionCandidateCallback {
 public:
   StatementFilterCCC(Token nextTok) : NextToken(nextTok) {
     WantTypeSpecifiers = nextTok.isOneOf(tok::l_paren, tok::less, tok::l_square,
@@ -137,6 +137,10 @@ public:
         candidate.getCorrectionDeclAs<NamespaceDecl>())
       return false;
     return CorrectionCandidateCallback::ValidateCandidate(candidate);
+  }
+
+  std::unique_ptr<CorrectionCandidateCallback> clone() override {
+    return llvm::make_unique<StatementFilterCCC>(*this);
   }
 
 private:
@@ -181,9 +185,8 @@ Retry:
     if (Next.isNot(tok::coloncolon)) {
       // Try to limit which sets of keywords should be included in typo
       // correction based on what the next token is.
-      if (TryAnnotateName(/*IsAddressOfOperand*/ false,
-                          llvm::make_unique<StatementFilterCCC>(Next)) ==
-          ANK_Error) {
+      StatementFilterCCC CCC(Next);
+      if (TryAnnotateName(/*IsAddressOfOperand*/ false, &CCC) == ANK_Error) {
         // Handle errors here by skipping up to the next semicolon or '}', and
         // eat the semicolon if that's what stopped us.
         SkipUntil(tok::r_brace, StopAtSemi | StopBeforeMatch);
@@ -969,10 +972,16 @@ bool Parser::ConsumeNullStmt(StmtVector &Stmts) {
 StmtResult Parser::handleExprStmt(ExprResult E, ParsedStmtContext StmtCtx) {
   bool IsStmtExprResult = false;
   if ((StmtCtx & ParsedStmtContext::InStmtExpr) != ParsedStmtContext()) {
-    // Look ahead to see if the next two tokens close the statement expression;
-    // if so, this expression statement is the last statement in a
-    // statment expression.
-    IsStmtExprResult = Tok.is(tok::r_brace) && NextToken().is(tok::r_paren);
+    // For GCC compatibility we skip past NullStmts.
+    unsigned LookAhead = 0;
+    while (GetLookAheadToken(LookAhead).is(tok::semi)) {
+      ++LookAhead;
+    }
+    // Then look to see if the next two tokens close the statement expression;
+    // if so, this expression statement is the last statement in a statment
+    // expression.
+    IsStmtExprResult = GetLookAheadToken(LookAhead).is(tok::r_brace) &&
+                       GetLookAheadToken(LookAhead + 1).is(tok::r_paren);
   }
 
   if (IsStmtExprResult)
@@ -2261,7 +2270,8 @@ StmtResult Parser::ParseCXXCatchBlock(bool FnCatch) {
   // The name in a catch exception-declaration is local to the handler and
   // shall not be redeclared in the outermost block of the handler.
   ParseScope CatchScope(this, Scope::DeclScope | Scope::ControlScope |
-                          (FnCatch ? Scope::FnTryCatchScope : 0));
+                                  Scope::CatchScope |
+                                  (FnCatch ? Scope::FnTryCatchScope : 0));
 
   // exception-declaration is equivalent to '...' or a parameter-declaration
   // without default arguments.

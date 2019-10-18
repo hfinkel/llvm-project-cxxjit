@@ -28,12 +28,12 @@
 #include "lldb/Interpreter/OptionArgParser.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/Platform.h"
-#include "lldb/Target/Process.h"
 #include "lldb/Utility/Endian.h"
 #include "lldb/Utility/JSON.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/StreamGDBRemote.h"
 #include "lldb/Utility/StreamString.h"
+#include "lldb/Utility/StructuredData.h"
 #include "llvm/ADT/Triple.h"
 
 #include "ProcessGDBRemoteLog.h"
@@ -55,9 +55,7 @@ const static uint32_t g_default_packet_timeout_sec = 20; // seconds
 const static uint32_t g_default_packet_timeout_sec = 0; // not specified
 #endif
 
-//----------------------------------------------------------------------
 // GDBRemoteCommunicationServerCommon constructor
-//----------------------------------------------------------------------
 GDBRemoteCommunicationServerCommon::GDBRemoteCommunicationServerCommon(
     const char *comm_name, const char *listener_name)
     : GDBRemoteCommunicationServer(comm_name, listener_name),
@@ -176,9 +174,7 @@ GDBRemoteCommunicationServerCommon::GDBRemoteCommunicationServerCommon(
       &GDBRemoteCommunicationServerCommon::Handle_vFile_unlink);
 }
 
-//----------------------------------------------------------------------
 // Destructor
-//----------------------------------------------------------------------
 GDBRemoteCommunicationServerCommon::~GDBRemoteCommunicationServerCommon() {}
 
 GDBRemoteCommunication::PacketResult
@@ -237,11 +233,7 @@ GDBRemoteCommunicationServerCommon::Handle_qHostInfo(
   if (host_arch.GetMachine() == llvm::Triple::aarch64 ||
       host_arch.GetMachine() == llvm::Triple::aarch64_be ||
       host_arch.GetMachine() == llvm::Triple::arm ||
-      host_arch.GetMachine() == llvm::Triple::armeb ||
-      host_arch.GetMachine() == llvm::Triple::mips64 ||
-      host_arch.GetMachine() == llvm::Triple::mips64el ||
-      host_arch.GetMachine() == llvm::Triple::mips ||
-      host_arch.GetMachine() == llvm::Triple::mipsel)
+      host_arch.GetMachine() == llvm::Triple::armeb || host_arch.IsMIPS())
     response.Printf("watchpoint_exceptions_received:before;");
   else
     response.Printf("watchpoint_exceptions_received:after;");
@@ -436,10 +428,10 @@ GDBRemoteCommunicationServerCommon::Handle_qUserName(
   packet.SetFilePos(::strlen("qUserName:"));
   uint32_t uid = packet.GetU32(UINT32_MAX);
   if (uid != UINT32_MAX) {
-    std::string name;
-    if (HostInfo::LookupUserName(uid, name)) {
+    if (llvm::Optional<llvm::StringRef> name =
+            HostInfo::GetUserIDResolver().GetUserName(uid)) {
       StreamString response;
-      response.PutStringAsRawHex8(name);
+      response.PutStringAsRawHex8(*name);
       return SendPacketNoLock(response.GetString());
     }
   }
@@ -457,10 +449,10 @@ GDBRemoteCommunicationServerCommon::Handle_qGroupName(
   packet.SetFilePos(::strlen("qGroupName:"));
   uint32_t gid = packet.GetU32(UINT32_MAX);
   if (gid != UINT32_MAX) {
-    std::string name;
-    if (HostInfo::LookupGroupName(gid, name)) {
+    if (llvm::Optional<llvm::StringRef> name =
+            HostInfo::GetUserIDResolver().GetGroupName(gid)) {
       StreamString response;
-      response.PutStringAsRawHex8(name);
+      response.PutStringAsRawHex8(*name);
       return SendPacketNoLock(response.GetString());
     }
   }

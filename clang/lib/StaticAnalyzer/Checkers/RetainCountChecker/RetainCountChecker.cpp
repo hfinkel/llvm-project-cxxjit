@@ -537,6 +537,11 @@ updateOutParameters(ProgramStateRef State, const RetainSummary &Summ,
   ProgramStateRef AssumeZeroReturn = State;
 
   if (SplitNecessary) {
+    if (!CE.getResultType()->isScalarType()) {
+      // Structures cannot be assumed. This probably deserves
+      // a compiler warning for invalid annotations.
+      return {State};
+    }
     if (auto DL = L.getAs<DefinedOrUnknownSVal>()) {
       AssumeNonZeroReturn = AssumeNonZeroReturn->assume(*DL, true);
       AssumeZeroReturn = AssumeZeroReturn->assume(*DL, false);
@@ -881,14 +886,19 @@ void RetainCountChecker::processNonLeakError(ProgramStateRef St,
 // Handle the return values of retain-count-related functions.
 //===----------------------------------------------------------------------===//
 
-bool RetainCountChecker::evalCall(const CallExpr *CE, CheckerContext &C) const {
+bool RetainCountChecker::evalCall(const CallEvent &Call,
+                                  CheckerContext &C) const {
   ProgramStateRef state = C.getState();
-  const FunctionDecl *FD = C.getCalleeDecl(CE);
+  const auto *FD = dyn_cast_or_null<FunctionDecl>(Call.getDecl());
   if (!FD)
     return false;
 
+  const auto *CE = dyn_cast_or_null<CallExpr>(Call.getOriginExpr());
+  if (!CE)
+    return false;
+
   RetainSummaryManager &SmrMgr = getSummaryManager(C);
-  QualType ResultTy = CE->getCallReturnType(C.getASTContext());
+  QualType ResultTy = Call.getResultType();
 
   // See if the function has 'rc_ownership_trusted_implementation'
   // annotate attribute. If it does, we will not inline it.
@@ -941,7 +951,7 @@ bool RetainCountChecker::evalCall(const CallExpr *CE, CheckerContext &C) const {
       // And on the original branch assume that both input and
       // output are non-zero.
       if (auto L = RetVal.getAs<DefinedOrUnknownSVal>())
-        state = state->assume(*L, /*Assumption=*/true);
+        state = state->assume(*L, /*assumption=*/true);
 
     }
   }
@@ -970,8 +980,10 @@ ExplodedNode * RetainCountChecker::processReturn(const ReturnStmt *S,
     return Pred;
 
   ProgramStateRef state = C.getState();
-  SymbolRef Sym =
-    state->getSValAsScalarOrLoc(RetE, C.getLocationContext()).getAsLocSymbol();
+  // We need to dig down to the symbolic base here because various
+  // custom allocators do sometimes return the symbol with an offset.
+  SymbolRef Sym = state->getSValAsScalarOrLoc(RetE, C.getLocationContext())
+                      .getAsLocSymbol(/*IncludeBaseRegions=*/true);
   if (!Sym)
     return Pred;
 

@@ -7,7 +7,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-// REQUIRES: c++experimental
 // UNSUPPORTED: c++98, c++03
 
 // <experimental/string>
@@ -30,6 +29,8 @@
 #include <cassert>
 
 #include "constexpr_char_traits.hpp"
+
+#include "test_macros.h"
 
 namespace pmr = std::experimental::pmr;
 

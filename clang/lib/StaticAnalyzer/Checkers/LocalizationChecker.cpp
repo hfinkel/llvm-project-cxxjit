@@ -753,10 +753,9 @@ void NonLocalizedStringChecker::reportLocalizationError(
   if (isDebuggingContext(C))
     return;
 
-  ExplodedNode *ErrNode = C.getPredecessor();
   static CheckerProgramPointTag Tag("NonLocalizedStringChecker",
                                     "UnlocalizedString");
-  ErrNode = C.addTransition(C.getState(), C.getPredecessor(), &Tag);
+  ExplodedNode *ErrNode = C.addTransition(C.getState(), C.getPredecessor(), &Tag);
 
   if (!ErrNode)
     return;
@@ -1140,7 +1139,7 @@ void EmptyLocalizationContextChecker::MethodCrawler::VisitObjCMessageExpr(
   }
 
   bool Invalid = false;
-  llvm::MemoryBuffer *BF =
+  const llvm::MemoryBuffer *BF =
       Mgr.getSourceManager().getBuffer(SLInfo.first, SL, &Invalid);
   if (Invalid)
     return;
@@ -1397,8 +1396,8 @@ void ento::registerNonLocalizedStringChecker(CheckerManager &mgr) {
   NonLocalizedStringChecker *checker =
       mgr.registerChecker<NonLocalizedStringChecker>();
   checker->IsAggressive =
-      mgr.getAnalyzerOptions().getCheckerBooleanOption("AggressiveReport",
-                                                       false, checker);
+      mgr.getAnalyzerOptions().getCheckerBooleanOption(
+          checker, "AggressiveReport");
 }
 
 bool ento::shouldRegisterNonLocalizedStringChecker(const LangOptions &LO) {
@@ -1409,7 +1408,8 @@ void ento::registerEmptyLocalizationContextChecker(CheckerManager &mgr) {
   mgr.registerChecker<EmptyLocalizationContextChecker>();
 }
 
-bool ento::shouldRegisterEmptyLocalizationContextChecker(const LangOptions &LO) {
+bool ento::shouldRegisterEmptyLocalizationContextChecker(
+                                                        const LangOptions &LO) {
   return true;
 }
 

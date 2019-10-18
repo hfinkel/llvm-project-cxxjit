@@ -267,16 +267,20 @@ private:
   /// Mapping from __block VarDecls to BlockVarCopyInit.
   llvm::DenseMap<const VarDecl *, BlockVarCopyInit> BlockVarCopyInits;
 
-  /// Mapping from class scope functions specialization to their
-  /// template patterns.
-  llvm::DenseMap<const FunctionDecl*, FunctionDecl*>
-    ClassScopeSpecializationPattern;
-
   /// Mapping from materialized temporaries with static storage duration
   /// that appear in constant initializers to their evaluated values.  These are
   /// allocated in a std::map because their address must be stable.
   llvm::DenseMap<const MaterializeTemporaryExpr *, APValue *>
     MaterializedTemporaryValues;
+
+  /// Used to cleanups APValues stored in the AST.
+  mutable llvm::SmallVector<APValue *, 0> APValueCleanups;
+
+  /// A cache mapping a string value to a StringLiteral object with the same
+  /// value.
+  ///
+  /// This is lazily created.  This is intentionally not serialized.
+  mutable llvm::StringMap<StringLiteral *> StringLiteralCache;
 
   /// Representation of a "canonical" template template parameter that
   /// is used in canonical template names.
@@ -893,11 +897,6 @@ public:
   TemplateOrSpecializationInfo
   getTemplateOrSpecializationInfo(const VarDecl *Var);
 
-  FunctionDecl *getClassScopeSpecializationPattern(const FunctionDecl *FD);
-
-  void setClassScopeSpecializationPattern(FunctionDecl *FD,
-                                          FunctionDecl *Pattern);
-
   /// Note that the static data member \p Inst is an instantiation of
   /// the static data member template \p Tmpl of a class template.
   void setInstantiatedFromStaticDataMember(VarDecl *Inst, VarDecl *Tmpl,
@@ -1341,6 +1340,10 @@ public:
                                 ArrayType::ArraySizeModifier ASM,
                                 unsigned IndexTypeQuals) const;
 
+  /// Return a type for a constant array for a string literal of the
+  /// specified element type and length.
+  QualType getStringLiteralArrayType(QualType EltTy, unsigned Length) const;
+
   /// Returns a vla type where known sizes are replaced with [*].
   QualType getVariableArrayDecayedType(QualType Ty) const;
 
@@ -1459,6 +1462,9 @@ public:
 
   QualType getParenType(QualType NamedType) const;
 
+  QualType getMacroQualifiedType(QualType UnderlyingTy,
+                                 const IdentifierInfo *MacroII) const;
+
   QualType getElaboratedType(ElaboratedTypeKeyword Keyword,
                              NestedNameSpecifier *NNS, QualType NamedType,
                              TagDecl *OwnedTagDecl = nullptr) const;
@@ -1527,7 +1533,7 @@ public:
 
   /// C++11 deduced auto type.
   QualType getAutoType(QualType DeducedType, AutoTypeKeyword Keyword,
-                       bool IsDependent) const;
+                       bool IsDependent, bool IsPack = false) const;
 
   /// C++11 deduction pattern for 'auto' type.
   QualType getAutoDeductType() const;
@@ -1992,6 +1998,7 @@ public:
 
   TemplateName getOverloadedTemplateName(UnresolvedSetIterator Begin,
                                          UnresolvedSetIterator End) const;
+  TemplateName getAssumedTemplateName(DeclarationName Name) const;
 
   TemplateName getQualifiedTemplateName(NestedNameSpecifier *NNS,
                                         bool TemplateKeyword,
@@ -2179,6 +2186,13 @@ public:
   /// it computes the value expected by CodeGen: references are treated like
   /// pointers and large arrays get extra alignment.
   CharUnits getDeclAlign(const Decl *D, bool ForAlignof = false) const;
+
+  /// Return the alignment (in bytes) of the thrown exception object. This is
+  /// only meaningful for targets that allocate C++ exceptions in a system
+  /// runtime, such as those using the Itanium C++ ABI.
+  CharUnits getExnObjectAlignment() const {
+    return toCharUnitsFromBits(Target->getExnObjectAlignment());
+  }
 
   /// Get or compute information about the layout of the specified
   /// record (struct/union/class) \p D, which indicates its size and field
@@ -2392,7 +2406,8 @@ public:
 
   /// Retrieves the default calling convention for the current target.
   CallingConv getDefaultCallingConvention(bool IsVariadic,
-                                          bool IsCXXMethod) const;
+                                          bool IsCXXMethod,
+                                          bool IsBuiltin = false) const;
 
   /// Retrieves the "canonical" template name that refers to a
   /// given template.
@@ -2709,7 +2724,7 @@ public:
   /// otherwise returns null.
   const ObjCInterfaceDecl *getObjContainingInterface(const NamedDecl *ND) const;
 
-  /// Set the copy inialization expression of a block var decl. \p CanThrow
+  /// Set the copy initialization expression of a block var decl. \p CanThrow
   /// indicates whether the copy expression can throw or not.
   void setBlockVarCopyInit(const VarDecl* VD, Expr *CopyExpr, bool CanThrow);
 
@@ -2744,12 +2759,11 @@ public:
   ///
   /// \param Data Pointer data that will be provided to the callback function
   /// when it is called.
-  void AddDeallocation(void (*Callback)(void*), void *Data);
+  void AddDeallocation(void (*Callback)(void *), void *Data) const;
 
   /// If T isn't trivially destructible, calls AddDeallocation to register it
   /// for destruction.
-  template <typename T>
-  void addDestruction(T *Ptr) {
+  template <typename T> void addDestruction(T *Ptr) const {
     if (!std::is_trivially_destructible<T>::value) {
       auto DestroyPtr = [](void *V) { static_cast<T *>(V)->~T(); };
       AddDeallocation(DestroyPtr, Ptr);
@@ -2812,51 +2826,56 @@ public:
   APValue *getMaterializedTemporaryValue(const MaterializeTemporaryExpr *E,
                                          bool MayCreate);
 
+  /// Return a string representing the human readable name for the specified
+  /// function declaration or file name. Used by SourceLocExpr and
+  /// PredefinedExpr to cache evaluated results.
+  StringLiteral *getPredefinedStringLiteralFromCache(StringRef Key) const;
+
   //===--------------------------------------------------------------------===//
   //                    Statistics
   //===--------------------------------------------------------------------===//
 
   /// The number of implicitly-declared default constructors.
-  static unsigned NumImplicitDefaultConstructors;
+  unsigned NumImplicitDefaultConstructors = 0;
 
   /// The number of implicitly-declared default constructors for
   /// which declarations were built.
-  static unsigned NumImplicitDefaultConstructorsDeclared;
+  unsigned NumImplicitDefaultConstructorsDeclared = 0;
 
   /// The number of implicitly-declared copy constructors.
-  static unsigned NumImplicitCopyConstructors;
+  unsigned NumImplicitCopyConstructors = 0;
 
   /// The number of implicitly-declared copy constructors for
   /// which declarations were built.
-  static unsigned NumImplicitCopyConstructorsDeclared;
+  unsigned NumImplicitCopyConstructorsDeclared = 0;
 
   /// The number of implicitly-declared move constructors.
-  static unsigned NumImplicitMoveConstructors;
+  unsigned NumImplicitMoveConstructors = 0;
 
   /// The number of implicitly-declared move constructors for
   /// which declarations were built.
-  static unsigned NumImplicitMoveConstructorsDeclared;
+  unsigned NumImplicitMoveConstructorsDeclared = 0;
 
   /// The number of implicitly-declared copy assignment operators.
-  static unsigned NumImplicitCopyAssignmentOperators;
+  unsigned NumImplicitCopyAssignmentOperators = 0;
 
   /// The number of implicitly-declared copy assignment operators for
   /// which declarations were built.
-  static unsigned NumImplicitCopyAssignmentOperatorsDeclared;
+  unsigned NumImplicitCopyAssignmentOperatorsDeclared = 0;
 
   /// The number of implicitly-declared move assignment operators.
-  static unsigned NumImplicitMoveAssignmentOperators;
+  unsigned NumImplicitMoveAssignmentOperators = 0;
 
   /// The number of implicitly-declared move assignment operators for
   /// which declarations were built.
-  static unsigned NumImplicitMoveAssignmentOperatorsDeclared;
+  unsigned NumImplicitMoveAssignmentOperatorsDeclared = 0;
 
   /// The number of implicitly-declared destructors.
-  static unsigned NumImplicitDestructors;
+  unsigned NumImplicitDestructors = 0;
 
   /// The number of implicitly-declared destructors for which
   /// declarations were built.
-  static unsigned NumImplicitDestructorsDeclared;
+  unsigned NumImplicitDestructorsDeclared = 0;
 
 public:
   /// Initialize built-in types.
@@ -2871,18 +2890,51 @@ public:
 private:
   void InitBuiltinType(CanQualType &R, BuiltinType::Kind K);
 
+  class ObjCEncOptions {
+    unsigned Bits;
+
+    ObjCEncOptions(unsigned Bits) : Bits(Bits) {}
+
+  public:
+    ObjCEncOptions() : Bits(0) {}
+    ObjCEncOptions(const ObjCEncOptions &RHS) : Bits(RHS.Bits) {}
+
+#define OPT_LIST(V)                                                            \
+  V(ExpandPointedToStructures, 0)                                              \
+  V(ExpandStructures, 1)                                                       \
+  V(IsOutermostType, 2)                                                        \
+  V(EncodingProperty, 3)                                                       \
+  V(IsStructField, 4)                                                          \
+  V(EncodeBlockParameters, 5)                                                  \
+  V(EncodeClassNames, 6)                                                       \
+
+#define V(N,I) ObjCEncOptions& set##N() { Bits |= 1 << I; return *this; }
+OPT_LIST(V)
+#undef V
+
+#define V(N,I) bool N() const { return Bits & 1 << I; }
+OPT_LIST(V)
+#undef V
+
+#undef OPT_LIST
+
+    LLVM_NODISCARD ObjCEncOptions keepingOnly(ObjCEncOptions Mask) const {
+      return Bits & Mask.Bits;
+    }
+
+    LLVM_NODISCARD ObjCEncOptions forComponentType() const {
+      ObjCEncOptions Mask = ObjCEncOptions()
+                                .setIsOutermostType()
+                                .setIsStructField();
+      return Bits & ~Mask.Bits;
+    }
+  };
+
   // Return the Objective-C type encoding for a given type.
   void getObjCEncodingForTypeImpl(QualType t, std::string &S,
-                                  bool ExpandPointedToStructures,
-                                  bool ExpandStructures,
+                                  ObjCEncOptions Options,
                                   const FieldDecl *Field,
-                                  bool OutermostType = false,
-                                  bool EncodingProperty = false,
-                                  bool StructField = false,
-                                  bool EncodeBlockParameters = false,
-                                  bool EncodeClassNames = false,
-                                  bool EncodePointerToObjCTypedef = false,
-                                  QualType *NotEncodedT=nullptr) const;
+                                  QualType *NotEncodedT = nullptr) const;
 
   // Adds the encoding of the structure's members.
   void getObjCEncodingForStructureImpl(RecordDecl *RD, std::string &S,
@@ -2940,7 +2992,7 @@ private:
   // in order to track and run destructors while we're tearing things down.
   using DeallocationFunctionsAndArguments =
       llvm::SmallVector<std::pair<void (*)(void *), void *>, 16>;
-  DeallocationFunctionsAndArguments Deallocations;
+  mutable DeallocationFunctionsAndArguments Deallocations;
 
   // FIXME: This currently contains the set of StoredDeclMaps used
   // by DeclContext objects.  This probably should not be in ASTContext,

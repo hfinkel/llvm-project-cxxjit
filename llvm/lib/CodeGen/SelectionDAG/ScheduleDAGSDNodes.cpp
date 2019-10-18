@@ -205,6 +205,19 @@ void ScheduleDAGSDNodes::ClusterNeighboringLoads(SDNode *Node) {
   if (!Chain)
     return;
 
+  // Skip any load instruction that has a tied input. There may be an additional
+  // dependency requiring a different order than by increasing offsets, and the
+  // added glue may introduce a cycle.
+  auto hasTiedInput = [this](const SDNode *N) {
+    const MCInstrDesc &MCID = TII->get(N->getMachineOpcode());
+    for (unsigned I = 0; I != MCID.getNumOperands(); ++I) {
+      if (MCID.getOperandConstraint(I, MCOI::TIED_TO) != -1)
+        return true;
+    }
+
+    return false;
+  };
+
   // Look for other loads of the same chain. Find loads that are loading from
   // the same base pointer and different offsets.
   SmallPtrSet<SDNode*, 16> Visited;
@@ -212,6 +225,10 @@ void ScheduleDAGSDNodes::ClusterNeighboringLoads(SDNode *Node) {
   DenseMap<long long, SDNode*> O2SMap;  // Map from offset to SDNode.
   bool Cluster = false;
   SDNode *Base = Node;
+
+  if (hasTiedInput(Base))
+    return;
+
   // This algorithm requires a reasonably low use count before finding a match
   // to avoid uselessly blowing up compile time in large blocks.
   unsigned UseCount = 0;
@@ -222,10 +239,12 @@ void ScheduleDAGSDNodes::ClusterNeighboringLoads(SDNode *Node) {
       continue;
     int64_t Offset1, Offset2;
     if (!TII->areLoadsFromSameBasePtr(Base, User, Offset1, Offset2) ||
-        Offset1 == Offset2)
+        Offset1 == Offset2 ||
+        hasTiedInput(User)) {
       // FIXME: Should be ok if they addresses are identical. But earlier
       // optimizations really should have eliminated one of the loads.
       continue;
+    }
     if (O2SMap.insert(std::make_pair(Offset1, Base)).second)
       Offsets.push_back(Offset1);
     O2SMap.insert(std::make_pair(Offset2, User));
@@ -834,14 +853,20 @@ EmitSchedule(MachineBasicBlock::iterator &InsertPos) {
     if (Before == After)
       return nullptr;
 
+    MachineInstr *MI;
     if (Before == BB->end()) {
       // There were no prior instructions; the new ones must start at the
       // beginning of the block.
-      return &Emitter.getBlock()->instr_front();
+      MI = &Emitter.getBlock()->instr_front();
     } else {
       // Return first instruction after the pre-existing instructions.
-      return &*std::next(Before);
+      MI = &*std::next(Before);
     }
+
+    if (MI->isCall() && DAG->getTarget().Options.EnableDebugEntryValues)
+      MF.addCallArgsForwardingRegs(MI, DAG->getSDCallSiteInfo(Node));
+
+    return MI;
   };
 
   // If this is the first BB, emit byval parameter dbg_value's.
@@ -884,6 +909,12 @@ EmitSchedule(MachineBasicBlock::iterator &InsertPos) {
       // Remember the source order of the inserted instruction.
       if (HasDbg)
         ProcessSourceNode(N, DAG, Emitter, VRBaseMap, Orders, Seen, NewInsn);
+
+      if (MDNode *MD = DAG->getHeapAllocSite(N)) {
+        if (NewInsn && NewInsn->isCall())
+          MF.addCodeViewHeapAllocSite(NewInsn, MD);
+      }
+
       GluedNodes.pop_back();
     }
     auto NewInsn =
@@ -892,6 +923,10 @@ EmitSchedule(MachineBasicBlock::iterator &InsertPos) {
     if (HasDbg)
       ProcessSourceNode(SU->getNode(), DAG, Emitter, VRBaseMap, Orders, Seen,
                         NewInsn);
+    if (MDNode *MD = DAG->getHeapAllocSite(SU->getNode())) {
+      if (NewInsn && NewInsn->isCall())
+        MF.addCodeViewHeapAllocSite(NewInsn, MD);
+    }
   }
 
   // Insert all the dbg_values which have not already been inserted in source
@@ -902,7 +937,7 @@ EmitSchedule(MachineBasicBlock::iterator &InsertPos) {
     // Sort the source order instructions and use the order to insert debug
     // values. Use stable_sort so that DBG_VALUEs are inserted in the same order
     // regardless of the host's implementation fo std::sort.
-    std::stable_sort(Orders.begin(), Orders.end(), less_first());
+    llvm::stable_sort(Orders, less_first());
     std::stable_sort(DAG->DbgBegin(), DAG->DbgEnd(),
                      [](const SDDbgValue *LHS, const SDDbgValue *RHS) {
                        return LHS->getOrder() < RHS->getOrder();

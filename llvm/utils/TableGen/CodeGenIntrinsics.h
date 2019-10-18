@@ -123,6 +123,9 @@ struct CodeGenIntrinsic {
   /// True if the intrinsic is no-return.
   bool isNoReturn;
 
+  /// True if the intrinsic is will-return.
+  bool isWillReturn;
+
   /// True if the intrinsic is cold.
   bool isCold;
 
@@ -136,7 +139,15 @@ struct CodeGenIntrinsic {
   // True if the intrinsic is marked as speculatable.
   bool isSpeculatable;
 
-  enum ArgAttribute { NoCapture, Returned, ReadOnly, WriteOnly, ReadNone };
+  enum ArgAttribute {
+    NoCapture,
+    Returned,
+    ReadOnly,
+    WriteOnly,
+    ReadNone,
+    ImmArg
+  };
+
   std::vector<std::pair<unsigned, ArgAttribute>> ArgumentAttributes;
 
   bool hasProperty(enum SDNP Prop) const {

@@ -28,6 +28,8 @@ class TargetLibraryInfo;
 class BasicBlock;
 class Function;
 class OptimizationRemarkEmitter;
+class BlockFrequencyInfo;
+class ProfileSummaryInfo;
 
 /// This class implements simplifications for calls to fortified library
 /// functions (__st*cpy_chk, __memcpy_chk, __memmove_chk, __memset_chk), to,
@@ -55,14 +57,41 @@ private:
   Value *optimizeMemMoveChk(CallInst *CI, IRBuilder<> &B);
   Value *optimizeMemSetChk(CallInst *CI, IRBuilder<> &B);
 
-  // Str/Stp cpy are similar enough to be handled in the same functions.
+  /// Str/Stp cpy are similar enough to be handled in the same functions.
   Value *optimizeStrpCpyChk(CallInst *CI, IRBuilder<> &B, LibFunc Func);
   Value *optimizeStrpNCpyChk(CallInst *CI, IRBuilder<> &B, LibFunc Func);
+  Value *optimizeMemCCpyChk(CallInst *CI, IRBuilder<> &B);
+  Value *optimizeSNPrintfChk(CallInst *CI, IRBuilder<> &B);
+  Value *optimizeSPrintfChk(CallInst *CI,IRBuilder<> &B);
+  Value *optimizeStrCatChk(CallInst *CI, IRBuilder<> &B);
+  Value *optimizeStrLCat(CallInst *CI, IRBuilder<> &B);
+  Value *optimizeStrNCatChk(CallInst *CI, IRBuilder<> &B);
+  Value *optimizeStrLCpyChk(CallInst *CI, IRBuilder<> &B);
+  Value *optimizeVSNPrintfChk(CallInst *CI, IRBuilder<> &B);
+  Value *optimizeVSPrintfChk(CallInst *CI, IRBuilder<> &B);
 
   /// Checks whether the call \p CI to a fortified libcall is foldable
   /// to the non-fortified version.
+  ///
+  /// \param CI the call to the fortified libcall.
+  ///
+  /// \param ObjSizeOp the index of the object size parameter of this chk
+  /// function. Not optional since this is mandatory.
+  ///
+  /// \param SizeOp optionally set to the parameter index of an explicit buffer
+  /// size argument. For instance, set to '2' for __strncpy_chk.
+  ///
+  /// \param StrOp optionally set to the parameter index of the source string
+  /// parameter to strcpy-like functions, where only the strlen of the source
+  /// will be writtin into the destination.
+  ///
+  /// \param FlagsOp optionally set to the parameter index of a 'flags'
+  /// parameter. These are used by an implementation to opt-into stricter
+  /// checking.
   bool isFortifiedCallFoldable(CallInst *CI, unsigned ObjSizeOp,
-                               unsigned SizeOp, bool isString);
+                               Optional<unsigned> SizeOp = None,
+                               Optional<unsigned> StrOp = None,
+                               Optional<unsigned> FlagsOp = None);
 };
 
 /// LibCallSimplifier - This class implements a collection of optimizations
@@ -74,6 +103,8 @@ private:
   const DataLayout &DL;
   const TargetLibraryInfo *TLI;
   OptimizationRemarkEmitter &ORE;
+  BlockFrequencyInfo *BFI;
+  ProfileSummaryInfo *PSI;
   bool UnsafeFPShrink;
   function_ref<void(Instruction *, Value *)> Replacer;
   function_ref<void(Instruction *)> Eraser;
@@ -101,6 +132,7 @@ public:
   LibCallSimplifier(
       const DataLayout &DL, const TargetLibraryInfo *TLI,
       OptimizationRemarkEmitter &ORE,
+      BlockFrequencyInfo *BFI, ProfileSummaryInfo *PSI,
       function_ref<void(Instruction *, Value *)> Replacer =
           &replaceAllUsesWithDefault,
       function_ref<void(Instruction *)> Eraser = &eraseFromParentDefault);
@@ -133,6 +165,8 @@ private:
   Value *optimizeStrStr(CallInst *CI, IRBuilder<> &B);
   Value *optimizeMemChr(CallInst *CI, IRBuilder<> &B);
   Value *optimizeMemCmp(CallInst *CI, IRBuilder<> &B);
+  Value *optimizeBCmp(CallInst *CI, IRBuilder<> &B);
+  Value *optimizeMemCmpBCmpCommon(CallInst *CI, IRBuilder<> &B);
   Value *optimizeMemCpy(CallInst *CI, IRBuilder<> &B);
   Value *optimizeMemMove(CallInst *CI, IRBuilder<> &B);
   Value *optimizeMemSet(CallInst *CI, IRBuilder<> &B);

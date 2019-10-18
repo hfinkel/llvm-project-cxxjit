@@ -1,6 +1,8 @@
 llvm-exegesis - LLVM Machine Instruction Benchmark
 ==================================================
 
+.. program:: llvm-exegesis
+
 SYNOPSIS
 --------
 
@@ -164,7 +166,6 @@ Note that the scheduling class names will be resolved only when
 :program:`llvm-exegesis` is compiled in debug mode, else only the class id will
 be shown. This does not invalidate any of the analysis results though.
 
-
 OPTIONS
 -------
 
@@ -214,24 +215,49 @@ OPTIONS
  If non-empty, write inconsistencies found during analysis to this file. `-`
  prints to stdout. By default, this analysis is not run.
 
+.. option:: -analysis-clustering=[dbscan,naive]
+
+ Specify the clustering algorithm to use. By default DBSCAN will be used.
+ Naive clustering algorithm is better for doing further work on the
+ `-analysis-inconsistencies-output-file=` output, it will create one cluster
+ per opcode, and check that the cluster is stable (all points are neighbours).
+
 .. option:: -analysis-numpoints=<dbscan numPoints parameter>
 
  Specify the numPoints parameters to be used for DBSCAN clustering
+ (`analysis` mode, DBSCAN only).
+
+.. option:: -analysis-clustering-epsilon=<dbscan epsilon parameter>
+
+ Specify the epsilon parameter used for clustering of benchmark points
  (`analysis` mode).
 
-.. option:: -analysis-epsilon=<dbscan epsilon parameter>
+.. option:: -analysis-inconsistency-epsilon=<epsilon>
 
- Specify the numPoints parameters to be used for DBSCAN clustering
- (`analysis` mode).
+ Specify the epsilon parameter used for detection of when the cluster
+ is different from the LLVM schedule profile values (`analysis` mode).
+
+.. option:: -analysis-display-unstable-clusters
+
+ If there is more than one benchmark for an opcode, said benchmarks may end up
+ not being clustered into the same cluster if the measured performance
+ characteristics are different. by default all such opcodes are filtered out.
+ This flag will instead show only such unstable opcodes.
 
 .. option:: -ignore-invalid-sched-class=false
 
  If set, ignore instructions that do not have a sched class (class idx = 0).
 
- .. option:: -mcpu=<cpu name>
+.. option:: -mcpu=<cpu name>
 
-  If set, measure the cpu characteristics using the counters for this CPU. This
-  is useful when creating new sched models (the host CPU is unknown to LLVM).
+ If set, measure the cpu characteristics using the counters for this CPU. This
+ is useful when creating new sched models (the host CPU is unknown to LLVM).
+
+.. option:: --dump-object-to-disk=true
+
+ By default, llvm-exegesis will dump the generated code to a temporary file to
+ enable code inspection. You may disable it to speed up the execution and save
+ disk space.
 
 EXIT STATUS
 -----------

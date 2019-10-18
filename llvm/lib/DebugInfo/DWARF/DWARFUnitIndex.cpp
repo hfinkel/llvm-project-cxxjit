@@ -172,10 +172,9 @@ DWARFUnitIndex::getFromOffset(uint32_t Offset) const {
              E2->Contributions[InfoColumn].Offset;
     });
   }
-  auto I =
-      llvm::upper_bound(OffsetLookup, Offset, [&](uint32_t Offset, Entry *E2) {
-        return Offset < E2->Contributions[InfoColumn].Offset;
-      });
+  auto I = partition_point(OffsetLookup, [&](Entry *E2) {
+    return E2->Contributions[InfoColumn].Offset <= Offset;
+  });
   if (I == OffsetLookup.begin())
     return nullptr;
   --I;

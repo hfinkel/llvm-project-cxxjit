@@ -40,9 +40,10 @@ class TargetRegisterClass;
     void addMSAFloatType(MVT::SimpleValueType Ty,
                          const TargetRegisterClass *RC);
 
-    bool allowsMisalignedMemoryAccesses(EVT VT, unsigned AS = 0,
-                                        unsigned Align = 1,
-                                        bool *Fast = nullptr) const override;
+    bool allowsMisalignedMemoryAccesses(
+        EVT VT, unsigned AS = 0, unsigned Align = 1,
+        MachineMemOperand::Flags Flags = MachineMemOperand::MONone,
+        bool *Fast = nullptr) const override;
 
     SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
 
@@ -72,6 +73,7 @@ class TargetRegisterClass;
 
     SDValue lowerLOAD(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerSTORE(SDValue Op, SelectionDAG &DAG) const;
+    SDValue lowerBITCAST(SDValue Op, SelectionDAG &DAG) const;
 
     SDValue lowerMulDiv(SDValue Op, unsigned NewOpc, bool HasLo, bool HasHi,
                         SelectionDAG &DAG) const;

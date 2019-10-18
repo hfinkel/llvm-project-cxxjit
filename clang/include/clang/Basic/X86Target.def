@@ -66,7 +66,7 @@ PROC(PentiumMMX, "pentium-mmx", PROC_32_BIT)
 /// i686-generation processors, P6 / Pentium M microarchitecture based.
 //@{
 PROC(PentiumPro, "pentiumpro", PROC_32_BIT)
-PROC_ALIAS(PentiumPro, "i686")
+PROC(i686, "i686", PROC_32_BIT)
 PROC(Pentium2, "pentium2", PROC_32_BIT)
 PROC(Pentium3, "pentium3", PROC_32_BIT)
 PROC_ALIAS(Pentium3, "pentium3m")
@@ -157,6 +157,10 @@ PROC_ALIAS(SkylakeServer, "skx")
 /// Cascadelake Server microarchitecture based processors.
 PROC_WITH_FEAT(Cascadelake, "cascadelake", PROC_64_BIT, FEATURE_AVX512VNNI)
 
+/// \name Cooperlake Server
+/// Cooperlake Server microarchitecture based processors.
+PROC_WITH_FEAT(Cooperlake, "cooperlake", PROC_64_BIT, FEATURE_AVX512BF16)
+
 /// \name Cannonlake Client
 /// Cannonlake client microarchitecture based processors.
 PROC_WITH_FEAT(Cannonlake, "cannonlake", PROC_64_BIT, FEATURE_AVX512VBMI)
@@ -236,6 +240,7 @@ PROC_WITH_FEAT(BDVER4, "bdver4", PROC_64_BIT, FEATURE_AVX2)
 /// Zen architecture processors.
 //@{
 PROC_WITH_FEAT(ZNVER1, "znver1", PROC_64_BIT, FEATURE_AVX2)
+PROC_WITH_FEAT(ZNVER2, "znver2", PROC_64_BIT, FEATURE_AVX2)
 //@}
 
 /// This specification is deprecated and will be removed in the future.
@@ -291,6 +296,7 @@ FEATURE(FEATURE_GFNI)
 FEATURE(FEATURE_VPCLMULQDQ)
 FEATURE(FEATURE_AVX512VNNI)
 FEATURE(FEATURE_AVX512BITALG)
+FEATURE(FEATURE_AVX512BF16)
 
 
 // FIXME: When commented out features are supported in LLVM, enable them here.

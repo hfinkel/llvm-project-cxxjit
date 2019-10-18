@@ -1,4 +1,4 @@
-//== Nullabilityhecker.cpp - Nullability checker ----------------*- C++ -*--==//
+//===-- NullabilityChecker.cpp - Nullability checker ----------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -478,7 +478,7 @@ void NullabilityChecker::checkEvent(ImplicitNullDerefEvent Event) const {
     return;
 
   const MemRegion *Region =
-      getTrackRegion(Event.Location, /*CheckSuperregion=*/true);
+      getTrackRegion(Event.Location, /*CheckSuperRegion=*/true);
   if (!Region)
     return;
 
@@ -1208,7 +1208,7 @@ bool ento::shouldRegisterNullabilityBase(const LangOptions &LO) {
     checker->NoDiagnoseCallsToSystemHeaders =                                  \
         checker->NoDiagnoseCallsToSystemHeaders ||                             \
         mgr.getAnalyzerOptions().getCheckerBooleanOption(                      \
-                      "NoDiagnoseCallsToSystemHeaders", false, checker, true); \
+                      checker, "NoDiagnoseCallsToSystemHeaders", true);        \
   }                                                                            \
                                                                                \
   bool ento::shouldRegister##name##Checker(const LangOptions &LO) {            \

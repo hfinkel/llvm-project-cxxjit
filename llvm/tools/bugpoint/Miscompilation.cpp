@@ -591,9 +591,6 @@ ExtractBlocks(BugDriver &BD,
   if (Linker::linkModules(*ProgClone, std::move(Extracted)))
     exit(1);
 
-  // Set the new program and delete the old one.
-  BD.setNewProgram(std::move(ProgClone));
-
   // Update the list of miscompiled functions.
   MiscompiledFunctions.clear();
 
@@ -602,6 +599,9 @@ ExtractBlocks(BugDriver &BD,
     assert(NewF && "Function not found??");
     MiscompiledFunctions.push_back(NewF);
   }
+
+  // Set the new program and delete the old one.
+  BD.setNewProgram(std::move(ProgClone));
 
   return true;
 }
@@ -705,8 +705,8 @@ static Expected<bool> TestOptimizer(BugDriver &BD, std::unique_ptr<Module> Test,
   if (!Optimized) {
     errs() << " Error running this sequence of passes"
            << " on the input program!\n";
-    BD.setNewProgram(std::move(Test));
     BD.EmitProgressBitcode(*Test, "pass-error", false);
+    BD.setNewProgram(std::move(Test));
     if (Error E = BD.debugOptimizerCrash())
       return std::move(E);
     return false;

@@ -13,21 +13,11 @@
 #ifndef POLLY_SCEV_AFFINATOR_H
 #define POLLY_SCEV_AFFINATOR_H
 
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
-
 #include "isl/isl-noexceptions.h"
-
-namespace llvm {
-class Region;
-class BasicBlock;
-class DataLayout;
-class ScalarEvolution;
-} // namespace llvm
 
 namespace polly {
 class Scop;
-class ScopStmt;
 
 /// The result type of the SCEVAffinator.
 ///
@@ -113,7 +103,9 @@ private:
   PWACtx visitUDivExpr(const llvm::SCEVUDivExpr *E);
   PWACtx visitAddRecExpr(const llvm::SCEVAddRecExpr *E);
   PWACtx visitSMaxExpr(const llvm::SCEVSMaxExpr *E);
+  PWACtx visitSMinExpr(const llvm::SCEVSMinExpr *E);
   PWACtx visitUMaxExpr(const llvm::SCEVUMaxExpr *E);
+  PWACtx visitUMinExpr(const llvm::SCEVUMinExpr *E);
   PWACtx visitUnknown(const llvm::SCEVUnknown *E);
   PWACtx visitSDivInstruction(llvm::Instruction *SDiv);
   PWACtx visitSRemInstruction(llvm::Instruction *SRem);

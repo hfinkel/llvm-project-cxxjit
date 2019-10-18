@@ -174,6 +174,10 @@ struct VectorizationFactor {
 
   // Width 1 means no vectorization, cost 0 means uncomputed cost.
   static VectorizationFactor Disabled() { return {1, 0}; }
+
+  bool operator==(const VectorizationFactor &rhs) const {
+    return Width == rhs.Width && Cost == rhs.Cost;
+  }
 };
 
 /// Planner drives the vectorization process after having passed
@@ -194,10 +198,8 @@ class LoopVectorizationPlanner {
   /// The legality analysis.
   LoopVectorizationLegality *Legal;
 
-  /// The profitablity analysis.
+  /// The profitability analysis.
   LoopVectorizationCostModel &CM;
-
-  using VPlanPtr = std::unique_ptr<VPlan>;
 
   SmallVector<VPlanPtr, 4> VPlans;
 

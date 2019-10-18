@@ -1239,11 +1239,13 @@ SDValue R600TargetLowering::LowerSTORE(SDValue Op, SelectionDAG &DAG) const {
 
   SDLoc DL(Op);
 
+  const bool TruncatingStore = StoreNode->isTruncatingStore();
+
   // Neither LOCAL nor PRIVATE can do vectors at the moment
-  if ((AS == AMDGPUAS::LOCAL_ADDRESS || AS == AMDGPUAS::PRIVATE_ADDRESS) &&
+  if ((AS == AMDGPUAS::LOCAL_ADDRESS || AS == AMDGPUAS::PRIVATE_ADDRESS ||
+       TruncatingStore) &&
       VT.isVector()) {
-    if ((AS == AMDGPUAS::PRIVATE_ADDRESS) &&
-         StoreNode->isTruncatingStore()) {
+    if ((AS == AMDGPUAS::PRIVATE_ADDRESS) && TruncatingStore) {
       // Add an extra level of chain to isolate this vector
       SDValue NewChain = DAG.getNode(AMDGPUISD::DUMMY_CHAIN, DL, MVT::Other, Chain);
       // TODO: can the chain be replaced without creating a new store?
@@ -1259,7 +1261,8 @@ SDValue R600TargetLowering::LowerSTORE(SDValue Op, SelectionDAG &DAG) const {
 
   unsigned Align = StoreNode->getAlignment();
   if (Align < MemVT.getStoreSize() &&
-      !allowsMisalignedMemoryAccesses(MemVT, AS, Align, nullptr)) {
+      !allowsMisalignedMemoryAccesses(
+          MemVT, AS, Align, StoreNode->getMemOperand()->getFlags(), nullptr)) {
     return expandUnalignedStore(StoreNode, DAG);
   }
 
@@ -1269,7 +1272,7 @@ SDValue R600TargetLowering::LowerSTORE(SDValue Op, SelectionDAG &DAG) const {
   if (AS == AMDGPUAS::GLOBAL_ADDRESS) {
     // It is beneficial to create MSKOR here instead of combiner to avoid
     // artificial dependencies introduced by RMW
-    if (StoreNode->isTruncatingStore()) {
+    if (TruncatingStore) {
       assert(VT.bitsLE(MVT::i32));
       SDValue MaskConstant;
       if (MemVT == MVT::i8) {
@@ -1309,8 +1312,8 @@ SDValue R600TargetLowering::LowerSTORE(SDValue Op, SelectionDAG &DAG) const {
       // Convert pointer from byte address to dword address.
       Ptr = DAG.getNode(AMDGPUISD::DWORDADDR, DL, PtrVT, DWordAddr);
 
-      if (StoreNode->isTruncatingStore() || StoreNode->isIndexed()) {
-        llvm_unreachable("Truncated and indexed stores not supported yet");
+      if (StoreNode->isIndexed()) {
+        llvm_unreachable("Indexed stores not supported yet");
       } else {
         Chain = DAG.getStore(Chain, DL, Value, Ptr, StoreNode->getMemOperand());
       }
@@ -1661,10 +1664,9 @@ bool R600TargetLowering::canMergeStoresTo(unsigned AS, EVT MemVT,
   return true;
 }
 
-bool R600TargetLowering::allowsMisalignedMemoryAccesses(EVT VT,
-                                                        unsigned AddrSpace,
-                                                        unsigned Align,
-                                                        bool *IsFast) const {
+bool R600TargetLowering::allowsMisalignedMemoryAccesses(
+    EVT VT, unsigned AddrSpace, unsigned Align, MachineMemOperand::Flags Flags,
+    bool *IsFast) const {
   if (IsFast)
     *IsFast = false;
 
@@ -1711,6 +1713,12 @@ static SDValue CompactSwizzlableVector(
     }
 
     if (NewBldVec[i].isUndef())
+      continue;
+    // Fix spurious warning with gcc 7.3 -O3
+    //    warning: array subscript is above array bounds [-Warray-bounds]
+    //    if (NewBldVec[i] == NewBldVec[j]) {
+    //        ~~~~~~~~~~~^
+    if (i >= 4)
       continue;
     for (unsigned j = 0; j < i; j++) {
       if (NewBldVec[i] == NewBldVec[j]) {

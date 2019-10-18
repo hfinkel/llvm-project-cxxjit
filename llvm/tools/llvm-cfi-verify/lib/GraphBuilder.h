@@ -46,8 +46,8 @@ using Instr = llvm::cfi_verify::FileAnalysis::Instr;
 namespace llvm {
 namespace cfi_verify {
 
-extern unsigned long long SearchLengthForUndef;
-extern unsigned long long SearchLengthForConditionalBranch;
+extern uint64_t SearchLengthForUndef;
+extern uint64_t SearchLengthForConditionalBranch;
 
 struct ConditionalBranchNode {
   uint64_t Address;
@@ -102,7 +102,7 @@ public:
   // (i.e. the upwards traversal did not make it to a branch node) flows to the
   // provided node in GraphResult::OrphanedNodes.
   static GraphResult buildFlowGraph(const FileAnalysis &Analysis,
-                                    uint64_t Address);
+                                    object::SectionedAddress Address);
 
 private:
   // Implementation function that actually builds the flow graph. Retrieves a

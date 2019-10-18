@@ -203,14 +203,6 @@ def SETTING_MSG(setting):
     return "Value of setting '%s' is correct" % setting
 
 
-def EnvArray():
-    """Returns an env variable array from the os.environ map object."""
-    return list(map(lambda k,
-                    v: k + "=" + v,
-                    list(os.environ.keys()),
-                    list(os.environ.values())))
-
-
 def line_number(filename, string_to_match):
     """Helper function to return the line number of the first matched string."""
     with io.open(filename, mode='r', encoding="utf-8") as f:
@@ -438,8 +430,6 @@ def system(commands, **kwargs):
             stdout=PIPE,
             stderr=PIPE,
             shell=True,
-            #encoding="utf-8",
-            #universal_newlines=True,
             **kwargs)
         pid = process.pid
         this_output, this_error = process.communicate()
@@ -731,12 +721,12 @@ class Base(unittest2.TestCase):
         else:
             self.lldbVSCodeExec = None
 
+        self.lldbOption = "-o 'settings set symbols.enable-external-lookup false'"
+
         # If we spawn an lldb process for test (via pexpect), do not load the
         # init file unless told otherwise.
-        if "NO_LLDBINIT" in os.environ and "NO" == os.environ["NO_LLDBINIT"]:
-            self.lldbOption = ""
-        else:
-            self.lldbOption = "--no-lldbinit"
+        if os.environ.get("NO_LLDBINIT") != "NO":
+            self.lldbOption += " --no-lldbinit"
 
         # Assign the test method name to self.testMethodName.
         #
@@ -1668,7 +1658,8 @@ class Base(unittest2.TestCase):
         elif self.getPlatform() == "openbsd":
             cflags += " -stdlib=libc++"
         elif self.getPlatform() == "netbsd":
-            cflags += " -stdlib=libstdc++"
+            # NetBSD defaults to libc++
+            pass
         elif "clang" in self.getCompiler():
             cflags += " -stdlib=libstdc++"
 
@@ -1704,7 +1695,7 @@ class Base(unittest2.TestCase):
         if self.getPlatform() in ('freebsd', 'linux', 'netbsd', 'openbsd'):
             return ['libc++.so.1']
         else:
-            return ['libc++.1.dylib', 'libc++abi.dylib']
+            return ['libc++.1.dylib', 'libc++abi.']
 
 # Metaclass for TestBase to change the list of test metods when a new TestCase is loaded.
 # We change the test methods to create a new test method for each test for each debug info we are
@@ -1865,9 +1856,11 @@ class TestBase(Base):
         # decorators.
         Base.setUp(self)
 
+        if lldbtest_config.inferior_env:
+            self.runCmd('settings set target.env-vars {}'.format(lldbtest_config.inferior_env))
+
         # Set the clang modules cache path used by LLDB.
-        mod_cache = os.path.join(os.path.join(os.environ["LLDB_BUILD"],
-                                              "module-cache-lldb"))
+        mod_cache = os.path.join(os.environ["LLDB_BUILD"], "module-cache-lldb")
         self.runCmd('settings set symbols.clang-modules-cache-path "%s"'
                     % mod_cache)
 
@@ -1875,6 +1868,13 @@ class TestBase(Base):
         # different binaries with the same UUID, because they only
         # differ in the debug info, which is not being hashed.
         self.runCmd('settings set symbols.enable-external-lookup false')
+
+        # Disable color.
+        self.runCmd("settings set use-color false")
+
+        # Make sure that a sanitizer LLDB's environment doesn't get passed on.
+        if 'DYLD_LIBRARY_PATH' in os.environ:
+            self.runCmd('settings set target.env-vars DYLD_LIBRARY_PATH=')
 
         if "LLDB_MAX_LAUNCH_COUNT" in os.environ:
             self.maxLaunchCount = int(os.environ["LLDB_MAX_LAUNCH_COUNT"])

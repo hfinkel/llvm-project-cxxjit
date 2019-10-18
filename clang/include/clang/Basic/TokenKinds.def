@@ -32,6 +32,9 @@
 #ifndef CONCEPTS_KEYWORD
 #define CONCEPTS_KEYWORD(X) CXX2A_KEYWORD(X,KEYCONCEPTS)
 #endif
+#ifndef COROUTINES_KEYWORD
+#define COROUTINES_KEYWORD(X) CXX2A_KEYWORD(X,KEYCOROUTINES)
+#endif
 #ifndef MODULES_KEYWORD
 #define MODULES_KEYWORD(X) KEYWORD(X,KEYMODULES)
 #endif
@@ -151,7 +154,9 @@ TOK(utf32_char_constant) // U'a'
 // C99 6.4.5: String Literals.
 TOK(string_literal)      // "foo"
 TOK(wide_string_literal) // L"foo"
-TOK(angle_string_literal)// <foo>
+
+// C11 6.4.7: Header Names
+TOK(header_name)         // <foo>, or "foo" lexed as a header-name
 
 // C++11 String Literals.
 TOK(utf8_string_literal) // u8"foo"
@@ -247,15 +252,13 @@ PUNCTUATOR(caretcaret,            "^^")
 //   KEYNOMS18 - This is a keyword that must never be enabled under
 //               MSVC <= v18.
 //   KEYOPENCLC   - This is a keyword in OpenCL C
-//   KEYOPENCLCXX - This is a keyword in OpenCL C++
-//   KEYNOOPENCL  - This is a keyword that is not supported in OpenCL C
-//                  nor in OpenCL C++.
+//   KEYOPENCLCXX - This is a keyword in C++ for OpenCL
+//   KEYNOOPENCL  - This is a keyword that is not supported in OpenCL
 //   KEYALTIVEC - This is a keyword in AltiVec
 //   KEYZVECTOR - This is a keyword for the System z vector extensions,
 //                which are heavily based on AltiVec
 //   KEYBORLAND - This is a keyword if Borland extensions are enabled
-//   KEYCOROUTINES - This is a keyword if support for the C++ coroutines
-//                   TS is enabled
+//   KEYCOROUTINES - This is a keyword if support for C++ coroutines is enabled
 //   BOOLSUPPORT - This is a keyword if 'bool' is a built-in type
 //   HALFSUPPORT - This is a keyword if 'half' is a built-in type
 //   WCHARSUPPORT - This is a keyword if 'wchar_t' is a built-in type
@@ -371,17 +374,18 @@ CXX11_KEYWORD(thread_local          , 0)
 CONCEPTS_KEYWORD(concept)
 CONCEPTS_KEYWORD(requires)
 
-// C++ coroutines TS keywords
-KEYWORD(co_await                    , KEYCOROUTINES)
-KEYWORD(co_return                   , KEYCOROUTINES)
-KEYWORD(co_yield                    , KEYCOROUTINES)
+// C++2a / coroutines TS keywords
+COROUTINES_KEYWORD(co_await)
+COROUTINES_KEYWORD(co_return)
+COROUTINES_KEYWORD(co_yield)
 
 // C++ modules TS keywords
 MODULES_KEYWORD(module)
 MODULES_KEYWORD(import)
 
-// C++ char8_t proposal
-KEYWORD(char8_t                     , CHAR8SUPPORT)
+// C++20 keywords.
+CXX2A_KEYWORD(char8_t               , CHAR8SUPPORT)
+CXX2A_KEYWORD(consteval             , 0)
 
 // C11 Extension
 KEYWORD(_Float16                    , KEYALL)
@@ -400,6 +404,11 @@ KEYWORD(__alignof                   , KEYALL)
 KEYWORD(__attribute                 , KEYALL)
 KEYWORD(__builtin_choose_expr       , KEYALL)
 KEYWORD(__builtin_offsetof          , KEYALL)
+KEYWORD(__builtin_FILE              , KEYALL)
+KEYWORD(__builtin_FUNCTION          , KEYALL)
+KEYWORD(__builtin_LINE              , KEYALL)
+KEYWORD(__builtin_COLUMN            , KEYALL)
+
 // __builtin_types_compatible_p is a GNU C extension that we handle like a C++
 // type trait.
 TYPE_TRAIT_2(__builtin_types_compatible_p, TypeCompatible, KEYNOCXX)
@@ -535,11 +544,11 @@ KEYWORD(__local                     , KEYOPENCLC | KEYOPENCLCXX)
 KEYWORD(__constant                  , KEYOPENCLC | KEYOPENCLCXX)
 KEYWORD(__private                   , KEYOPENCLC | KEYOPENCLCXX)
 KEYWORD(__generic                   , KEYOPENCLC | KEYOPENCLCXX)
-ALIAS("global", __global            , KEYOPENCLC)
-ALIAS("local", __local              , KEYOPENCLC)
-ALIAS("constant", __constant        , KEYOPENCLC)
+ALIAS("global", __global            , KEYOPENCLC | KEYOPENCLCXX)
+ALIAS("local", __local              , KEYOPENCLC | KEYOPENCLCXX)
+ALIAS("constant", __constant        , KEYOPENCLC | KEYOPENCLCXX)
 ALIAS("private", __private          , KEYOPENCLC)
-ALIAS("generic", __generic          , KEYOPENCLC)
+ALIAS("generic", __generic          , KEYOPENCLC | KEYOPENCLCXX)
 // OpenCL function qualifiers
 KEYWORD(__kernel                    , KEYOPENCLC | KEYOPENCLCXX)
 ALIAS("kernel", __kernel            , KEYOPENCLC | KEYOPENCLCXX)
@@ -559,7 +568,7 @@ KEYWORD(vec_step                    , KEYOPENCLC | KEYALTIVEC | KEYZVECTOR)
 // OpenMP Type Traits
 KEYWORD(__builtin_omp_required_simd_align, KEYALL)
 
-KEYWORD(pipe                        , KEYOPENCLC)
+KEYWORD(pipe                        , KEYOPENCLC | KEYOPENCLCXX)
 
 // Borland Extensions.
 KEYWORD(__pascal                    , KEYALL)
@@ -660,7 +669,7 @@ ALIAS("_pascal"      , __pascal   , KEYBORLAND)
 KEYWORD(__builtin_convertvector   , KEYALL)
 ALIAS("__char16_t"   , char16_t   , KEYCXX)
 ALIAS("__char32_t"   , char32_t   , KEYCXX)
-
+KEYWORD(__builtin_bit_cast        , KEYALL)
 KEYWORD(__builtin_available       , KEYALL)
 
 // Clang-specific keywords enabled only in testing.
@@ -822,6 +831,10 @@ ANNOTATION(pragma_attribute)
 ANNOTATION(module_include)
 ANNOTATION(module_begin)
 ANNOTATION(module_end)
+
+// Annotation for a header_name token that has been looked up and transformed
+// into the name of a header unit.
+ANNOTATION(header_unit)
 
 #undef ANNOTATION
 #undef TESTING_KEYWORD

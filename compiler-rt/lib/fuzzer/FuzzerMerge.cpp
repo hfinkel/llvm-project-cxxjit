@@ -324,6 +324,7 @@ void CrashResistantMerge(const Vector<std::string> &Args,
   Command BaseCmd(Args);
   BaseCmd.removeFlag("merge");
   BaseCmd.removeFlag("fork");
+  BaseCmd.removeFlag("collect_data_flow");
   for (size_t Attempt = 1; Attempt <= NumAttempts; Attempt++) {
     Fuzzer::MaybeExitGracefully();
     VPrintf(V, "MERGE-OUTER: attempt %zd\n", Attempt);
@@ -331,7 +332,7 @@ void CrashResistantMerge(const Vector<std::string> &Args,
     Cmd.addFlag("merge_control_file", CFPath);
     Cmd.addFlag("merge_inner", "1");
     if (!V) {
-      Cmd.setOutputFile("/dev/null");  // TODO: need to handle this on Windows?
+      Cmd.setOutputFile(getDevNull());
       Cmd.combineOutAndErr();
     }
     auto ExitCode = ExecuteCommand(Cmd);

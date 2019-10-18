@@ -6,24 +6,25 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "GlobalCompilationDatabase.h"
 #include "Logger.h"
+#include "Path.h"
 #include "index/Background.h"
+#include "llvm/ADT/Optional.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
-#include "llvm/Support/SHA1.h"
+#include <functional>
 
 namespace clang {
 namespace clangd {
 namespace {
-
-using FileDigest = decltype(llvm::SHA1::hash({}));
-
-static FileDigest digest(StringRef Content) {
-  return llvm::SHA1::hash({(const uint8_t *)Content.data(), Content.size()});
-}
 
 std::string getShardPathFromFilePath(llvm::StringRef ShardRoot,
                                      llvm::StringRef FilePath) {
@@ -63,19 +64,19 @@ writeAtomically(llvm::StringRef OutPath,
 }
 
 // Uses disk as a storage for index shards. Creates a directory called
-// ".clangd-index/" under the path provided during construction.
+// ".clangd/index/" under the path provided during construction.
 class DiskBackedIndexStorage : public BackgroundIndexStorage {
   std::string DiskShardRoot;
 
 public:
-  // Sets DiskShardRoot to (Directory + ".clangd-index/") which is the base
+  // Sets DiskShardRoot to (Directory + ".clangd/index/") which is the base
   // directory for all shard files.
   DiskBackedIndexStorage(llvm::StringRef Directory) {
     llvm::SmallString<128> CDBDirectory(Directory);
-    llvm::sys::path::append(CDBDirectory, ".clangd-index/");
+    llvm::sys::path::append(CDBDirectory, ".clangd", "index");
     DiskShardRoot = CDBDirectory.str();
     std::error_code OK;
-    std::error_code EC = llvm::sys::fs::create_directory(DiskShardRoot);
+    std::error_code EC = llvm::sys::fs::create_directories(DiskShardRoot);
     if (EC != OK) {
       elog("Failed to create directory {0} for index storage: {1}",
            DiskShardRoot, EC.message());
@@ -125,37 +126,50 @@ public:
 // Creates and owns IndexStorages for multiple CDBs.
 class DiskBackedIndexStorageManager {
 public:
-  DiskBackedIndexStorageManager()
-      : IndexStorageMapMu(llvm::make_unique<std::mutex>()) {}
+  DiskBackedIndexStorageManager(
+      std::function<llvm::Optional<ProjectInfo>(PathRef)> GetProjectInfo)
+      : IndexStorageMapMu(llvm::make_unique<std::mutex>()),
+        GetProjectInfo(std::move(GetProjectInfo)) {
+    llvm::SmallString<128> HomeDir;
+    llvm::sys::path::home_directory(HomeDir);
+    this->HomeDir = HomeDir.str().str();
+  }
 
-  // Creates or fetches to storage from cache for the specified CDB.
-  BackgroundIndexStorage *operator()(llvm::StringRef CDBDirectory) {
+  // Creates or fetches to storage from cache for the specified project.
+  BackgroundIndexStorage *operator()(PathRef File) {
     std::lock_guard<std::mutex> Lock(*IndexStorageMapMu);
+    Path CDBDirectory = HomeDir;
+    if (auto PI = GetProjectInfo(File))
+      CDBDirectory = PI->SourceRoot;
     auto &IndexStorage = IndexStorageMap[CDBDirectory];
     if (!IndexStorage)
       IndexStorage = create(CDBDirectory);
     return IndexStorage.get();
   }
 
-  // Creates or fetches to storage from cache for the specified CDB.
-  BackgroundIndexStorage *createStorage(llvm::StringRef CDBDirectory);
-
 private:
-  std::unique_ptr<BackgroundIndexStorage> create(llvm::StringRef CDBDirectory) {
-    if (CDBDirectory.empty())
+  std::unique_ptr<BackgroundIndexStorage> create(PathRef CDBDirectory) {
+    if (CDBDirectory.empty()) {
+      elog("Tried to create storage for empty directory!");
       return llvm::make_unique<NullStorage>();
+    }
     return llvm::make_unique<DiskBackedIndexStorage>(CDBDirectory);
   }
 
+  Path HomeDir;
+
   llvm::StringMap<std::unique_ptr<BackgroundIndexStorage>> IndexStorageMap;
   std::unique_ptr<std::mutex> IndexStorageMapMu;
+
+  std::function<llvm::Optional<ProjectInfo>(PathRef)> GetProjectInfo;
 };
 
 } // namespace
 
 BackgroundIndexStorage::Factory
-BackgroundIndexStorage::createDiskBackedStorageFactory() {
-  return DiskBackedIndexStorageManager();
+BackgroundIndexStorage::createDiskBackedStorageFactory(
+    std::function<llvm::Optional<ProjectInfo>(PathRef)> GetProjectInfo) {
+  return DiskBackedIndexStorageManager(std::move(GetProjectInfo));
 }
 
 } // namespace clangd

@@ -299,7 +299,7 @@ void DecodeVPERM2X128Mask(unsigned NumElts, unsigned Imm,
     unsigned HalfMask = Imm >> (l * 4);
     unsigned HalfBegin = (HalfMask & 0x3) * HalfSize;
     for (unsigned i = HalfBegin, e = HalfBegin + HalfSize; i != e; ++i)
-      ShuffleMask.push_back(HalfMask & 8 ? SM_SentinelZero : (int)i);
+      ShuffleMask.push_back((HalfMask & 8) ? SM_SentinelZero : (int)i);
   }
 }
 
@@ -383,7 +383,8 @@ void DecodeVPERMMask(unsigned NumElts, unsigned Imm,
 }
 
 void DecodeZeroExtendMask(unsigned SrcScalarBits, unsigned DstScalarBits,
-                          unsigned NumDstElts, SmallVectorImpl<int> &Mask) {
+                          unsigned NumDstElts, bool IsAnyExtend,
+                          SmallVectorImpl<int> &Mask) {
   unsigned Scale = DstScalarBits / SrcScalarBits;
   assert(SrcScalarBits < DstScalarBits &&
          "Expected zero extension mask to increase scalar size");
@@ -391,7 +392,7 @@ void DecodeZeroExtendMask(unsigned SrcScalarBits, unsigned DstScalarBits,
   for (unsigned i = 0; i != NumDstElts; i++) {
     Mask.push_back(i);
     for (unsigned j = 1; j != Scale; j++)
-      Mask.push_back(SM_SentinelZero);
+      Mask.push_back(IsAnyExtend ? SM_SentinelUndef : SM_SentinelZero);
   }
 }
 

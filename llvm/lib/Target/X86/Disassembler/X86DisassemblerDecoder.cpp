@@ -376,8 +376,7 @@ static int readPrefixes(struct InternalInstruction* insn) {
       if (byte == 0xf3 && (nextByte == 0x88 || nextByte == 0x89 ||
                            nextByte == 0xc6 || nextByte == 0xc7)) {
         insn->xAcquireRelease = true;
-        if (nextByte != 0x90) // PAUSE instruction support
-          break;
+        break;
       }
       if (isREX(insn, nextByte)) {
         uint8_t nnextByte;
@@ -883,7 +882,7 @@ static int getID(struct InternalInstruction* insn, const void *miiArg) {
       if (aaaFromEVEX4of4(insn->vectorExtensionPrefix[3]))
         attrMask |= ATTR_EVEXK;
       if (lFromEVEX4of4(insn->vectorExtensionPrefix[3]))
-        attrMask |= ATTR_EVEXL;
+        attrMask |= ATTR_VEXL;
       if (l2FromEVEX4of4(insn->vectorExtensionPrefix[3]))
         attrMask |= ATTR_EVEXL2;
     } else if (insn->vectorExtensionType == TYPE_VEX_3B) {
@@ -1469,6 +1468,10 @@ static int readModRM(struct InternalInstruction* insn) {
       if (index > 7)                                      \
         *valid = 0;                                       \
       return prefix##_K0 + index;                         \
+    case TYPE_VK_PAIR:                                    \
+      if (index > 7)                                      \
+        *valid = 0;                                       \
+      return prefix##_K0_K1 + (index / 2);                \
     case TYPE_MM64:                                       \
       return prefix##_MM0 + (index & 0x7);                \
     case TYPE_SEGMENTREG:                                 \
@@ -1845,6 +1848,9 @@ static int readOperands(struct InternalInstruction* insn) {
     case ENCODING_Rv:
       if (readOpcodeRegister(insn, 0))
         return -1;
+      break;
+    case ENCODING_CC:
+      insn->immediates[1] = insn->opcode & 0xf;
       break;
     case ENCODING_FP:
       break;

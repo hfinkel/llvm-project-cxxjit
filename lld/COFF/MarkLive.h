@@ -15,7 +15,9 @@
 namespace lld {
 namespace coff {
 
-void markLive(ArrayRef<Chunk *> Chunks);
+class Chunk;
+
+void markLive(ArrayRef<Chunk *> chunks);
 
 } // namespace coff
 } // namespace lld

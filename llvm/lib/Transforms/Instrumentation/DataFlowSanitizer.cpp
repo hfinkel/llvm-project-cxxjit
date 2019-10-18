@@ -437,6 +437,7 @@ public:
   }
 
   void visitOperandShadowInst(Instruction &I);
+  void visitUnaryOperator(UnaryOperator &UO);
   void visitBinaryOperator(BinaryOperator &BO);
   void visitCastInst(CastInst &CI);
   void visitCmpInst(CmpInst &CI);
@@ -1190,10 +1191,10 @@ Value *DFSanFunction::loadShadow(Value *Addr, uint64_t Size, uint64_t Align,
   }
 
   uint64_t ShadowAlign = Align * DFS.ShadowWidth / 8;
-  SmallVector<Value *, 2> Objs;
+  SmallVector<const Value *, 2> Objs;
   GetUnderlyingObjects(Addr, Objs, Pos->getModule()->getDataLayout());
   bool AllConstants = true;
-  for (Value *Obj : Objs) {
+  for (const Value *Obj : Objs) {
     if (isa<Function>(Obj) || isa<BlockAddress>(Obj))
       continue;
     if (isa<GlobalVariable>(Obj) && cast<GlobalVariable>(Obj)->isConstant())
@@ -1396,6 +1397,10 @@ void DFSanVisitor::visitStoreInst(StoreInst &SI) {
     Shadow = DFSF.combineShadows(Shadow, PtrShadow, &SI);
   }
   DFSF.storeShadow(SI.getPointerOperand(), Size, Align, Shadow, &SI);
+}
+
+void DFSanVisitor::visitUnaryOperator(UnaryOperator &UO) {
+  visitOperandShadowInst(UO);
 }
 
 void DFSanVisitor::visitBinaryOperator(BinaryOperator &BO) {

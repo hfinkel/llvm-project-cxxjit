@@ -52,7 +52,6 @@ CMIUtilString IntToHexAddrStr(uint32_t number) {
 } // namespace
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataEvaluateExpression constructor.
 // Type:    Method.
 // Args:    None.
@@ -71,7 +70,6 @@ CMICmdCmdDataEvaluateExpression::CMICmdCmdDataEvaluateExpression()
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataEvaluateExpression destructor.
 // Type:    Overrideable.
 // Args:    None.
@@ -81,7 +79,6 @@ CMICmdCmdDataEvaluateExpression::CMICmdCmdDataEvaluateExpression()
 CMICmdCmdDataEvaluateExpression::~CMICmdCmdDataEvaluateExpression() {}
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The parses the command line
 // options
 //          arguments to extract values for each of those arguments.
@@ -98,7 +95,6 @@ bool CMICmdCmdDataEvaluateExpression::ParseArgs() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command does work in this
 // function.
 //          The command is likely to communicate with the LLDB SBDebugger in
@@ -150,7 +146,6 @@ bool CMICmdCmdDataEvaluateExpression::Execute() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command prepares a MI Record
 // Result
 //          for the work carried out in the Execute().
@@ -205,7 +200,6 @@ bool CMICmdCmdDataEvaluateExpression::Acknowledge() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Required by the CMICmdFactory when registering *this command. The
 // factory
 //          calls this function to create an instance of *this command.
@@ -219,7 +213,6 @@ CMICmdBase *CMICmdCmdDataEvaluateExpression::CreateSelf() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Examine the expression string to see if it contains invalid
 // characters.
 // Type:    Method.
@@ -241,12 +234,8 @@ bool CMICmdCmdDataEvaluateExpression::HaveInvalidCharacterInExpression(
   return bFoundInvalidCharInExpression;
 }
 
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataDisassemble constructor.
 // Type:    Method.
 // Args:    None.
@@ -264,7 +253,6 @@ CMICmdCmdDataDisassemble::CMICmdCmdDataDisassemble()
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataDisassemble destructor.
 // Type:    Overrideable.
 // Args:    None.
@@ -274,7 +262,6 @@ CMICmdCmdDataDisassemble::CMICmdCmdDataDisassemble()
 CMICmdCmdDataDisassemble::~CMICmdCmdDataDisassemble() {}
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The parses the command line
 // options
 //          arguments to extract values for each of those arguments.
@@ -296,7 +283,6 @@ bool CMICmdCmdDataDisassemble::ParseArgs() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command does work in this
 // function.
 //          The command is likely to communicate with the LLDB SBDebugger in
@@ -415,10 +401,14 @@ bool CMICmdCmdDataDisassemble::Execute() {
       const MIuint nLine = lineEntry.GetLine();
       const char *pFileName = lineEntry.GetFileSpec().GetFilename();
       pFileName = (pFileName != nullptr) ? pFileName : pUnknown;
+      // Get a full path to the file.
+      char pathBuffer[PATH_MAX];
+      lineEntry.GetFileSpec().GetPath(pathBuffer, PATH_MAX);
 
-      // MI "src_and_asm_line={line=\"%u\",file=\"%s\",line_asm_insn=[ ]}"
+      // MI "src_and_asm_line={line=\"%u\",file=\"%s\",line_asm_insn=[ ],
+      // fullname=\"%s\"}"
       const CMICmnMIValueConst miValueConst(
-          CMIUtilString::Format("0x%u", nLine));
+          CMIUtilString::Format("%u", nLine));
       const CMICmnMIValueResult miValueResult("line", miValueConst);
       CMICmnMIValueTuple miValueTuple2(miValueResult);
       const CMICmnMIValueConst miValueConst2(pFileName);
@@ -427,6 +417,9 @@ bool CMICmdCmdDataDisassemble::Execute() {
       const CMICmnMIValueList miValueList(miValueTuple);
       const CMICmnMIValueResult miValueResult3("line_asm_insn", miValueList);
       miValueTuple2.Add(miValueResult3);
+      const CMICmnMIValueConst miValueConst5(pathBuffer);
+      const CMICmnMIValueResult miValueResult5("fullname", miValueConst5);
+      miValueTuple2.Add(miValueResult5);
       const CMICmnMIValueResult miValueResult4("src_and_asm_line",
                                                miValueTuple2);
       m_miValueList.Add(miValueResult4);
@@ -439,7 +432,6 @@ bool CMICmdCmdDataDisassemble::Execute() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command prepares a MI Record
 // Result
 //          for the work carried out in the Execute().
@@ -460,7 +452,6 @@ bool CMICmdCmdDataDisassemble::Acknowledge() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Required by the CMICmdFactory when registering *this command. The
 // factory
 //          calls this function to create an instance of *this command.
@@ -473,12 +464,8 @@ CMICmdBase *CMICmdCmdDataDisassemble::CreateSelf() {
   return new CMICmdCmdDataDisassemble();
 }
 
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataReadMemoryBytes constructor.
 // Type:    Method.
 // Args:    None.
@@ -497,7 +484,6 @@ CMICmdCmdDataReadMemoryBytes::CMICmdCmdDataReadMemoryBytes()
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataReadMemoryBytes destructor.
 // Type:    Overrideable.
 // Args:    None.
@@ -512,7 +498,6 @@ CMICmdCmdDataReadMemoryBytes::~CMICmdCmdDataReadMemoryBytes() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The parses the command line
 // options
 //          arguments to extract values for each of those arguments.
@@ -533,7 +518,6 @@ bool CMICmdCmdDataReadMemoryBytes::ParseArgs() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command does work in this
 // function.
 //          The command is likely to communicate with the LLDB SBDebugger in
@@ -663,7 +647,6 @@ bool CMICmdCmdDataReadMemoryBytes::Execute() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command prepares a MI Record
 // Result
 //          for the work carried out in the Execute().
@@ -711,7 +694,6 @@ bool CMICmdCmdDataReadMemoryBytes::Acknowledge() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Required by the CMICmdFactory when registering *this command. The
 // factory
 //          calls this function to create an instance of *this command.
@@ -724,12 +706,8 @@ CMICmdBase *CMICmdCmdDataReadMemoryBytes::CreateSelf() {
   return new CMICmdCmdDataReadMemoryBytes();
 }
 
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataReadMemory constructor.
 // Type:    Method.
 // Args:    None.
@@ -745,7 +723,6 @@ CMICmdCmdDataReadMemory::CMICmdCmdDataReadMemory() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataReadMemory destructor.
 // Type:    Overrideable.
 // Args:    None.
@@ -755,7 +732,6 @@ CMICmdCmdDataReadMemory::CMICmdCmdDataReadMemory() {
 CMICmdCmdDataReadMemory::~CMICmdCmdDataReadMemory() {}
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command does work in this
 // function.
 //          The command is likely to communicate with the LLDB SBDebugger in
@@ -772,7 +748,6 @@ bool CMICmdCmdDataReadMemory::Execute() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command prepares a MI Record
 // Result
 //          for the work carried out in the Execute().
@@ -797,7 +772,6 @@ bool CMICmdCmdDataReadMemory::Acknowledge() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Required by the CMICmdFactory when registering *this command. The
 // factory
 //          calls this function to create an instance of *this command.
@@ -810,12 +784,8 @@ CMICmdBase *CMICmdCmdDataReadMemory::CreateSelf() {
   return new CMICmdCmdDataReadMemory();
 }
 
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataListRegisterNames constructor.
 // Type:    Method.
 // Args:    None.
@@ -832,7 +802,6 @@ CMICmdCmdDataListRegisterNames::CMICmdCmdDataListRegisterNames()
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataReadMemoryBytes destructor.
 // Type:    Overrideable.
 // Args:    None.
@@ -842,7 +811,6 @@ CMICmdCmdDataListRegisterNames::CMICmdCmdDataListRegisterNames()
 CMICmdCmdDataListRegisterNames::~CMICmdCmdDataListRegisterNames() {}
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The parses the command line
 // options
 //          arguments to extract values for each of those arguments.
@@ -860,7 +828,6 @@ bool CMICmdCmdDataListRegisterNames::ParseArgs() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command does work in this
 // function.
 //          The command is likely to communicate with the LLDB SBDebugger in
@@ -925,7 +892,6 @@ bool CMICmdCmdDataListRegisterNames::Execute() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command prepares a MI Record
 // Result
 //          for the work carried out in the Execute().
@@ -946,7 +912,6 @@ bool CMICmdCmdDataListRegisterNames::Acknowledge() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Required by the CMICmdFactory when registering *this command. The
 // factory
 //          calls this function to create an instance of *this command.
@@ -960,7 +925,6 @@ CMICmdBase *CMICmdCmdDataListRegisterNames::CreateSelf() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Required by the CMICmdFactory when registering *this command. The
 // factory
 //          calls this function to create an instance of *this command.
@@ -994,12 +958,8 @@ CMICmdCmdDataListRegisterNames::GetRegister(const MIuint vRegisterIndex) const {
   return lldb::SBValue();
 }
 
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataListRegisterValues constructor.
 // Type:    Method.
 // Args:    None.
@@ -1017,7 +977,6 @@ CMICmdCmdDataListRegisterValues::CMICmdCmdDataListRegisterValues()
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataListRegisterValues destructor.
 // Type:    Overrideable.
 // Args:    None.
@@ -1027,7 +986,6 @@ CMICmdCmdDataListRegisterValues::CMICmdCmdDataListRegisterValues()
 CMICmdCmdDataListRegisterValues::~CMICmdCmdDataListRegisterValues() {}
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The parses the command line
 // options
 //          arguments to extract values for each of those arguments.
@@ -1050,7 +1008,6 @@ bool CMICmdCmdDataListRegisterValues::ParseArgs() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command does work in this
 // function.
 //          The command is likely to communicate with the LLDB SBDebugger in
@@ -1132,7 +1089,6 @@ bool CMICmdCmdDataListRegisterValues::Execute() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command prepares a MI Record
 // Result
 //          for the work carried out in the Execute().
@@ -1153,7 +1109,6 @@ bool CMICmdCmdDataListRegisterValues::Acknowledge() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Required by the CMICmdFactory when registering *this command. The
 // factory
 //          calls this function to create an instance of *this command.
@@ -1167,7 +1122,6 @@ CMICmdBase *CMICmdCmdDataListRegisterValues::CreateSelf() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Required by the CMICmdFactory when registering *this command. The
 // factory
 //          calls this function to create an instance of *this command.
@@ -1202,7 +1156,6 @@ lldb::SBValue CMICmdCmdDataListRegisterValues::GetRegister(
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Adds the register value to the output list.
 // Type:    Method.
 // Args:    Value of the register, its index and output format.
@@ -1224,12 +1177,8 @@ void CMICmdCmdDataListRegisterValues::AddToOutput(
   m_miValueList.Add(miValueTuple);
 }
 
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataListRegisterChanged constructor.
 // Type:    Method.
 // Args:    None.
@@ -1245,7 +1194,6 @@ CMICmdCmdDataListRegisterChanged::CMICmdCmdDataListRegisterChanged() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataListRegisterChanged destructor.
 // Type:    Overrideable.
 // Args:    None.
@@ -1255,7 +1203,6 @@ CMICmdCmdDataListRegisterChanged::CMICmdCmdDataListRegisterChanged() {
 CMICmdCmdDataListRegisterChanged::~CMICmdCmdDataListRegisterChanged() {}
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command does work in this
 // function.
 //          The command is likely to communicate with the LLDB SBDebugger in
@@ -1273,7 +1220,6 @@ bool CMICmdCmdDataListRegisterChanged::Execute() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command prepares a MI Record
 // Result
 //          for the work carried out in the Execute().
@@ -1295,7 +1241,6 @@ bool CMICmdCmdDataListRegisterChanged::Acknowledge() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Required by the CMICmdFactory when registering *this command. The
 // factory
 //          calls this function to create an instance of *this command.
@@ -1308,12 +1253,8 @@ CMICmdBase *CMICmdCmdDataListRegisterChanged::CreateSelf() {
   return new CMICmdCmdDataListRegisterChanged();
 }
 
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataWriteMemoryBytes constructor.
 // Type:    Method.
 // Args:    None.
@@ -1331,7 +1272,6 @@ CMICmdCmdDataWriteMemoryBytes::CMICmdCmdDataWriteMemoryBytes()
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataWriteMemoryBytes destructor.
 // Type:    Overrideable.
 // Args:    None.
@@ -1341,7 +1281,6 @@ CMICmdCmdDataWriteMemoryBytes::CMICmdCmdDataWriteMemoryBytes()
 CMICmdCmdDataWriteMemoryBytes::~CMICmdCmdDataWriteMemoryBytes() {}
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The parses the command line
 // options
 //          arguments to extract values for each of those arguments.
@@ -1362,7 +1301,6 @@ bool CMICmdCmdDataWriteMemoryBytes::ParseArgs() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command does work in this
 // function.
 //          The command is likely to communicate with the LLDB SBDebugger in
@@ -1387,7 +1325,6 @@ bool CMICmdCmdDataWriteMemoryBytes::Execute() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command prepares a MI Record
 // Result
 //          for the work carried out in the Execute().
@@ -1409,7 +1346,6 @@ bool CMICmdCmdDataWriteMemoryBytes::Acknowledge() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Required by the CMICmdFactory when registering *this command. The
 // factory
 //          calls this function to create an instance of *this command.
@@ -1422,12 +1358,8 @@ CMICmdBase *CMICmdCmdDataWriteMemoryBytes::CreateSelf() {
   return new CMICmdCmdDataWriteMemoryBytes();
 }
 
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataWriteMemory constructor.
 // Type:    Method.
 // Args:    None.
@@ -1447,7 +1379,6 @@ CMICmdCmdDataWriteMemory::CMICmdCmdDataWriteMemory()
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataWriteMemory destructor.
 // Type:    Overrideable.
 // Args:    None.
@@ -1462,7 +1393,6 @@ CMICmdCmdDataWriteMemory::~CMICmdCmdDataWriteMemory() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The parses the command line
 // options
 //          arguments to extract values for each of those arguments.
@@ -1484,7 +1414,6 @@ bool CMICmdCmdDataWriteMemory::ParseArgs() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command does work in this
 // function.
 //          The command is likely to communicate with the LLDB SBDebugger in
@@ -1548,7 +1477,6 @@ bool CMICmdCmdDataWriteMemory::Execute() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command prepares a MI Record
 // Result
 //          for the work carried out in the Execute().
@@ -1567,7 +1495,6 @@ bool CMICmdCmdDataWriteMemory::Acknowledge() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Required by the CMICmdFactory when registering *this command. The
 // factory
 //          calls this function to create an instance of *this command.
@@ -1580,12 +1507,8 @@ CMICmdBase *CMICmdCmdDataWriteMemory::CreateSelf() {
   return new CMICmdCmdDataWriteMemory();
 }
 
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataInfoLine constructor.
 // Type:    Method.
 // Args:    None.
@@ -1604,7 +1527,6 @@ CMICmdCmdDataInfoLine::CMICmdCmdDataInfoLine()
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: CMICmdCmdDataInfoLine destructor.
 // Type:    Overrideable.
 // Args:    None.
@@ -1614,7 +1536,6 @@ CMICmdCmdDataInfoLine::CMICmdCmdDataInfoLine()
 CMICmdCmdDataInfoLine::~CMICmdCmdDataInfoLine() = default;
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The parses the command line
 // options
 //          arguments to extract values for each of those arguments.
@@ -1630,7 +1551,6 @@ bool CMICmdCmdDataInfoLine::ParseArgs() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command does work in this
 // function.
 //          The command is likely to communicate with the LLDB SBDebugger in
@@ -1725,7 +1645,6 @@ bool CMICmdCmdDataInfoLine::Execute() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: The invoker requires this function. The command prepares a MI Record
 // Result
 //          for the work carried out in the Execute().
@@ -1741,7 +1660,6 @@ bool CMICmdCmdDataInfoLine::Acknowledge() {
 }
 
 //++
-//------------------------------------------------------------------------------------
 // Details: Required by the CMICmdFactory when registering *this command. The
 // factory
 //          calls this function to create an instance of *this command.

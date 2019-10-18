@@ -20,6 +20,7 @@ unittest("AnalysisTests") {
     "DivergenceAnalysisTest.cpp",
     "DomTreeUpdaterTest.cpp",
     "GlobalsModRefTest.cpp",
+    "IVDescriptorsTest.cpp",
     "LazyCallGraphTest.cpp",
     "LoopInfoTest.cpp",
     "MemoryBuiltinsTest.cpp",
@@ -35,5 +36,6 @@ unittest("AnalysisTests") {
     "UnrollAnalyzerTest.cpp",
     "ValueLatticeTest.cpp",
     "ValueTrackingTest.cpp",
+    "VectorUtilsTest.cpp",
   ]
 }

@@ -1,4 +1,4 @@
-//===--- TransEmptyStatements.cpp - Transformations to ARC mode -----------===//
+//===-- TransEmptyStatementsAndDealloc.cpp - Transformations to ARC mode --===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -42,9 +42,8 @@ static bool isEmptyARCMTMacroStatement(NullStmt *S,
     return false;
 
   SourceManager &SM = Ctx.getSourceManager();
-  std::vector<SourceLocation>::iterator
-    I = std::upper_bound(MacroLocs.begin(), MacroLocs.end(), SemiLoc,
-                         BeforeThanCompare<SourceLocation>(SM));
+  std::vector<SourceLocation>::iterator I = llvm::upper_bound(
+      MacroLocs, SemiLoc, BeforeThanCompare<SourceLocation>(SM));
   --I;
   SourceLocation
       AfterMacroLoc = I->getLocWithOffset(getARCMTMacroName().size());

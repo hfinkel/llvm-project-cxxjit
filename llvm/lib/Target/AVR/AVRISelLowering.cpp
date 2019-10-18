@@ -89,9 +89,9 @@ AVRTargetLowering::AVRTargetLowering(const AVRTargetMachine &TM,
   setOperationAction(ISD::SRL_PARTS, MVT::i16, Expand);
 
   setOperationAction(ISD::ROTL, MVT::i8, Custom);
-  setOperationAction(ISD::ROTL, MVT::i16, Custom);
+  setOperationAction(ISD::ROTL, MVT::i16, Expand);
   setOperationAction(ISD::ROTR, MVT::i8, Custom);
-  setOperationAction(ISD::ROTR, MVT::i16, Custom);
+  setOperationAction(ISD::ROTR, MVT::i16, Expand);
 
   setOperationAction(ISD::BR_CC, MVT::i8, Custom);
   setOperationAction(ISD::BR_CC, MVT::i16, Custom);
@@ -237,7 +237,7 @@ AVRTargetLowering::AVRTargetLowering(const AVRTargetMachine &TM,
   setLibcallName(RTLIB::COS_F32, "cos");
 
   setMinFunctionAlignment(1);
-  setMinimumJumpTableEntries(INT_MAX);
+  setMinimumJumpTableEntries(UINT_MAX);
 }
 
 const char *AVRTargetLowering::getTargetNodeName(unsigned Opcode) const {
@@ -1689,6 +1689,8 @@ AVRTargetLowering::getConstraintType(StringRef Constraint) const {
   if (Constraint.size() == 1) {
     // See http://www.nongnu.org/avr-libc/user-manual/inline_asm.html
     switch (Constraint[0]) {
+    default:
+      break;
     case 'a': // Simple upper registers
     case 'b': // Base pointer registers pairs
     case 'd': // Upper register
@@ -1715,9 +1717,7 @@ AVRTargetLowering::getConstraintType(StringRef Constraint) const {
     case 'O': // Integer constant (Range: 8, 16, 24)
     case 'P': // Integer constant (Range: 1)
     case 'R': // Integer constant (Range: -6 to 5)x
-      return C_Other;
-    default:
-      break;
+      return C_Immediate;
     }
   }
 

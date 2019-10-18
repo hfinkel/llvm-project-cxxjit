@@ -15,9 +15,12 @@
 ///   Loukas Georgiadis, Princeton University, November 2005, pp. 21-23:
 ///   ftp://ftp.cs.princeton.edu/reports/2005/737.pdf
 ///
-/// This implements the O(n*log(n)) versions of EVAL and LINK, because it turns
-/// out that the theoretically slower O(n*log(n)) implementation is actually
-/// faster than the almost-linear O(n*alpha(n)) version, even for large CFGs.
+/// Semi-NCA algorithm runs in O(n^2) worst-case time but usually slightly
+/// faster than Simple Lengauer-Tarjan in practice.
+///
+/// O(n^2) worst cases happen when the computation of nearest common ancestors
+/// requires O(n) average time, which is very unlikely in real world. If this
+/// ever turns out to be an issue, consider implementing a hybrid algorithm.
 ///
 /// The file uses the Depth Based Search algorithm to perform incremental
 /// updates (insertion and deletions). The implemented algorithm is based on
@@ -254,42 +257,47 @@ struct SemiNCAInfo {
     return LastNum;
   }
 
-  NodePtr eval(NodePtr VIn, unsigned LastLinked) {
-    auto &VInInfo = NodeToInfo[VIn];
-    if (VInInfo.DFSNum < LastLinked)
-      return VIn;
+  // V is a predecessor of W. eval() returns V if V < W, otherwise the minimum
+  // of sdom(U), where U > W and there is a virtual forest path from U to V. The
+  // virtual forest consists of linked edges of processed vertices.
+  //
+  // We can follow Parent pointers (virtual forest edges) to determine the
+  // ancestor U with minimum sdom(U). But it is slow and thus we employ the path
+  // compression technique to speed up to O(m*log(n)). Theoretically the virtual
+  // forest can be organized as balanced trees to achieve almost linear
+  // O(m*alpha(m,n)) running time. But it requires two auxiliary arrays (Size
+  // and Child) and is unlikely to be faster than the simple implementation.
+  //
+  // For each vertex V, its Label points to the vertex with the minimal sdom(U)
+  // (Semi) in its path from V (included) to NodeToInfo[V].Parent (excluded).
+  NodePtr eval(NodePtr V, unsigned LastLinked,
+               SmallVectorImpl<InfoRec *> &Stack) {
+    InfoRec *VInfo = &NodeToInfo[V];
+    if (VInfo->Parent < LastLinked)
+      return VInfo->Label;
 
-    SmallVector<NodePtr, 32> Work;
-    SmallPtrSet<NodePtr, 32> Visited;
+    // Store ancestors except the last (root of a virtual tree) into a stack.
+    assert(Stack.empty());
+    do {
+      Stack.push_back(VInfo);
+      VInfo = &NodeToInfo[NumToNode[VInfo->Parent]];
+    } while (VInfo->Parent >= LastLinked);
 
-    if (VInInfo.Parent >= LastLinked)
-      Work.push_back(VIn);
-
-    while (!Work.empty()) {
-      NodePtr V = Work.back();
-      auto &VInfo = NodeToInfo[V];
-      NodePtr VAncestor = NumToNode[VInfo.Parent];
-
-      // Process Ancestor first
-      if (Visited.insert(VAncestor).second && VInfo.Parent >= LastLinked) {
-        Work.push_back(VAncestor);
-        continue;
-      }
-      Work.pop_back();
-
-      // Update VInfo based on Ancestor info
-      if (VInfo.Parent < LastLinked)
-        continue;
-
-      auto &VAInfo = NodeToInfo[VAncestor];
-      NodePtr VAncestorLabel = VAInfo.Label;
-      NodePtr VLabel = VInfo.Label;
-      if (NodeToInfo[VAncestorLabel].Semi < NodeToInfo[VLabel].Semi)
-        VInfo.Label = VAncestorLabel;
-      VInfo.Parent = VAInfo.Parent;
-    }
-
-    return VInInfo.Label;
+    // Path compression. Point each vertex's Parent to the root and update its
+    // Label if any of its ancestors (PInfo->Label) has a smaller Semi.
+    const InfoRec *PInfo = VInfo;
+    const InfoRec *PLabelInfo = &NodeToInfo[PInfo->Label];
+    do {
+      VInfo = Stack.pop_back_val();
+      VInfo->Parent = PInfo->Parent;
+      const InfoRec *VLabelInfo = &NodeToInfo[VInfo->Label];
+      if (PLabelInfo->Semi < VLabelInfo->Semi)
+        VInfo->Label = PInfo->Label;
+      else
+        PLabelInfo = VLabelInfo;
+      PInfo = VInfo;
+    } while (!Stack.empty());
+    return VInfo->Label;
   }
 
   // This function requires DFS to be run before calling it.
@@ -303,6 +311,7 @@ struct SemiNCAInfo {
     }
 
     // Step #1: Calculate the semidominators of all vertices.
+    SmallVector<InfoRec *, 32> EvalStack;
     for (unsigned i = NextDFSNum - 1; i >= 2; --i) {
       NodePtr W = NumToNode[i];
       auto &WInfo = NodeToInfo[W];
@@ -318,7 +327,7 @@ struct SemiNCAInfo {
         if (TN && TN->getLevel() < MinLevel)
           continue;
 
-        unsigned SemiU = NodeToInfo[eval(N, i + 1)].Semi;
+        unsigned SemiU = NodeToInfo[eval(N, i + 1, EvalStack)].Semi;
         if (SemiU < WInfo.Semi) WInfo.Semi = SemiU;
       }
     }
@@ -632,7 +641,9 @@ struct SemiNCAInfo {
         Bucket;
     SmallDenseSet<TreeNodePtr, 8> Visited;
     SmallVector<TreeNodePtr, 8> Affected;
-    SmallVector<TreeNodePtr, 8> VisitedNotAffectedQueue;
+#ifndef NDEBUG
+    SmallVector<TreeNodePtr, 8> VisitedUnaffected;
+#endif
   };
 
   static void InsertEdge(DomTreeT &DT, const BatchUpdatePtr BUI,
@@ -687,6 +698,17 @@ struct SemiNCAInfo {
     return true;
   }
 
+  static bool isPermutation(const SmallVectorImpl<NodePtr> &A,
+                            const SmallVectorImpl<NodePtr> &B) {
+    if (A.size() != B.size())
+      return false;
+    SmallPtrSet<NodePtr, 4> Set(A.begin(), A.end());
+    for (NodePtr N : B)
+      if (Set.count(N) == 0)
+        return false;
+    return true;
+  }
+
   // Updates the set of roots after insertion or deletion. This ensures that
   // roots are the same when after a series of updates and when the tree would
   // be built from scratch.
@@ -700,9 +722,8 @@ struct SemiNCAInfo {
       return;
 
     // Recalculate the set of roots.
-    auto Roots = FindRoots(DT, BUI);
-    if (DT.Roots.size() != Roots.size() ||
-        !std::is_permutation(DT.Roots.begin(), DT.Roots.end(), Roots.begin())) {
+    RootsT Roots = FindRoots(DT, BUI);
+    if (!isPermutation(DT.Roots, Roots)) {
       // The roots chosen in the CFG have changed. This is because the
       // incremental algorithm does not really know or use the set of roots and
       // can make a different (implicit) decision about which node within an
@@ -713,7 +734,6 @@ struct SemiNCAInfo {
       // It may be possible to update the tree without recalculating it, but
       // we do not know yet how to do it, and it happens rarely in practise.
       CalculateFromScratch(DT, BUI);
-      return;
     }
   }
 
@@ -800,8 +820,10 @@ struct SemiNCAInfo {
             // vertices. Store it in UnaffectedOnCurrentLevel.
             LLVM_DEBUG(dbgs() << "\t\tMarking visited not affected "
                               << BlockNamePrinter(Succ) << "\n");
-            II.VisitedNotAffectedQueue.push_back(SuccTN);
             UnaffectedOnCurrentLevel.push_back(SuccTN);
+#ifndef NDEBUG
+            II.VisitedUnaffected.push_back(SuccTN);
+#endif
           } else {
             // The condition is satisfied (Succ is affected). Add Succ to the
             // bucket queue.
@@ -833,20 +855,13 @@ struct SemiNCAInfo {
       TN->setIDom(NCD);
     }
 
-    UpdateLevelsAfterInsertion(II);
+#ifndef NDEBUG
+    for (const TreeNodePtr TN : II.VisitedUnaffected)
+      assert(TN->getLevel() == TN->getIDom()->getLevel() + 1 &&
+             "TN should have been updated by an affected ancestor");
+#endif
+
     if (IsPostDom) UpdateRootsAfterUpdate(DT, BUI);
-  }
-
-  static void UpdateLevelsAfterInsertion(InsertionInfo &II) {
-    LLVM_DEBUG(
-        dbgs() << "Updating levels for visited but not affected nodes\n");
-
-    for (const TreeNodePtr TN : II.VisitedNotAffectedQueue) {
-      LLVM_DEBUG(dbgs() << "\tlevel(" << BlockNamePrinter(TN) << ") = ("
-                        << BlockNamePrinter(TN->getIDom()) << ") "
-                        << TN->getIDom()->getLevel() << " + 1\n");
-      TN->UpdateLevel();
-    }
   }
 
   // Handles insertion to previously unreachable nodes.
@@ -1170,6 +1185,10 @@ struct SemiNCAInfo {
       BUI.FuturePredecessors[U.getTo()].push_back({U.getFrom(), U.getKind()});
     }
 
+#if 0
+    // FIXME: The LLVM_DEBUG macro only plays well with a modular
+    // build of LLVM when the header is marked as textual, but doing
+    // so causes redefinition errors.
     LLVM_DEBUG(dbgs() << "About to apply " << NumLegalized << " updates\n");
     LLVM_DEBUG(if (NumLegalized < 32) for (const auto &U
                                            : reverse(BUI.Updates)) {
@@ -1178,6 +1197,7 @@ struct SemiNCAInfo {
       dbgs() << "\n";
     });
     LLVM_DEBUG(dbgs() << "\n");
+#endif
 
     // Recalculate the DominatorTree when the number of updates
     // exceeds a threshold, which usually makes direct updating slower than
@@ -1203,8 +1223,13 @@ struct SemiNCAInfo {
   static void ApplyNextUpdate(DomTreeT &DT, BatchUpdateInfo &BUI) {
     assert(!BUI.Updates.empty() && "No updates to apply!");
     UpdateT CurrentUpdate = BUI.Updates.pop_back_val();
+#if 0
+    // FIXME: The LLVM_DEBUG macro only plays well with a modular
+    // build of LLVM when the header is marked as textual, but doing
+    // so causes redefinition errors.
     LLVM_DEBUG(dbgs() << "Applying update: ");
     LLVM_DEBUG(CurrentUpdate.dump(); dbgs() << "\n");
+#endif
 
     // Move to the next snapshot of the CFG by removing the reverse-applied
     // current update. Since updates are performed in the same order they are
@@ -1258,9 +1283,7 @@ struct SemiNCAInfo {
     }
 
     RootsT ComputedRoots = FindRoots(DT, nullptr);
-    if (DT.Roots.size() != ComputedRoots.size() ||
-        !std::is_permutation(DT.Roots.begin(), DT.Roots.end(),
-                             ComputedRoots.begin())) {
+    if (!isPermutation(DT.Roots, ComputedRoots)) {
       errs() << "Tree has different roots than freshly computed ones!\n";
       errs() << "\tPDT roots: ";
       for (const NodePtr N : DT.Roots) errs() << BlockNamePrinter(N) << ", ";

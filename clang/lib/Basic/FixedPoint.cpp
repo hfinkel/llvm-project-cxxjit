@@ -190,12 +190,12 @@ void APFixedPoint::toString(llvm::SmallVectorImpl<char> &Str) const {
   llvm::APInt FractPartMask = llvm::APInt::getAllOnesValue(Scale).zext(Width);
   llvm::APInt RadixInt = llvm::APInt(Width, 10);
 
-  IntPart.toString(Str, /*radix=*/10);
+  IntPart.toString(Str, /*Radix=*/10);
   Str.push_back('.');
   do {
     (FractPart * RadixInt)
         .lshr(Scale)
-        .toString(Str, /*radix=*/10, Val.isSigned());
+        .toString(Str, /*Radix=*/10, Val.isSigned());
     FractPart = (FractPart * RadixInt) & FractPartMask;
   } while (FractPart != 0);
 }
@@ -216,6 +216,43 @@ APFixedPoint APFixedPoint::negate(bool *Overflow) const {
     return Val.isMinSignedValue() ? getMax(Sema) : APFixedPoint(-Val, Sema);
   else
     return APFixedPoint(Sema);
+}
+
+llvm::APSInt APFixedPoint::convertToInt(unsigned DstWidth, bool DstSign,
+                                        bool *Overflow) const {
+  llvm::APSInt Result = getIntPart();
+  unsigned SrcWidth = getWidth();
+
+  llvm::APSInt DstMin = llvm::APSInt::getMinValue(DstWidth, !DstSign);
+  llvm::APSInt DstMax = llvm::APSInt::getMaxValue(DstWidth, !DstSign);
+
+  if (SrcWidth < DstWidth) {
+    Result = Result.extend(DstWidth);
+  } else if (SrcWidth > DstWidth) {
+    DstMin = DstMin.extend(SrcWidth);
+    DstMax = DstMax.extend(SrcWidth);
+  }
+
+  if (Overflow) {
+    if (Result.isSigned() && !DstSign) {
+      *Overflow = Result.isNegative() || Result.ugt(DstMax);
+    } else if (Result.isUnsigned() && DstSign) {
+      *Overflow = Result.ugt(DstMax);
+    } else {
+      *Overflow = Result < DstMin || Result > DstMax;
+    }
+  }
+
+  Result.setIsSigned(DstSign);
+  return Result.extOrTrunc(DstWidth);
+}
+
+APFixedPoint APFixedPoint::getFromIntValue(const llvm::APSInt &Value,
+                                           const FixedPointSemantics &DstFXSema,
+                                           bool *Overflow) {
+  FixedPointSemantics IntFXSema = FixedPointSemantics::GetIntegerSemantics(
+      Value.getBitWidth(), Value.isSigned());
+  return APFixedPoint(Value, IntFXSema).convert(DstFXSema, Overflow);
 }
 
 }  // namespace clang

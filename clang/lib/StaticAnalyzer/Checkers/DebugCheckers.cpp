@@ -35,9 +35,9 @@ public:
   void checkASTCodeBody(const Decl *D, AnalysisManager& mgr,
                         BugReporter &BR) const {
     if (AnalysisDeclContext *AC = mgr.getAnalysisDeclContext(D)) {
-      DominatorTree dom;
-      dom.buildDominatorTree(*AC);
-      dom.dump();
+      CFGDomTree Dom;
+      Dom.buildDominatorTree(AC->getCFG());
+      Dom.dump();
     }
   }
 };
@@ -48,6 +48,57 @@ void ento::registerDominatorsTreeDumper(CheckerManager &mgr) {
 }
 
 bool ento::shouldRegisterDominatorsTreeDumper(const LangOptions &LO) {
+  return true;
+}
+
+//===----------------------------------------------------------------------===//
+// PostDominatorsTreeDumper
+//===----------------------------------------------------------------------===//
+
+namespace {
+class PostDominatorsTreeDumper : public Checker<check::ASTCodeBody> {
+public:
+  void checkASTCodeBody(const Decl *D, AnalysisManager& mgr,
+                        BugReporter &BR) const {
+    if (AnalysisDeclContext *AC = mgr.getAnalysisDeclContext(D)) {
+      CFGPostDomTree Dom;
+      Dom.buildDominatorTree(AC->getCFG());
+      Dom.dump();
+    }
+  }
+};
+}
+
+void ento::registerPostDominatorsTreeDumper(CheckerManager &mgr) {
+  mgr.registerChecker<PostDominatorsTreeDumper>();
+}
+
+bool ento::shouldRegisterPostDominatorsTreeDumper(const LangOptions &LO) {
+  return true;
+}
+
+//===----------------------------------------------------------------------===//
+// ControlDependencyTreeDumper
+//===----------------------------------------------------------------------===//
+
+namespace {
+class ControlDependencyTreeDumper : public Checker<check::ASTCodeBody> {
+public:
+  void checkASTCodeBody(const Decl *D, AnalysisManager& mgr,
+                        BugReporter &BR) const {
+    if (AnalysisDeclContext *AC = mgr.getAnalysisDeclContext(D)) {
+      ControlDependencyCalculator Dom(AC->getCFG());
+      Dom.dump();
+    }
+  }
+};
+}
+
+void ento::registerControlDependencyTreeDumper(CheckerManager &mgr) {
+  mgr.registerChecker<ControlDependencyTreeDumper>();
+}
+
+bool ento::shouldRegisterControlDependencyTreeDumper(const LangOptions &LO) {
   return true;
 }
 
@@ -264,5 +315,36 @@ void ento::registerExplodedGraphViewer(CheckerManager &mgr) {
 }
 
 bool ento::shouldRegisterExplodedGraphViewer(const LangOptions &LO) {
+  return true;
+}
+
+//===----------------------------------------------------------------------===//
+// Emits a report for every Stmt that the analyzer visits.
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+class ReportStmts : public Checker<check::PreStmt<Stmt>> {
+  BuiltinBug BT_stmtLoc{this, "Statement"};
+
+public:
+  void checkPreStmt(const Stmt *S, CheckerContext &C) const {
+    ExplodedNode *Node = C.generateNonFatalErrorNode();
+    if (!Node)
+      return;
+
+    auto Report = llvm::make_unique<BugReport>(BT_stmtLoc, "Statement", Node);
+
+    C.emitReport(std::move(Report));
+  }
+};
+
+} // end of anonymous namespace
+
+void ento::registerReportStmts(CheckerManager &mgr) {
+  mgr.registerChecker<ReportStmts>();
+}
+
+bool ento::shouldRegisterReportStmts(const LangOptions &LO) {
   return true;
 }

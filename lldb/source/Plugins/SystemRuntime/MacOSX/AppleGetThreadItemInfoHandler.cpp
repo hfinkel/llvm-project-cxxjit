@@ -154,7 +154,7 @@ lldb::addr_t AppleGetThreadItemInfoHandler::SetupGetThreadItemInfoFunction(
 
     if (!m_get_thread_item_info_impl_code) {
       Status error;
-      if (g_get_thread_item_info_function_code != NULL) {
+      if (g_get_thread_item_info_function_code != nullptr) {
         m_get_thread_item_info_impl_code.reset(
             exe_ctx.GetTargetRef().GetUtilityFunctionForLanguage(
                 g_get_thread_item_info_function_code, eLanguageTypeC,
@@ -344,7 +344,7 @@ AppleGetThreadItemInfoHandler::GetThreadItemInfo(Thread &thread,
   options.SetUnwindOnError(true);
   options.SetIgnoreBreakpoints(true);
   options.SetStopOthers(true);
-  options.SetTimeout(std::chrono::milliseconds(500));
+  options.SetTimeout(process_sp->GetUtilityExpressionTimeout());
   options.SetTryAllThreads(false);
   options.SetIsForUtilityExpr(true);
   thread.CalculateExecutionContext(exe_ctx);

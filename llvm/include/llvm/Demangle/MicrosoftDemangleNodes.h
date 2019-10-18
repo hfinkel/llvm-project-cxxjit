@@ -82,6 +82,7 @@ enum class PrimitiveKind {
   Char,
   Schar,
   Uchar,
+  Char8,
   Char16,
   Char32,
   Short,
@@ -170,8 +171,8 @@ enum class IntrinsicFunctionKind : uint8_t {
   VectorCopyCtorIter,         // ?__G vector copy constructor iterator
   VectorVbaseCopyCtorIter,    // ?__H vector vbase copy constructor iterator
   ManVectorVbaseCopyCtorIter, // ?__I managed vector vbase copy constructor
-  CoAwait,                    // ?__L co_await
-  Spaceship,                  // operator<=>
+  CoAwait,                    // ?__L operator co_await
+  Spaceship,                  // ?__M operator<=>
   MaxIntrinsic
 };
 
@@ -343,7 +344,7 @@ struct FunctionSignatureNode : public TypeNode {
   // Function parameters
   NodeArrayNode *Params = nullptr;
 
-  // True if the function type is noexcept
+  // True if the function type is noexcept.
   bool IsNoexcept = false;
 };
 
@@ -408,6 +409,7 @@ struct LocalStaticGuardIdentifierNode : public IdentifierNode {
 
   void output(OutputStream &OS, OutputFlags Flags) const override;
 
+  bool IsThread = false;
   uint32_t ScopeIndex = 0;
 };
 
@@ -513,7 +515,7 @@ struct NodeArrayNode : public Node {
 
   void output(OutputStream &OS, OutputFlags Flags, StringView Separator) const;
 
-  Node **Nodes = 0;
+  Node **Nodes = nullptr;
   size_t Count = 0;
 };
 

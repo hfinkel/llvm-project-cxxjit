@@ -21,6 +21,7 @@
 #include "llvm/MCA/Stages/DispatchStage.h"
 #include "llvm/MCA/Stages/EntryStage.h"
 #include "llvm/MCA/Stages/ExecuteStage.h"
+#include "llvm/MCA/Stages/MicroOpQueueStage.h"
 #include "llvm/MCA/Stages/RetireStage.h"
 
 namespace llvm {
@@ -42,7 +43,8 @@ Context::createDefaultPipeline(const PipelineOptions &Opts, InstrBuilder &IB,
   auto Fetch = llvm::make_unique<EntryStage>(SrcMgr);
   auto Dispatch = llvm::make_unique<DispatchStage>(STI, MRI, Opts.DispatchWidth,
                                                    *RCU, *PRF);
-  auto Execute = llvm::make_unique<ExecuteStage>(*HWS);
+  auto Execute =
+      llvm::make_unique<ExecuteStage>(*HWS, Opts.EnableBottleneckAnalysis);
   auto Retire = llvm::make_unique<RetireStage>(*RCU, *PRF);
 
   // Pass the ownership of all the hardware units to this Context.
@@ -54,6 +56,9 @@ Context::createDefaultPipeline(const PipelineOptions &Opts, InstrBuilder &IB,
   // Build the pipeline.
   auto StagePipeline = llvm::make_unique<Pipeline>();
   StagePipeline->appendStage(std::move(Fetch));
+  if (Opts.MicroOpQueueSize)
+    StagePipeline->appendStage(llvm::make_unique<MicroOpQueueStage>(
+        Opts.MicroOpQueueSize, Opts.DecodersThroughput));
   StagePipeline->appendStage(std::move(Dispatch));
   StagePipeline->appendStage(std::move(Execute));
   StagePipeline->appendStage(std::move(Retire));

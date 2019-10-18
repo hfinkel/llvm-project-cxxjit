@@ -342,6 +342,17 @@ define <8 x float> @combine_permps_as_permpd(<8 x float> %a) {
   ret <8 x float> %1
 }
 
+define <8 x float> @combine_permps_as_vpermilps(<8 x float> %a, i32 %a1) {
+; CHECK-LABEL: combine_permps_as_vpermilps:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    vpermilps {{.*#+}} ymm0 = ymm0[2,2,1,0,7,6,5,4]
+; CHECK-NEXT:    ret{{[l|q]}}
+  %1 = insertelement <8 x i32> <i32 3, i32 2, i32 1, i32 0, i32 7, i32 6, i32 5, i32 4>, i32 %a1, i32 0
+  %2 = call <8 x float> @llvm.x86.avx2.permps(<8 x float> %a, <8 x i32> %1)
+  %3 = shufflevector <8 x float> %2, <8 x float> undef, <8 x i32> <i32 1, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>
+  ret <8 x float> %3
+}
+
 define <4 x i64> @combine_pshufb_as_zext(<32 x i8> %a0) {
 ; CHECK-LABEL: combine_pshufb_as_zext:
 ; CHECK:       # %bb.0:
@@ -369,8 +380,7 @@ define <4 x i64> @combine_pshufb_as_zext128(<32 x i8> %a0) {
 define <4 x double> @combine_pshufb_as_vzmovl_64(<4 x double> %a0) {
 ; CHECK-LABEL: combine_pshufb_as_vzmovl_64:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vxorps %xmm1, %xmm1, %xmm1
-; CHECK-NEXT:    vblendps {{.*#+}} xmm0 = xmm0[0,1],xmm1[2,3]
+; CHECK-NEXT:    vmovq {{.*#+}} xmm0 = xmm0[0],zero
 ; CHECK-NEXT:    ret{{[l|q]}}
   %1 = bitcast <4 x double> %a0 to <32 x i8>
   %2 = call <32 x i8> @llvm.x86.avx2.pshuf.b(<32 x i8> %1, <32 x i8> <i8 0, i8 1, i8 2, i8 3, i8 4, i8 5, i8 6, i8 7, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1, i8 -1>)

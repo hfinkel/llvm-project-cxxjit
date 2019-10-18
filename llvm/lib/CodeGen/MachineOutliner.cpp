@@ -73,8 +73,6 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include <functional>
-#include <map>
-#include <sstream>
 #include <tuple>
 #include <vector>
 
@@ -1094,19 +1092,15 @@ MachineOutliner::createOutlinedFunction(Module &M, OutlinedFunction &OF,
                                         InstructionMapper &Mapper,
                                         unsigned Name) {
 
-  // Create the function name. This should be unique. For now, just hash the
-  // module name and include it in the function name plus the number of this
-  // function.
-  std::ostringstream NameStream;
+  // Create the function name. This should be unique.
   // FIXME: We should have a better naming scheme. This should be stable,
   // regardless of changes to the outliner's cost model/traversal order.
-  NameStream << "OUTLINED_FUNCTION_" << Name;
+  std::string FunctionName = ("OUTLINED_FUNCTION_" + Twine(Name)).str();
 
   // Create the function using an IR-level function.
   LLVMContext &C = M.getContext();
-  Function *F =
-      Function::Create(FunctionType::get(Type::getVoidTy(C), false),
-                       Function::ExternalLinkage, NameStream.str(), M);
+  Function *F = Function::Create(FunctionType::get(Type::getVoidTy(C), false),
+                                 Function::ExternalLinkage, FunctionName, M);
 
   // NOTE: If this is linkonceodr, then we can take advantage of linker deduping
   // which gives us better results when we outline from linkonceodr functions.
@@ -1204,11 +1198,10 @@ bool MachineOutliner::outline(Module &M,
   unsigned OutlinedFunctionNum = 0;
 
   // Sort by benefit. The most beneficial functions should be outlined first.
-  std::stable_sort(
-      FunctionList.begin(), FunctionList.end(),
-      [](const OutlinedFunction &LHS, const OutlinedFunction &RHS) {
-        return LHS.getBenefit() > RHS.getBenefit();
-      });
+  llvm::stable_sort(FunctionList, [](const OutlinedFunction &LHS,
+                                     const OutlinedFunction &RHS) {
+    return LHS.getBenefit() > RHS.getBenefit();
+  });
 
   // Walk over each function, outlining them as we go along. Functions are
   // outlined greedily, based off the sort above.
@@ -1252,8 +1245,9 @@ bool MachineOutliner::outline(Module &M,
       if (MBB.getParent()->getProperties().hasProperty(
               MachineFunctionProperties::Property::TracksLiveness)) {
         // Helper lambda for adding implicit def operands to the call
-        // instruction.
-        auto CopyDefs = [&CallInst](MachineInstr &MI) {
+        // instruction. It also updates call site information for moved
+        // code.
+        auto CopyDefsAndUpdateCalls = [&CallInst](MachineInstr &MI) {
           for (MachineOperand &MOP : MI.operands()) {
             // Skip over anything that isn't a register.
             if (!MOP.isReg())
@@ -1265,13 +1259,16 @@ bool MachineOutliner::outline(Module &M,
                   MOP.getReg(), true, /* isDef = true */
                   true /* isImp = true */));
           }
+          if (MI.isCall())
+            MI.getMF()->updateCallSiteInfo(&MI);
         };
         // Copy over the defs in the outlined range.
         // First inst in outlined range <-- Anything that's defined in this
         // ...                           .. range has to be added as an
         // implicit Last inst in outlined range  <-- def to the call
-        // instruction.
-        std::for_each(CallInst, std::next(EndIt), CopyDefs);
+        // instruction. Also remove call site information for outlined block
+        // of code.
+        std::for_each(CallInst, std::next(EndIt), CopyDefsAndUpdateCalls);
       }
 
       // Erase from the point after where the call was inserted up to, and

@@ -3,12 +3,8 @@
 ; RUN:   | FileCheck -check-prefix=RV32 %s
 ; RUN: llc -mtriple=riscv64 -verify-machineinstrs < %s \
 ; RUN:   | FileCheck -check-prefix=RV64 %s
-; RUN: llc -mtriple=riscv32 -verify-machineinstrs < %s \
-; RUN:   | FileCheck -check-prefix=NOLIB %s
-; RUN: llc -mtriple=riscv64 -verify-machineinstrs < %s \
-; RUN:   | FileCheck -check-prefix=NOLIB %s
 
-define void @test1(float* %a, float* %b) {
+define void @test1(float* %a, float* %b) nounwind {
 ; RV32-LABEL: test1:
 ; RV32:       # %bb.0: # %entry
 ; RV32-NEXT:    lw a1, 0(a1)
@@ -25,10 +21,6 @@ define void @test1(float* %a, float* %b) {
 ; RV64-NEXT:    xor a1, a1, a2
 ; RV64-NEXT:    sw a1, 0(a0)
 ; RV64-NEXT:    ret
-
-; NOLIB-LABEL: test1:
-; NOLIB:         xor
-; NOLIB-NOT:     call __subsf3
 entry:
   %0 = load float, float* %b
   %neg = fneg float %0
@@ -36,7 +28,7 @@ entry:
   ret void
 }
 
-define void @test2(double* %a, double* %b) {
+define void @test2(double* %a, double* %b) nounwind {
 ; RV32-LABEL: test2:
 ; RV32:       # %bb.0: # %entry
 ; RV32-NEXT:    lw a2, 4(a1)
@@ -55,10 +47,6 @@ define void @test2(double* %a, double* %b) {
 ; RV64-NEXT:    xor a1, a1, a2
 ; RV64-NEXT:    sd a1, 0(a0)
 ; RV64-NEXT:    ret
-
-; NOLIB-LABEL: test2:
-; NOLIB:         xor
-; NOLIB-NOT:     call __subdf3
 entry:
   %0 = load double, double* %b
   %neg = fneg double %0
@@ -66,16 +54,16 @@ entry:
   ret void
 }
 
-define void @test3(fp128* %a, fp128* %b) {
+define void @test3(fp128* %a, fp128* %b) nounwind {
 ; RV32-LABEL: test3:
 ; RV32:       # %bb.0: # %entry
 ; RV32-NEXT:    lw a2, 12(a1)
-; RV32-NEXT:    lw a3, 0(a1)
-; RV32-NEXT:    lw a4, 4(a1)
+; RV32-NEXT:    lw a3, 4(a1)
+; RV32-NEXT:    lw a4, 0(a1)
 ; RV32-NEXT:    lw a1, 8(a1)
 ; RV32-NEXT:    sw a1, 8(a0)
-; RV32-NEXT:    sw a4, 4(a0)
-; RV32-NEXT:    sw a3, 0(a0)
+; RV32-NEXT:    sw a4, 0(a0)
+; RV32-NEXT:    sw a3, 4(a0)
 ; RV32-NEXT:    lui a1, 524288
 ; RV32-NEXT:    xor a1, a2, a1
 ; RV32-NEXT:    sw a1, 12(a0)
@@ -91,15 +79,9 @@ define void @test3(fp128* %a, fp128* %b) {
 ; RV64-NEXT:    xor a1, a2, a1
 ; RV64-NEXT:    sd a1, 8(a0)
 ; RV64-NEXT:    ret
-
-; NOLIB-LABEL: test3:
-; NOLIB:         xor
-; NOLIB-NOT:     call __subtf3
 entry:
   %0 = load fp128, fp128* %b
   %neg = fneg fp128 %0
   store fp128 %neg, fp128* %a
   ret void
 }
-
-

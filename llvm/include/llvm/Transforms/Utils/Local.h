@@ -231,7 +231,8 @@ bool FlattenCFG(BasicBlock *BB, AliasAnalysis *AA = nullptr);
 /// If this basic block is ONLY a setcc and a branch, and if a predecessor
 /// branches to us and one of our successors, fold the setcc into the
 /// predecessor and use logical operations to pick the right destination.
-bool FoldBranchToCommonDest(BranchInst *BI, unsigned BonusInstThreshold = 1);
+bool FoldBranchToCommonDest(BranchInst *BI, MemorySSAUpdater *MSSAU = nullptr,
+                            unsigned BonusInstThreshold = 1);
 
 /// This function takes a virtual register computed by an Instruction and
 /// replaces it with a slot in the stack frame, allocated via alloca.
@@ -315,7 +316,7 @@ void findDbgUsers(SmallVectorImpl<DbgVariableIntrinsic *> &DbgInsts, Value *V);
 /// (between the optional Deref operations). Offset can be negative.
 bool replaceDbgDeclare(Value *Address, Value *NewAddress,
                        Instruction *InsertBefore, DIBuilder &Builder,
-                       bool DerefBefore, int Offset, bool DerefAfter);
+                       uint8_t DIExprFlags, int Offset);
 
 /// Replaces llvm.dbg.declare instruction when the alloca it describes
 /// is replaced with a new value. If Deref is true, an additional
@@ -324,8 +325,8 @@ bool replaceDbgDeclare(Value *Address, Value *NewAddress,
 /// optional Deref operations). Offset can be negative. The new
 /// llvm.dbg.declare is inserted immediately after AI.
 bool replaceDbgDeclareForAlloca(AllocaInst *AI, Value *NewAllocaAddress,
-                                DIBuilder &Builder, bool DerefBefore,
-                                int Offset, bool DerefAfter);
+                                DIBuilder &Builder, uint8_t DIExprFlags,
+                                int Offset);
 
 /// Replaces multiple llvm.dbg.value instructions when the alloca it describes
 /// is replaced with a new value. If Offset is non-zero, a constant displacement
@@ -334,6 +335,10 @@ bool replaceDbgDeclareForAlloca(AllocaInst *AI, Value *NewAllocaAddress,
 /// the instructions they replace.
 void replaceDbgValueForAlloca(AllocaInst *AI, Value *NewAllocaAddress,
                               DIBuilder &Builder, int Offset = 0);
+
+/// Finds alloca where the value comes from.
+AllocaInst *findAllocaForValue(Value *V,
+                               DenseMap<Value *, AllocaInst *> &AllocaForValue);
 
 /// Assuming the instruction \p I is going to be deleted, attempt to salvage
 /// debug users of \p I by writing the effect of \p I in a DIExpression.
@@ -377,7 +382,8 @@ unsigned removeAllNonTerminatorAndEHPadInstructions(BasicBlock *BB);
 /// instruction, making it and the rest of the code in the block dead.
 unsigned changeToUnreachable(Instruction *I, bool UseLLVMTrap,
                              bool PreserveLCSSA = false,
-                             DomTreeUpdater *DTU = nullptr);
+                             DomTreeUpdater *DTU = nullptr,
+                             MemorySSAUpdater *MSSAU = nullptr);
 
 /// Convert the CallInst to InvokeInst with the specified unwind edge basic
 /// block.  This also splits the basic block where CI is located, because

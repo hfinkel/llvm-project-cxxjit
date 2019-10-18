@@ -383,8 +383,16 @@ public:
 
   /// Perform check on requires decl to ensure that target architecture
   /// supports unified addressing
-  void checkArchForUnifiedAddressing(CodeGenModule &CGM,
-                                     const OMPRequiresDecl *D) const override;
+  void checkArchForUnifiedAddressing(const OMPRequiresDecl *D) override;
+
+  /// Returns default address space for the constant firstprivates, __constant__
+  /// address space by default.
+  unsigned getDefaultFirstprivateAddressSpace() const override;
+
+  /// Checks if the variable has associated OMPAllocateDeclAttr attribute with
+  /// the predefined allocator and translates it into the corresponding address
+  /// space.
+  bool hasAllocateAttributeForGlobalVar(const VarDecl *VD, LangAS &AS) override;
 
 private:
   /// Track the execution mode when codegening directives within a target
@@ -461,6 +469,12 @@ private:
     unsigned RegionCounter = 0;
   };
   llvm::SmallVector<GlobalPtrSizeRecsTy, 8> GlobalizedRecords;
+  llvm::GlobalVariable *KernelTeamsReductionPtr = nullptr;
+  /// List of the records with the list of fields for the reductions across the
+  /// teams. Used to build the intermediate buffer for the fast teams
+  /// reductions.
+  /// All the records are gathered into a union `union.type` is created.
+  llvm::SmallVector<const RecordDecl *, 4> TeamsReductions;
   /// Shared pointer for the global memory in the global memory buffer used for
   /// the given kernel.
   llvm::GlobalVariable *KernelStaticGlobalized = nullptr;

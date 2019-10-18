@@ -33,6 +33,7 @@ namespace llvm {
       for (StringRef X : S)
         insert(X);
     }
+    explicit StringSet(AllocatorTy A) : base(A) {}
 
     std::pair<typename base::iterator, bool> insert(StringRef Key) {
       assert(!Key.empty());
@@ -43,6 +44,12 @@ namespace llvm {
     void insert(const InputIt &Begin, const InputIt &End) {
       for (auto It = Begin; It != End; ++It)
         base::insert(std::make_pair(*It, '\0'));
+    }
+
+    template <typename ValueTy>
+    std::pair<typename base::iterator, bool>
+    insert(const StringMapEntry<ValueTy> &MapEntry) {
+      return insert(MapEntry.getKey());
     }
   };
 

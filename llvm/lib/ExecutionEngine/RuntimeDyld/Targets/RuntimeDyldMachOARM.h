@@ -29,7 +29,7 @@ public:
                       JITSymbolResolver &Resolver)
     : RuntimeDyldMachOCRTPBase(MM, Resolver) {}
 
-  unsigned getMaxStubSize() override { return 8; }
+  unsigned getMaxStubSize() const override { return 8; }
 
   unsigned getStubAlignment() override { return 4; }
 
@@ -224,7 +224,7 @@ public:
       HighInsn = (HighInsn & 0xf800) | ((Value >> 12) & 0x7ff);
 
       uint16_t LowInsn = readBytesUnaligned(LocalAddress + 2, 2);
-      assert((LowInsn & 0xf800) != 0xf8000 &&
+      assert((LowInsn & 0xf800) == 0xf800 &&
              "Unrecognized thumb branch encoding (BR22 low bits)");
       LowInsn = (LowInsn & 0xf800) | ((Value >> 1) & 0x7ff);
 

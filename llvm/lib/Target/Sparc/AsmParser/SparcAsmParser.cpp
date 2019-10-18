@@ -8,6 +8,7 @@
 
 #include "MCTargetDesc/SparcMCExpr.h"
 #include "MCTargetDesc/SparcMCTargetDesc.h"
+#include "TargetInfo/SparcTargetInfo.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -645,7 +646,8 @@ bool SparcAsmParser::ParseRegister(unsigned &RegNo, SMLoc &StartLoc,
   return Error(StartLoc, "invalid register name");
 }
 
-static void applyMnemonicAliases(StringRef &Mnemonic, uint64_t Features,
+static void applyMnemonicAliases(StringRef &Mnemonic,
+                                 const FeatureBitset &Features,
                                  unsigned VariantID);
 
 bool SparcAsmParser::ParseInstruction(ParseInstructionInfo &Info,

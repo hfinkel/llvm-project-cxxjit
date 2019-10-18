@@ -21,6 +21,7 @@ def SDTX86Fld       : SDTypeProfile<1, 1, [SDTCisFP<0>,
 def SDTX86Fst       : SDTypeProfile<0, 2, [SDTCisFP<0>,
                                            SDTCisPtrTy<1>]>;
 def SDTX86Fild      : SDTypeProfile<1, 1, [SDTCisFP<0>, SDTCisPtrTy<1>]>;
+def SDTX86Fist      : SDTypeProfile<0, 2, [SDTCisFP<0>, SDTCisPtrTy<1>]>;
 def SDTX86Fnstsw    : SDTypeProfile<1, 1, [SDTCisVT<0, i16>, SDTCisVT<1, i16>]>;
 
 def SDTX86CwdStore  : SDTypeProfile<0, 1, [SDTCisPtrTy<0>]>;
@@ -34,6 +35,9 @@ def X86fild         : SDNode<"X86ISD::FILD", SDTX86Fild,
                              [SDNPHasChain, SDNPMayLoad, SDNPMemOperand]>;
 def X86fildflag     : SDNode<"X86ISD::FILD_FLAG", SDTX86Fild,
                              [SDNPHasChain, SDNPOutGlue, SDNPMayLoad,
+                              SDNPMemOperand]>;
+def X86fist         : SDNode<"X86ISD::FIST", SDTX86Fist,
+                             [SDNPHasChain, SDNPInGlue, SDNPMayStore,
                               SDNPMemOperand]>;
 def X86fp_stsw      : SDNode<"X86ISD::FNSTSW16r", SDTX86Fnstsw>;
 def X86fp_to_mem : SDNode<"X86ISD::FP_TO_INT_IN_MEM", SDTX86Fst,
@@ -79,6 +83,11 @@ def X86fildflag64 : PatFrag<(ops node:$ptr), (X86fildflag node:$ptr), [{
   return cast<MemIntrinsicSDNode>(N)->getMemoryVT() == MVT::i64;
 }]>;
 
+def X86fist64 : PatFrag<(ops node:$val, node:$ptr),
+                        (X86fist node:$val, node:$ptr), [{
+  return cast<MemIntrinsicSDNode>(N)->getMemoryVT() == MVT::i64;
+}]>;
+
 def X86fp_to_i16mem : PatFrag<(ops node:$val, node:$ptr),
                               (X86fp_to_mem node:$val, node:$ptr), [{
   return cast<MemIntrinsicSDNode>(N)->getMemoryVT() == MVT::i16;
@@ -113,7 +122,9 @@ def fpimmneg1 : FPImmLeaf<fAny, [{
 }]>;
 
 // Some 'special' instructions - expanded after instruction selection.
-let usesCustomInserter = 1, hasNoSchedulingInfo = 1 in {
+// Clobbers EFLAGS due to OR instruction used internally.
+// FIXME: Can we model this in SelectionDAG?
+let usesCustomInserter = 1, hasNoSchedulingInfo = 1, Defs = [EFLAGS] in {
   def FP32_TO_INT16_IN_MEM : PseudoI<(outs), (ins i16mem:$dst, RFP32:$src),
                               [(X86fp_to_i16mem RFP32:$src, addr:$dst)]>;
   def FP32_TO_INT32_IN_MEM : PseudoI<(outs), (ins i32mem:$dst, RFP32:$src),
@@ -178,7 +189,6 @@ def _Fp80 : FpI_<(outs RFP80:$dst), (ins RFP80:$src1, RFP80:$src2), TwoArgFP,
 // These instructions cannot address 80-bit memory.
 multiclass FPBinary<SDNode OpNode, Format fp, string asmstring,
                     bit Forward = 1> {
-let mayLoad = 1, hasSideEffects = 1 in {
 // ST(0) = ST(0) + [mem]
 def _Fp32m  : FpIf32<(outs RFP32:$dst),
                      (ins RFP32:$src1, f32mem:$src2), OneArgFPRW,
@@ -215,8 +225,10 @@ def _Fp80m64: FpI_<(outs RFP80:$dst),
                         (OpNode RFP80:$src1, (f80 (extloadf64 addr:$src2)))),
                        (set RFP80:$dst,
                         (OpNode (f80 (extloadf64 addr:$src2)), RFP80:$src1)))]>;
+let mayLoad = 1 in
 def _F32m  : FPI<0xD8, fp, (outs), (ins f32mem:$src),
                  !strconcat("f", asmstring, "{s}\t$src")>;
+let mayLoad = 1 in
 def _F64m  : FPI<0xDC, fp, (outs), (ins f64mem:$src),
                  !strconcat("f", asmstring, "{l}\t$src")>;
 // ST(0) = ST(0) + [memint]
@@ -262,11 +274,12 @@ def _FpI32m80 : FpI_<(outs RFP80:$dst), (ins RFP80:$src1, i32mem:$src2),
                            (OpNode RFP80:$src1, (X86fild32 addr:$src2))),
                           (set RFP80:$dst,
                            (OpNode (X86fild32 addr:$src2), RFP80:$src1)))]>;
+let mayLoad = 1 in
 def _FI16m  : FPI<0xDE, fp, (outs), (ins i16mem:$src),
                   !strconcat("fi", asmstring, "{s}\t$src")>;
+let mayLoad = 1 in
 def _FI32m  : FPI<0xDA, fp, (outs), (ins i32mem:$src),
                   !strconcat("fi", asmstring, "{l}\t$src")>;
-} // mayLoad = 1, hasSideEffects = 1
 }
 
 let Defs = [FPSW], Uses = [FPCW] in {
@@ -755,6 +768,10 @@ def : Pat<(f80 fpimmneg1), (CHS_Fp80 (LD_Fp180))>;
 
 // Used to conv. i64 to f64 since there isn't a SSE version.
 def : Pat<(X86fildflag64 addr:$src), (ILD_Fp64m64 addr:$src)>;
+
+// Used to conv. between f80 and i64 for i64 atomic loads.
+def : Pat<(X86fildflag64 addr:$src), (ILD_Fp64m80 addr:$src)>;
+def : Pat<(X86fist64 RFP80:$src, addr:$op), (IST_Fp64m80 addr:$op, RFP80:$src)>;
 
 // FP extensions map onto simple pseudo-value conversions if they are to/from
 // the FP stack.

@@ -19,6 +19,7 @@ subdirectories =
  Analysis
  AsmParser
  Bitcode
+ Bitstream
  CodeGen
  DebugInfo
  Demangle
@@ -35,7 +36,7 @@ subdirectories =
  BinaryFormat
  ObjectYAML
  Option
- OptRemarks
+ Remarks
  Passes
  ProfileData
  Support

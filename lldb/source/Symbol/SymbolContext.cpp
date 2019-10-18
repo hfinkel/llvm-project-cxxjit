@@ -47,11 +47,6 @@ SymbolContext::SymbolContext(const TargetSP &t, const ModuleSP &m,
     line_entry = *le;
 }
 
-SymbolContext::SymbolContext(const SymbolContext &rhs)
-    : target_sp(rhs.target_sp), module_sp(rhs.module_sp),
-      comp_unit(rhs.comp_unit), function(rhs.function), block(rhs.block),
-      line_entry(rhs.line_entry), symbol(rhs.symbol), variable(rhs.variable) {}
-
 SymbolContext::SymbolContext(SymbolContextScope *sc_scope)
     : target_sp(), module_sp(), comp_unit(nullptr), function(nullptr),
       block(nullptr), line_entry(), symbol(nullptr), variable(nullptr) {
@@ -506,7 +501,7 @@ bool SymbolContext::GetParentOfInlinedScope(const Address &curr_frame_pc,
         }
 #ifdef LLDB_CONFIGURATION_DEBUG
         else {
-          ObjectFile *objfile = NULL;
+          ObjectFile *objfile = nullptr;
           if (module_sp) {
             SymbolVendor *symbol_vendor = module_sp->GetSymbolVendor();
             if (symbol_vendor) {
@@ -586,10 +581,8 @@ void SymbolContext::SortTypeList(TypeMap &type_map, TypeList &type_list) const {
       curr_block->GetContainingInlinedBlock() != nullptr)
     isInlinedblock = true;
 
-  //----------------------------------------------------------------------
   // Find all types that match the current block if we have one and put them
   // first in the list. Keep iterating up through all blocks.
-  //----------------------------------------------------------------------
   while (curr_block != nullptr && !isInlinedblock) {
     type_map.ForEach(
         [curr_block, &type_list](const lldb::TypeSP &type_sp) -> bool {
@@ -607,10 +600,8 @@ void SymbolContext::SortTypeList(TypeMap &type_map, TypeList &type_list) const {
     });
     curr_block = curr_block->GetParent();
   }
-  //----------------------------------------------------------------------
   // Find all types that match the current function, if we have onem, and put
   // them next in the list.
-  //----------------------------------------------------------------------
   if (function != nullptr && !type_map.Empty()) {
     const size_t old_type_list_size = type_list.GetSize();
     type_map.ForEach([this, &type_list](const lldb::TypeSP &type_sp) -> bool {
@@ -628,10 +619,8 @@ void SymbolContext::SortTypeList(TypeMap &type_map, TypeList &type_list) const {
         type_map.Remove(type_list.GetTypeAtIndex(i));
     }
   }
-  //----------------------------------------------------------------------
   // Find all types that match the current compile unit, if we have one, and
   // put them next in the list.
-  //----------------------------------------------------------------------
   if (comp_unit != nullptr && !type_map.Empty()) {
     const size_t old_type_list_size = type_list.GetSize();
 
@@ -650,10 +639,8 @@ void SymbolContext::SortTypeList(TypeMap &type_map, TypeList &type_list) const {
         type_map.Remove(type_list.GetTypeAtIndex(i));
     }
   }
-  //----------------------------------------------------------------------
   // Find all types that match the current module, if we have one, and put them
   // next in the list.
-  //----------------------------------------------------------------------
   if (module_sp && !type_map.Empty()) {
     const size_t old_type_list_size = type_list.GetSize();
     type_map.ForEach([this, &type_list](const lldb::TypeSP &type_sp) -> bool {
@@ -670,9 +657,7 @@ void SymbolContext::SortTypeList(TypeMap &type_map, TypeList &type_list) const {
         type_map.Remove(type_list.GetTypeAtIndex(i));
     }
   }
-  //----------------------------------------------------------------------
   // Any types that are left get copied into the list an any order.
-  //----------------------------------------------------------------------
   if (!type_map.Empty()) {
     type_map.ForEach([&type_list](const lldb::TypeSP &type_sp) -> bool {
       type_list.Insert(type_sp);
@@ -744,7 +729,7 @@ bool SymbolContext::GetAddressRangeFromHereToEndLine(uint32_t end_line,
 
   uint32_t line_index = 0;
   bool found = false;
-  while (1) {
+  while (true) {
     LineEntry this_line;
     line_index = comp_unit->FindLineEntry(line_index, line_entry.line, nullptr,
                                           false, &this_line);
@@ -793,7 +778,7 @@ bool SymbolContext::GetAddressRangeFromHereToEndLine(uint32_t end_line,
 }
 
 const Symbol *
-SymbolContext::FindBestGlobalDataSymbol(const ConstString &name, Status &error) {
+SymbolContext::FindBestGlobalDataSymbol(ConstString name, Status &error) {
   error.Clear();
 
   if (!target_sp) {
@@ -949,11 +934,9 @@ SymbolContext::FindBestGlobalDataSymbol(const ConstString &name, Status &error) 
 }
 
 
-//----------------------------------------------------------------------
 //
 //  SymbolContextSpecifier
 //
-//----------------------------------------------------------------------
 
 SymbolContextSpecifier::SymbolContextSpecifier(const TargetSP &target_sp)
     : m_target_sp(target_sp), m_module_spec(), m_module_sp(), m_file_spec_up(),
@@ -1213,11 +1196,9 @@ void SymbolContextSpecifier::GetDescription(
   }
 }
 
-//----------------------------------------------------------------------
 //
 //  SymbolContextList
 //
-//----------------------------------------------------------------------
 
 SymbolContextList::SymbolContextList() : m_symbol_contexts() {}
 

@@ -9,6 +9,7 @@
 #include "NamespaceCommentCheck.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
+#include "clang/Basic/SourceLocation.h"
 #include "clang/Lex/Lexer.h"
 #include "llvm/ADT/StringExtras.h"
 
@@ -102,11 +103,14 @@ void NamespaceCommentCheck::check(const MatchFinder::MatchResult &Result) {
     }
   }
 
+  // FIXME: This probably breaks on comments between the namespace and its '{'.
   auto TextRange =
       Lexer::getAsCharRange(SourceRange(NestedNamespaceBegin, LBracketLocation),
                             Sources, getLangOpts());
   StringRef NestedNamespaceName =
-      Lexer::getSourceText(TextRange, Sources, getLangOpts()).rtrim();
+      Lexer::getSourceText(TextRange, Sources, getLangOpts())
+          .rtrim('{') // Drop the { itself.
+          .rtrim();   // Drop any whitespace before it.
   bool IsNested = NestedNamespaceName.contains(':');
 
   if (IsNested)
@@ -178,7 +182,13 @@ void NamespaceCommentCheck::check(const MatchFinder::MatchResult &Result) {
           ? "anonymous namespace"
           : ("namespace '" + NestedNamespaceName.str() + "'");
 
-  diag(AfterRBrace, Message)
+  // Place diagnostic at an old comment, or closing brace if we did not have it.
+  SourceLocation DiagLoc =
+      OldCommentRange.getBegin() != OldCommentRange.getEnd()
+          ? OldCommentRange.getBegin()
+          : ND->getRBraceLoc();
+
+  diag(DiagLoc, Message)
       << NamespaceName
       << FixItHint::CreateReplacement(
              CharSourceRange::getCharRange(OldCommentRange),

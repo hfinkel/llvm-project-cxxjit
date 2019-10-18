@@ -24,7 +24,6 @@
 #include "lldb/Expression/FunctionCaller.h"
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Symbol/ObjectFile.h"
-#include "lldb/Target/CPPLanguageRuntime.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
@@ -39,13 +38,14 @@
 
 #include "Plugins/Process/Utility/HistoryThread.h"
 #include "Plugins/Language/ObjC/NSString.h"
+#include "Plugins/LanguageRuntime/CPlusPlus/CPPLanguageRuntime.h"
 
 #include <vector>
 
 using namespace lldb;
 using namespace lldb_private;
 
-static constexpr std::chrono::seconds g_po_function_timeout(15);
+char AppleObjCRuntime::ID = 0;
 
 AppleObjCRuntime::~AppleObjCRuntime() {}
 
@@ -130,9 +130,9 @@ bool AppleObjCRuntime::GetObjectDescription(Stream &strm, Value &value,
   //    ret.SetContext(Value::eContextTypeClangType, return_compiler_type);
   ret.SetCompilerType(return_compiler_type);
 
-  if (exe_ctx.GetFramePtr() == NULL) {
+  if (exe_ctx.GetFramePtr() == nullptr) {
     Thread *thread = exe_ctx.GetThreadPtr();
-    if (thread == NULL) {
+    if (thread == nullptr) {
       exe_ctx.SetThreadSP(process->GetThreadList().GetSelectedThread());
       thread = exe_ctx.GetThreadPtr();
     }
@@ -171,7 +171,7 @@ bool AppleObjCRuntime::GetObjectDescription(Stream &strm, Value &value,
   options.SetTryAllThreads(true);
   options.SetStopOthers(true);
   options.SetIgnoreBreakpoints(true);
-  options.SetTimeout(g_po_function_timeout);
+  options.SetTimeout(process->GetUtilityExpressionTimeout());
   options.SetIsForUtilityExpr(true);
 
   ExpressionResults results = m_print_object_caller_up->ExecuteFunction(
@@ -227,7 +227,7 @@ Address *AppleObjCRuntime::GetPrintForDebuggerAddr() {
                                              eSymbolTypeCode, contexts)) &&
         (!modules.FindSymbolsWithNameAndType(ConstString("_CFPrintForDebugger"),
                                              eSymbolTypeCode, contexts)))
-      return NULL;
+      return nullptr;
 
     contexts.GetContextAtIndex(0, context);
 
@@ -239,7 +239,7 @@ Address *AppleObjCRuntime::GetPrintForDebuggerAddr() {
 
 bool AppleObjCRuntime::CouldHaveDynamicValue(ValueObject &in_value) {
   return in_value.GetCompilerType().IsPossibleDynamicType(
-      NULL,
+      nullptr,
       false, // do not check C++
       true); // check ObjC
 }
@@ -329,7 +329,7 @@ bool AppleObjCRuntime::ReadObjCLibrary(const ModuleSP &module_sp) {
   // reread it?
   m_objc_trampoline_handler_up.reset(
       new AppleObjCTrampolineHandler(m_process->shared_from_this(), module_sp));
-  if (m_objc_trampoline_handler_up != NULL) {
+  if (m_objc_trampoline_handler_up != nullptr) {
     m_read_objc_library = true;
     return true;
   } else
@@ -345,9 +345,7 @@ ThreadPlanSP AppleObjCRuntime::GetStepThroughTrampolinePlan(Thread &thread,
   return thread_plan_sp;
 }
 
-//------------------------------------------------------------------
 // Static Functions
-//------------------------------------------------------------------
 ObjCLanguageRuntime::ObjCRuntimeVersions
 AppleObjCRuntime::GetObjCVersion(Process *process, ModuleSP &objc_module_sp) {
   if (!process)
@@ -455,18 +453,16 @@ bool AppleObjCRuntime::CalculateHasNewLiteralsAndIndexing() {
 lldb::SearchFilterSP AppleObjCRuntime::CreateExceptionSearchFilter() {
   Target &target = m_process->GetTarget();
 
+  FileSpecList filter_modules;
   if (target.GetArchitecture().GetTriple().getVendor() == llvm::Triple::Apple) {
-    FileSpecList filter_modules;
     filter_modules.Append(std::get<0>(GetExceptionThrowLocation()));
-    return target.GetSearchFilterForModuleList(&filter_modules);
-  } else {
-    return LanguageRuntime::CreateExceptionSearchFilter();
   }
+  return target.GetSearchFilterForModuleList(&filter_modules);
 }
 
 ValueObjectSP AppleObjCRuntime::GetExceptionObjectForThread(
     ThreadSP thread_sp) {
-  auto cpp_runtime = m_process->GetCPPLanguageRuntime();
+  auto *cpp_runtime = m_process->GetLanguageRuntime(eLanguageTypeC_plus_plus);
   if (!cpp_runtime) return ValueObjectSP();
   auto cpp_exception = cpp_runtime->GetExceptionObjectForThread(thread_sp);
   if (!cpp_exception) return ValueObjectSP();
@@ -476,7 +472,8 @@ ValueObjectSP AppleObjCRuntime::GetExceptionObjectForThread(
   
   while (descriptor) {
     ConstString class_name(descriptor->GetClassName());
-    if (class_name == ConstString("NSException")) return cpp_exception;
+    if (class_name == "NSException")
+      return cpp_exception;
     descriptor = descriptor->GetSuperclass();
   }
 
@@ -555,7 +552,7 @@ ThreadSP AppleObjCRuntime::GetBacktraceThreadFromException(
 
   if (pcs.empty()) return ThreadSP();
 
-  ThreadSP new_thread_sp(new HistoryThread(*m_process, 0, pcs, 0, false));
+  ThreadSP new_thread_sp(new HistoryThread(*m_process, 0, pcs));
   m_process->GetExtendedThreadList().AddThread(new_thread_sp);
   return new_thread_sp;
 }

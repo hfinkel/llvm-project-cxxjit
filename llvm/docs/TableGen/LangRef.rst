@@ -100,7 +100,7 @@ wide variety of meanings:
                :!or     !empty   !subst   !foreach   !strconcat
                :!cast   !listconcat       !size      !foldl
                :!isa    !dag     !le      !lt        !ge
-               :!gt     !ne
+               :!gt     !ne      !mul     !listsplat
 
 TableGen also has !cond operator that needs a slightly different
 syntax compared to other "bang operators":
@@ -482,9 +482,9 @@ It supports the following directives:
            : "#else" (`WhiteSpaceOrAnyComment`)* `LineEnd`
    PrepEndif: `LineBegin` (`WhiteSpaceOrCStyleComment`)*
             : "#endif" (`WhiteSpaceOrAnyComment`)* `LineEnd`
-   PrepRegContentException: `PredIfdef` | `PredElse` | `PredEndif` | EOF
+   PrepRegContentException: `PrepIfdef` | `PrepElse` | `PrepEndif` | EOF
    PrepRegion: .* - `PrepRegContentException`
-             :| `PrepIfDef`
+             :| `PrepIfdef`
              :  (`PrepRegion`)*
              :  [`PrepElse`]
              :  (`PrepRegion`)*

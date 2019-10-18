@@ -8,9 +8,10 @@
 
 #include <limits>
 #include <sstream>
-#include <iostream>
 #include <cassert>
 #include <iostream>
+
+#include "test_macros.h"
 
 using namespace std;
 

@@ -81,7 +81,7 @@ kernel void device_side_enqueue(global int *a, global int *b, int i) {
   // B64: [[BL:%[0-9]+]] = bitcast <{ i32, i32, i8 addrspace(4)*, i32 addrspace(1)*, i32 addrspace(1)*, i32 }>* %block to %struct.__opencl_block_literal_generic*
   // COMMON: [[BL_I8:%[0-9]+]] = addrspacecast %struct.__opencl_block_literal_generic* [[BL]] to i8 addrspace(4)*
   // COMMON-LABEL: call i32 @__enqueue_kernel_basic(
-  // COMMON-SAME: %opencl.queue_t{{.*}}* [[DEF_Q]], i32 [[FLAGS]], %struct.ndrange_t* byval [[NDR]]{{([0-9]+)?}},
+  // COMMON-SAME: %opencl.queue_t{{.*}}* [[DEF_Q]], i32 [[FLAGS]], %struct.ndrange_t* byval(%struct.ndrange_t) [[NDR]]{{([0-9]+)?}},
   // COMMON-SAME: i8 addrspace(4)* addrspacecast (i8* bitcast ({{.*}} [[INVLK1:[^ ]+_kernel]] to i8*) to i8 addrspace(4)*),
   // COMMON-SAME: i8 addrspace(4)* [[BL_I8]])
   enqueue_kernel(default_queue, flags, ndrange,
@@ -107,8 +107,8 @@ kernel void device_side_enqueue(global int *a, global int *b, int i) {
                  });
 
   // COMMON-LABEL: call i32 @__enqueue_kernel_basic_events
-  // COMMON-SAME: (%opencl.queue_t{{.*}}* {{%[0-9]+}}, i32 {{%[0-9]+}}, %struct.ndrange_t* {{.*}}, i32 1, %opencl.clk_event_t{{.*}}* addrspace(4)* {{%[0-9]+}}, %opencl.clk_event_t{{.*}}* addrspace(4)* null,
-  enqueue_kernel(default_queue, flags, ndrange, 1, &event_wait_list, 0,
+  // COMMON-SAME: (%opencl.queue_t{{.*}}* {{%[0-9]+}}, i32 {{%[0-9]+}}, %struct.ndrange_t* {{.*}}, i32 1, %opencl.clk_event_t{{.*}}* addrspace(4)* null, %opencl.clk_event_t{{.*}}* addrspace(4)* null,
+  enqueue_kernel(default_queue, flags, ndrange, 1, 0, 0,
                  ^(void) {
                    return;
                  });
@@ -312,16 +312,14 @@ kernel void device_side_enqueue(global int *a, global int *b, int i) {
   };
 
   // Uses global block literal [[BLG8]] and invoke function [[INVG8]].
-  // COMMON: [[r1:%.*]] = load i8 addrspace(4)*, i8 addrspace(4)* addrspace(4)* getelementptr inbounds (%struct.__opencl_block_literal_generic, %struct.__opencl_block_literal_generic addrspace(4)* addrspacecast (%struct.__opencl_block_literal_generic addrspace(1)* bitcast ({ i32, i32, i8 addrspace(4)* } addrspace(1)* [[BLG8]] to %struct.__opencl_block_literal_generic addrspace(1)*) to %struct.__opencl_block_literal_generic addrspace(4)*), i32 0, i32 2)
-  // COMMON: [[r2:%.*]] = addrspacecast i8 addrspace(4)* [[r1]] to void (i8 addrspace(4)*)*
-  // COMMON: call spir_func void [[r2]](i8 addrspace(4)* addrspacecast (i8 addrspace(1)* bitcast ({ i32, i32, i8 addrspace(4)* } addrspace(1)* [[BLG8]] to i8 addrspace(1)*) to i8 addrspace(4)*))
+  // COMMON: call spir_func void @__device_side_enqueue_block_invoke_11(i8 addrspace(4)* addrspacecast (i8 addrspace(1)* bitcast ({ i32, i32, i8 addrspace(4)* } addrspace(1)* [[BLG8]] to i8 addrspace(1)*) to i8 addrspace(4)*))
   block_A();
 
   // Emits global block literal [[BLG8]] and block kernel [[INVGK8]]. [[INVGK8]] calls [[INVG8]].
   // COMMON: [[DEF_Q:%[0-9]+]] = load %opencl.queue_t{{.*}}*, %opencl.queue_t{{.*}}** %default_queue
   // COMMON: [[FLAGS:%[0-9]+]] = load i32, i32* %flags
   // COMMON-LABEL: call i32 @__enqueue_kernel_basic(
-  // COMMON-SAME: %opencl.queue_t{{.*}}* [[DEF_Q]], i32 [[FLAGS]], %struct.ndrange_t* byval [[NDR]]{{([0-9]+)?}},
+  // COMMON-SAME: %opencl.queue_t{{.*}}* [[DEF_Q]], i32 [[FLAGS]], %struct.ndrange_t* byval(%struct.ndrange_t) [[NDR]]{{([0-9]+)?}},
   // COMMON-SAME: i8 addrspace(4)* addrspacecast (i8* bitcast ({{.*}} [[INVGK8:[^ ]+_kernel]] to i8*) to i8 addrspace(4)*),
   // COMMON-SAME: i8 addrspace(4)* addrspacecast (i8 addrspace(1)* bitcast ({ i32, i32, i8 addrspace(4)* } addrspace(1)* [[BLG8]] to i8 addrspace(1)*) to i8 addrspace(4)*))
   enqueue_kernel(default_queue, flags, ndrange, block_A);
@@ -333,22 +331,42 @@ kernel void device_side_enqueue(global int *a, global int *b, int i) {
   unsigned size = get_kernel_work_group_size(block_A);
 
   // Uses global block literal [[BLG8]] and invoke function [[INVG8]]. Make sure no redundant block literal and invoke functions are emitted.
-  // COMMON: [[r1:%.*]] = load i8 addrspace(4)*, i8 addrspace(4)* addrspace(4)* getelementptr inbounds (%struct.__opencl_block_literal_generic, %struct.__opencl_block_literal_generic addrspace(4)* addrspacecast (%struct.__opencl_block_literal_generic addrspace(1)* bitcast ({ i32, i32, i8 addrspace(4)* } addrspace(1)* [[BLG8]] to %struct.__opencl_block_literal_generic addrspace(1)*) to %struct.__opencl_block_literal_generic addrspace(4)*), i32 0, i32 2)
-  // COMMON: [[r2:%.*]] = addrspacecast i8 addrspace(4)* [[r1]] to void (i8 addrspace(4)*)*
-  // COMMON: call spir_func void [[r2]](i8 addrspace(4)* addrspacecast (i8 addrspace(1)* bitcast ({ i32, i32, i8 addrspace(4)* } addrspace(1)* [[BLG8]] to i8 addrspace(1)*) to i8 addrspace(4)*))
+  // COMMON: call spir_func void @__device_side_enqueue_block_invoke_11(i8 addrspace(4)* addrspacecast (i8 addrspace(1)* bitcast ({ i32, i32, i8 addrspace(4)* } addrspace(1)* [[BLG8]] to i8 addrspace(1)*) to i8 addrspace(4)*))
   block_A();
+
+  // Make sure that block invoke function is resolved correctly after sequence of assignements.
+  // COMMON: store %struct.__opencl_block_literal_generic addrspace(4)*
+  // COMMON-SAME: addrspacecast (%struct.__opencl_block_literal_generic addrspace(1)*
+  // COMMON-SAME: bitcast ({ i32, i32, i8 addrspace(4)* } addrspace(1)* [[BL_GLOBAL]] to %struct.__opencl_block_literal_generic addrspace(1)*)
+  // COMMON-SAME: to %struct.__opencl_block_literal_generic addrspace(4)*),
+  // COMMON-SAME: %struct.__opencl_block_literal_generic addrspace(4)** %b1,
+  bl_t b1 = block_G;
+  // COMMON: store %struct.__opencl_block_literal_generic addrspace(4)*
+  // COMMON-SAME: addrspacecast (%struct.__opencl_block_literal_generic addrspace(1)*
+  // COMMON-SAME: bitcast ({ i32, i32, i8 addrspace(4)* } addrspace(1)* [[BL_GLOBAL]] to %struct.__opencl_block_literal_generic addrspace(1)*)
+  // COMMON-SAME: to %struct.__opencl_block_literal_generic addrspace(4)*),
+  // COMMON-SAME: %struct.__opencl_block_literal_generic addrspace(4)** %b2,
+  bl_t b2 = b1;
+  // COMMON: call spir_func void @block_G_block_invoke(i8 addrspace(4)* addrspacecast (i8 addrspace(1)*
+  // COMMON-SAME: bitcast ({ i32, i32, i8 addrspace(4)* } addrspace(1)* [[BL_GLOBAL]] to i8 addrspace(1)*)
+  // COOMON-SAME: to i8 addrspace(4)*), i8 addrspace(3)* null)
+  b2(0);
+  // Uses global block literal [[BL_GLOBAL]] and block kernel [[INV_G_K]]. [[INV_G_K]] calls [[INV_G]].
+  // COMMON: call i32 @__get_kernel_preferred_work_group_size_multiple_impl(
+  // COMMON-SAME: i8 addrspace(4)* addrspacecast (i8* bitcast ({{.*}} [[INV_G_K:[^ ]+_kernel]] to i8*) to i8 addrspace(4)*),
+  // COMMON-SAME: i8 addrspace(4)* addrspacecast (i8 addrspace(1)* bitcast ({ i32, i32, i8 addrspace(4)* } addrspace(1)* [[BL_GLOBAL]] to i8 addrspace(1)*) to i8 addrspace(4)*))
+  size = get_kernel_preferred_work_group_size_multiple(b2);
 
   void (^block_C)(void) = ^{
     callee(i, a);
   };
-
   // Emits block literal on stack and block kernel [[INVLK3]].
   // COMMON: store i8 addrspace(4)* addrspacecast (i8* bitcast (void (i8 addrspace(4)*)* [[INVL3:@__device_side_enqueue_block_invoke[^ ]*]] to i8*) to i8 addrspace(4)*), i8 addrspace(4)** %block.invoke
   // COMMON: [[DEF_Q:%[0-9]+]] = load %opencl.queue_t{{.*}}*, %opencl.queue_t{{.*}}** %default_queue
   // COMMON: [[FLAGS:%[0-9]+]] = load i32, i32* %flags
   // COMMON: [[BL_I8:%[0-9]+]] = addrspacecast %struct.__opencl_block_literal_generic* {{.*}} to i8 addrspace(4)*
   // COMMON-LABEL: call i32 @__enqueue_kernel_basic(
-  // COMMON-SAME: %opencl.queue_t{{.*}}* [[DEF_Q]], i32 [[FLAGS]], %struct.ndrange_t* byval [[NDR]]{{([0-9]+)?}},
+  // COMMON-SAME: %opencl.queue_t{{.*}}* [[DEF_Q]], i32 [[FLAGS]], %struct.ndrange_t* byval(%struct.ndrange_t) [[NDR]]{{([0-9]+)?}},
   // COMMON-SAME: i8 addrspace(4)* addrspacecast (i8* bitcast ({{.*}} [[INVLK3:[^ ]+_kernel]] to i8*) to i8 addrspace(4)*),
   // COMMON-SAME: i8 addrspace(4)* [[BL_I8]])
   enqueue_kernel(default_queue, flags, ndrange, block_C);
@@ -404,8 +422,8 @@ kernel void device_side_enqueue(global int *a, global int *b, int i) {
 // COMMON: define internal spir_func void [[INVG8]](i8 addrspace(4)*{{.*}})
 // COMMON: define internal spir_func void [[INVG9]](i8 addrspace(4)*{{.*}}, i8 addrspace(3)* %{{.*}})
 // COMMON: define internal spir_kernel void [[INVGK8]](i8 addrspace(4)*{{.*}})
+// COMMON: define internal spir_kernel void [[INV_G_K]](i8 addrspace(4)*{{.*}}, i8 addrspace(3)*{{.*}})
 // COMMON: define internal spir_kernel void [[INVLK3]](i8 addrspace(4)*{{.*}})
 // COMMON: define internal spir_kernel void [[INVGK9]](i8 addrspace(4)*{{.*}}, i8 addrspace(3)*{{.*}})
-// COMMON: define internal spir_kernel void [[INV_G_K]](i8 addrspace(4)*{{.*}}, i8 addrspace(3)*{{.*}})
 // COMMON: define internal spir_kernel void [[INVGK10]](i8 addrspace(4)*{{.*}})
 // COMMON: define internal spir_kernel void [[INVGK11]](i8 addrspace(4)*{{.*}})

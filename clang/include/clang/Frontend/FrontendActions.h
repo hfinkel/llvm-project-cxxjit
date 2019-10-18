@@ -74,12 +74,6 @@ protected:
                                                  StringRef InFile) override;
 };
 
-class DeclContextPrintAction : public ASTFrontendAction {
-protected:
-  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
-                                                 StringRef InFile) override;
-};
-
 class GeneratePCHAction : public ASTFrontendAction {
 protected:
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
@@ -123,6 +117,26 @@ protected:
   }
 
   bool hasASTFileSupport() const override { return false; }
+};
+
+class GenerateInterfaceStubAction : public ASTFrontendAction {
+protected:
+  TranslationUnitKind getTranslationUnitKind() override { return TU_Module; }
+
+  bool hasASTFileSupport() const override { return false; }
+};
+
+// Support different interface stub formats this way:
+class GenerateInterfaceYAMLExpV1Action : public GenerateInterfaceStubAction {
+protected:
+  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
+                                                 StringRef InFile) override;
+};
+
+class GenerateInterfaceTBEExpV1Action : public GenerateInterfaceStubAction {
+protected:
+  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
+                                                 StringRef InFile) override;
 };
 
 class GenerateModuleFromModuleMapAction : public GenerateModuleAction {
@@ -236,6 +250,17 @@ public:
 };
 
 class PrintPreambleAction : public FrontendAction {
+protected:
+  void ExecuteAction() override;
+  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &,
+                                                 StringRef) override {
+    return nullptr;
+  }
+
+  bool usesPreprocessorOnly() const override { return true; }
+};
+
+class PrintDependencyDirectivesSourceMinimizerAction : public FrontendAction {
 protected:
   void ExecuteAction() override;
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &,

@@ -120,6 +120,10 @@ void RemoveFile(const std::string &Path) {
   unlink(Path.c_str());
 }
 
+void RenameFile(const std::string &OldPath, const std::string &NewPath) {
+  rename(OldPath.c_str(), NewPath.c_str());
+}
+
 void DiscardOutput(int Fd) {
   FILE* Temp = fopen("/dev/null", "w");
   if (!Temp)
@@ -168,6 +172,11 @@ void MkDir(const std::string &Path) {
 
 void RmDir(const std::string &Path) {
   rmdir(Path.c_str());
+}
+
+const std::string &getDevNull() {
+  static const std::string devNull = "/dev/null";
+  return devNull;
 }
 
 }  // namespace fuzzer

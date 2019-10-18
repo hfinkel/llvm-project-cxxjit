@@ -1,6 +1,5 @@
 add_lldb_library(lldbTarget
   ABI.cpp
-  CPPLanguageRuntime.cpp
   ExecutionContext.cpp
   JITLoader.cpp
   JITLoaderList.cpp
@@ -11,7 +10,6 @@ add_lldb_library(lldbTarget
   Memory.cpp
   MemoryHistory.cpp
   ModuleCache.cpp
-  ObjCLanguageRuntime.cpp
   OperatingSystem.cpp
   PathMappingList.cpp
   Platform.cpp
@@ -67,7 +65,6 @@ add_lldb_library(lldbTarget
     lldbSymbol
     lldbUtility
     lldbPluginExpressionParserClang
-    lldbPluginObjCLanguage
     lldbPluginProcessUtility
 
   LINK_COMPONENTS

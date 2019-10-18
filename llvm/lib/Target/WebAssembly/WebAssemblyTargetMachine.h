@@ -32,6 +32,9 @@ public:
                            bool JIT);
 
   ~WebAssemblyTargetMachine() override;
+
+  const WebAssemblySubtarget *getSubtargetImpl(std::string CPU,
+                                               std::string FS) const;
   const WebAssemblySubtarget *
   getSubtargetImpl(const Function &F) const override;
 
@@ -45,6 +48,14 @@ public:
   TargetTransformInfo getTargetTransformInfo(const Function &F) override;
 
   bool usesPhysRegsForPEI() const override { return false; }
+
+  yaml::MachineFunctionInfo *createDefaultFuncInfoYAML() const override;
+  yaml::MachineFunctionInfo *
+  convertFuncInfoToYAML(const MachineFunction &MF) const override;
+  bool parseMachineFunctionInfo(const yaml::MachineFunctionInfo &,
+                                PerFunctionMIParsingState &PFS,
+                                SMDiagnostic &Error,
+                                SMRange &SourceRange) const override;
 };
 
 } // end namespace llvm

@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/BPFMCTargetDesc.h"
+#include "TargetInfo/BPFTargetInfo.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/MC/MCContext.h"
@@ -125,7 +126,7 @@ public:
   bool isMem() const override { return false; }
 
   bool isConstantImm() const {
-    return isImm() && dyn_cast<MCConstantExpr>(getImm());
+    return isImm() && isa<MCConstantExpr>(getImm());
   }
 
   int64_t getConstantImm() const {

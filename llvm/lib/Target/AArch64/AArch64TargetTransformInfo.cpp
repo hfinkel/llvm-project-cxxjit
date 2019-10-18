@@ -6,6 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AArch64ExpandImm.h"
 #include "AArch64TargetTransformInfo.h"
 #include "MCTargetDesc/AArch64AddressingModes.h"
 #include "llvm/Analysis/LoopInfo.h"
@@ -49,8 +50,9 @@ int AArch64TTIImpl::getIntImmCost(int64_t Val) {
     Val = ~Val;
 
   // Calculate how many moves we will need to materialize this constant.
-  unsigned LZ = countLeadingZeros((uint64_t)Val);
-  return (64 - LZ + 15) / 16;
+  SmallVector<AArch64_IMM::ImmInsnModel, 4> Insn;
+  AArch64_IMM::expandMOVImm(Val, 64, Insn);
+  return Insn.size();
 }
 
 /// Calculate the cost of materializing the given constant.
@@ -616,6 +618,19 @@ int AArch64TTIImpl::getCmpSelInstrCost(unsigned Opcode, Type *ValTy,
   return BaseT::getCmpSelInstrCost(Opcode, ValTy, CondTy, I);
 }
 
+AArch64TTIImpl::TTI::MemCmpExpansionOptions
+AArch64TTIImpl::enableMemCmpExpansion(bool OptSize, bool IsZeroCmp) const {
+  TTI::MemCmpExpansionOptions Options;
+  Options.AllowOverlappingLoads = !ST->requiresStrictAlign();
+  Options.MaxNumLoads = TLI->getMaxExpandSizeMemcmp(OptSize);
+  Options.NumLoadsPerBlock = Options.MaxNumLoads;
+  // TODO: Though vector loads usually perform well on AArch64, in some targets
+  // they may wake up the FP unit, which raises the power consumption.  Perhaps
+  // they could be used with no holds barred (-O3).
+  Options.LoadSizes = {8, 4, 2, 1};
+  return Options;
+}
+
 int AArch64TTIImpl::getMemoryOpCost(unsigned Opcode, Type *Ty,
                                     unsigned Alignment, unsigned AddressSpace,
                                     const Instruction *I) {
@@ -664,7 +679,7 @@ int AArch64TTIImpl::getInterleavedMemoryOpCost(unsigned Opcode, Type *VecTy,
   assert(Factor >= 2 && "Invalid interleave factor");
   assert(isa<VectorType>(VecTy) && "Expect a vector type");
 
-  if (!UseMaskForCond && !UseMaskForGaps && 
+  if (!UseMaskForCond && !UseMaskForGaps &&
       Factor <= TLI->getMaxSupportedInterleaveFactor()) {
     unsigned NumElts = VecTy->getVectorNumElements();
     auto *SubVecTy = VectorType::get(VecTy->getScalarType(), NumElts / Factor);

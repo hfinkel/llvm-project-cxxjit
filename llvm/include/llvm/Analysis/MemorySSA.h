@@ -104,6 +104,9 @@
 
 namespace llvm {
 
+/// Enables memory ssa as a dependency for loop passes.
+extern cl::opt<bool> EnableMSSALoopDependency;
+
 class Function;
 class Instruction;
 class MemoryAccess;
@@ -700,6 +703,11 @@ DEFINE_TRANSPARENT_OPERAND_ACCESSORS(MemoryPhi, MemoryAccess)
 class MemorySSA {
 public:
   MemorySSA(Function &, AliasAnalysis *, DominatorTree *);
+
+  // MemorySSA must remain where it's constructed; Walkers it creates store
+  // pointers to it.
+  MemorySSA(MemorySSA &&) = delete;
+
   ~MemorySSA();
 
   MemorySSAWalker *getWalker();
@@ -825,13 +833,13 @@ protected:
                                       const MemoryUseOrDef *Template = nullptr);
 
 private:
-  class ClobberWalkerBase;
-  class CachingWalker;
-  class SkipSelfWalker;
+  template <class AliasAnalysisType> class ClobberWalkerBase;
+  template <class AliasAnalysisType> class CachingWalker;
+  template <class AliasAnalysisType> class SkipSelfWalker;
   class OptimizeUses;
 
-  CachingWalker *getWalkerImpl();
-  void buildMemorySSA();
+  CachingWalker<AliasAnalysis> *getWalkerImpl();
+  void buildMemorySSA(BatchAAResults &BAA);
   void optimizeUses();
 
   void prepareForMoveTo(MemoryAccess *, BasicBlock *);
@@ -845,7 +853,8 @@ private:
   void markUnreachableAsLiveOnEntry(BasicBlock *BB);
   bool dominatesUse(const MemoryAccess *, const MemoryAccess *) const;
   MemoryPhi *createMemoryPhi(BasicBlock *BB);
-  MemoryUseOrDef *createNewAccess(Instruction *,
+  template <typename AliasAnalysisType>
+  MemoryUseOrDef *createNewAccess(Instruction *, AliasAnalysisType *,
                                   const MemoryUseOrDef *Template = nullptr);
   MemoryAccess *findDominatingDef(BasicBlock *, enum InsertionPlace);
   void placePHINodes(const SmallPtrSetImpl<BasicBlock *> &);
@@ -881,9 +890,9 @@ private:
   mutable DenseMap<const MemoryAccess *, unsigned long> BlockNumbering;
 
   // Memory SSA building info
-  std::unique_ptr<ClobberWalkerBase> WalkerBase;
-  std::unique_ptr<CachingWalker> Walker;
-  std::unique_ptr<SkipSelfWalker> SkipWalker;
+  std::unique_ptr<ClobberWalkerBase<AliasAnalysis>> WalkerBase;
+  std::unique_ptr<CachingWalker<AliasAnalysis>> Walker;
+  std::unique_ptr<SkipSelfWalker<AliasAnalysis>> SkipWalker;
   unsigned NextID;
 };
 
@@ -927,6 +936,9 @@ public:
     MemorySSA &getMSSA() { return *MSSA.get(); }
 
     std::unique_ptr<MemorySSA> MSSA;
+
+    bool invalidate(Function &F, const PreservedAnalyses &PA,
+                    FunctionAnalysisManager::Invalidator &Inv);
   };
 
   Result run(Function &F, FunctionAnalysisManager &AM);
@@ -1039,8 +1051,6 @@ public:
   /// the walker it uses or returns.
   virtual void invalidateInfo(MemoryAccess *) {}
 
-  virtual void verify(const MemorySSA *MSSA) { assert(MSSA == this->MSSA); }
-
 protected:
   friend class MemorySSA; // For updating MSSA pointer in MemorySSA move
                           // constructor.
@@ -1096,15 +1106,15 @@ public:
     assert(Access && "Tried to access past the end of our iterator");
     // Go to the first argument for phis, and the defining access for everything
     // else.
-    if (MemoryPhi *MP = dyn_cast<MemoryPhi>(Access))
+    if (const MemoryPhi *MP = dyn_cast<MemoryPhi>(Access))
       return MP->getIncomingValue(ArgNo);
     return cast<MemoryUseOrDef>(Access)->getDefiningAccess();
   }
 
   using BaseT::operator++;
-  memoryaccess_def_iterator &operator++() {
+  memoryaccess_def_iterator_base &operator++() {
     assert(Access && "Hit end of iterator");
-    if (MemoryPhi *MP = dyn_cast<MemoryPhi>(Access)) {
+    if (const MemoryPhi *MP = dyn_cast<MemoryPhi>(Access)) {
       if (++ArgNo >= MP->getNumIncomingValues()) {
         ArgNo = 0;
         Access = nullptr;

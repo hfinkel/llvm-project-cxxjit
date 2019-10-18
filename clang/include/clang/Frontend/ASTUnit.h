@@ -71,7 +71,7 @@ class FileManager;
 class FrontendAction;
 class HeaderSearch;
 class InputKind;
-class MemoryBufferCache;
+class InMemoryModuleCache;
 class PCHContainerOperations;
 class PCHContainerReader;
 class Preprocessor;
@@ -81,6 +81,9 @@ class TargetInfo;
 
 /// \brief Enumerates the available scopes for skipping function bodies.
 enum class SkipFunctionBodiesScope { None, Preamble, PreambleAndMainFile };
+
+/// \brief Enumerates the available kinds for capturing diagnostics.
+enum class CaptureDiagsKind { None, All, AllWithoutNonErrorsFromIncludes };
 
 /// Utility class for loading a ASTContext from an AST file.
 class ASTUnit {
@@ -107,7 +110,7 @@ private:
   IntrusiveRefCntPtr<DiagnosticsEngine>   Diagnostics;
   IntrusiveRefCntPtr<FileManager>         FileMgr;
   IntrusiveRefCntPtr<SourceManager>       SourceMgr;
-  IntrusiveRefCntPtr<MemoryBufferCache>   PCMCache;
+  IntrusiveRefCntPtr<InMemoryModuleCache> ModuleCache;
   std::unique_ptr<HeaderSearch>           HeaderInfo;
   IntrusiveRefCntPtr<TargetInfo>          Target;
   std::shared_ptr<Preprocessor>           PP;
@@ -144,7 +147,7 @@ private:
   bool OnlyLocalDecls = false;
 
   /// Whether to capture any diagnostics produced.
-  bool CaptureDiagnostics = false;
+  CaptureDiagsKind CaptureDiagnostics = CaptureDiagsKind::None;
 
   /// Track whether the main file was loaded from an AST or not.
   bool MainFileIsAST;
@@ -205,7 +208,10 @@ private:
   /// we'll attempt to rebuild the precompiled header. This way, if
   /// building the precompiled preamble fails, we won't try again for
   /// some number of calls.
-  unsigned PreambleRebuildCounter = 0;
+  unsigned PreambleRebuildCountdown = 0;
+
+  /// Counter indicating how often the preamble was build in total.
+  unsigned PreambleCounter = 0;
 
   /// Cache pairs "filename - source location"
   ///
@@ -247,7 +253,7 @@ private:
   bool UserFilesAreVolatile : 1;
 
   static void ConfigureDiags(IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
-                             ASTUnit &AST, bool CaptureDiagnostics);
+                             ASTUnit &AST, CaptureDiagsKind CaptureDiagnostics);
 
   void TranslateStoredDiagnostics(FileManager &FileMgr,
                                   SourceManager &SrcMan,
@@ -574,6 +580,8 @@ public:
                        mapLocationToPreamble(R.getEnd()));
   }
 
+  unsigned getPreambleCounterForTests() const { return PreambleCounter; }
+
   // Retrieve the diagnostics associated with this AST
   using stored_diag_iterator = StoredDiagnostic *;
   using stored_diag_const_iterator = const StoredDiagnostic *;
@@ -656,8 +664,8 @@ public:
   /// Create a ASTUnit. Gets ownership of the passed CompilerInvocation.
   static std::unique_ptr<ASTUnit>
   create(std::shared_ptr<CompilerInvocation> CI,
-         IntrusiveRefCntPtr<DiagnosticsEngine> Diags, bool CaptureDiagnostics,
-         bool UserFilesAreVolatile);
+         IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
+         CaptureDiagsKind CaptureDiagnostics, bool UserFilesAreVolatile);
 
   enum WhatToLoad {
     /// Load options and the preprocessor state.
@@ -685,7 +693,8 @@ public:
       WhatToLoad ToLoad, IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
       const FileSystemOptions &FileSystemOpts, bool UseDebugInfo = false,
       bool OnlyLocalDecls = false, ArrayRef<RemappedFile> RemappedFiles = None,
-      bool CaptureDiagnostics = false, bool AllowPCHWithCompilerErrors = false,
+      CaptureDiagsKind CaptureDiagnostics = CaptureDiagsKind::None,
+      bool AllowPCHWithCompilerErrors = false,
       bool UserFilesAreVolatile = false);
 
 private:
@@ -743,7 +752,8 @@ public:
       IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
       FrontendAction *Action = nullptr, ASTUnit *Unit = nullptr,
       bool Persistent = true, StringRef ResourceFilesPath = StringRef(),
-      bool OnlyLocalDecls = false, bool CaptureDiagnostics = false,
+      bool OnlyLocalDecls = false,
+      CaptureDiagsKind CaptureDiagnostics = CaptureDiagsKind::None,
       unsigned PrecompilePreambleAfterNParses = 0,
       bool CacheCodeCompletionResults = false,
       bool IncludeBriefCommentsInCodeCompletion = false,
@@ -768,7 +778,8 @@ public:
       std::shared_ptr<CompilerInvocation> CI,
       std::shared_ptr<PCHContainerOperations> PCHContainerOps,
       IntrusiveRefCntPtr<DiagnosticsEngine> Diags, FileManager *FileMgr,
-      bool OnlyLocalDecls = false, bool CaptureDiagnostics = false,
+      bool OnlyLocalDecls = false,
+      CaptureDiagsKind CaptureDiagnostics = CaptureDiagsKind::None,
       unsigned PrecompilePreambleAfterNParses = 0,
       TranslationUnitKind TUKind = TU_Complete,
       bool CacheCodeCompletionResults = false,
@@ -808,7 +819,8 @@ public:
       const char **ArgBegin, const char **ArgEnd,
       std::shared_ptr<PCHContainerOperations> PCHContainerOps,
       IntrusiveRefCntPtr<DiagnosticsEngine> Diags, StringRef ResourceFilesPath,
-      bool OnlyLocalDecls = false, bool CaptureDiagnostics = false,
+      bool OnlyLocalDecls = false,
+      CaptureDiagsKind CaptureDiagnostics = CaptureDiagsKind::None,
       ArrayRef<RemappedFile> RemappedFiles = None,
       bool RemappedFilesKeepOriginalName = true,
       unsigned PrecompilePreambleAfterNParses = 0,

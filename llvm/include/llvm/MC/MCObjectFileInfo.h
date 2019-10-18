@@ -159,6 +159,9 @@ protected:
   /// FaultMap section.
   MCSection *FaultMapSection;
 
+  /// Remarks section.
+  MCSection *RemarksSection;
+
   /// EH frame section.
   ///
   /// It is initialized on demand so it can be overwritten (with uniquing).
@@ -314,6 +317,7 @@ public:
 
   MCSection *getStackMapSection() const { return StackMapSection; }
   MCSection *getFaultMapSection() const { return FaultMapSection; }
+  MCSection *getRemarksSection() const { return RemarksSection; }
 
   MCSection *getStackSizesSection(const MCSection &TextSec) const;
 
@@ -380,7 +384,7 @@ public:
     return EHFrameSection;
   }
 
-  enum Environment { IsMachO, IsELF, IsCOFF, IsWasm };
+  enum Environment { IsMachO, IsELF, IsCOFF, IsWasm, IsXCOFF };
   Environment getObjectFileType() const { return Env; }
 
   bool isPositionIndependent() const { return PositionIndependent; }
@@ -396,6 +400,7 @@ private:
   void initELFMCObjectFileInfo(const Triple &T, bool Large);
   void initCOFFMCObjectFileInfo(const Triple &T);
   void initWasmMCObjectFileInfo(const Triple &T);
+  void initXCOFFMCObjectFileInfo(const Triple &T);
   MCSection *getDwarfComdatSection(const char *Name, uint64_t Hash) const;
 
 public:

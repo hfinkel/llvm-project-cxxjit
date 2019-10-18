@@ -9,7 +9,7 @@
 #ifndef LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_MISC_THROW_BY_VALUE_CATCH_BY_REFERENCE_H
 #define LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_MISC_THROW_BY_VALUE_CATCH_BY_REFERENCE_H
 
-#include "../ClangTidy.h"
+#include "../ClangTidyCheck.h"
 
 namespace clang {
 namespace tidy {
@@ -41,6 +41,8 @@ private:
   bool isCatchVariable(const DeclRefExpr *declRefExpr);
   bool isFunctionOrCatchVar(const DeclRefExpr *declRefExpr);
   const bool CheckAnonymousTemporaries;
+  const bool WarnOnLargeObject;
+  uint64_t MaxSize; // No `const` because we have to set it in two steps.
 };
 
 } // namespace misc

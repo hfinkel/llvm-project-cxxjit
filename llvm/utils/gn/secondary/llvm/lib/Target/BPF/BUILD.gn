@@ -44,7 +44,6 @@ static_library("LLVMBPFCodeGen") {
     ":BPFGenGlobalISel",
     ":BPFGenMCPseudoLowering",
     ":BPFGenRegisterBank",
-    "InstPrinter",
     "MCTargetDesc",
     "TargetInfo",
     "//llvm/include/llvm/Config:llvm-config",
@@ -60,6 +59,7 @@ static_library("LLVMBPFCodeGen") {
   ]
   include_dirs = [ "." ]
   sources = [
+    "BPFAbstractMemberAccess.cpp",
     "BPFAsmPrinter.cpp",
     "BPFFrameLowering.cpp",
     "BPFISelDAGToDAG.cpp",
@@ -68,6 +68,7 @@ static_library("LLVMBPFCodeGen") {
     "BPFMCInstLower.cpp",
     "BPFMIChecking.cpp",
     "BPFMIPeephole.cpp",
+    "BPFMISimplifyPatchable.cpp",
     "BPFRegisterInfo.cpp",
     "BPFSelectionDAGInfo.cpp",
     "BPFSubtarget.cpp",
@@ -87,7 +88,6 @@ group("BPF") {
     ":LLVMBPFCodeGen",
     "AsmParser",
     "Disassembler",
-    "InstPrinter",
     "MCTargetDesc",
     "TargetInfo",
   ]

@@ -64,17 +64,13 @@ lldb::ByteOrder ABISysV_ppc64::GetByteOrder() const {
   return GetProcessSP()->GetByteOrder();
 }
 
-//------------------------------------------------------------------
 // Static Functions
-//------------------------------------------------------------------
 
 ABISP
 ABISysV_ppc64::CreateInstance(lldb::ProcessSP process_sp,
                               const ArchSpec &arch) {
-  if (arch.GetTriple().getArch() == llvm::Triple::ppc64 ||
-      arch.GetTriple().getArch() == llvm::Triple::ppc64le) {
+  if (arch.GetTriple().isPPC64())
     return ABISP(new ABISysV_ppc64(process_sp));
-  }
   return ABISP();
 }
 
@@ -1086,9 +1082,7 @@ lldb_private::ConstString ABISysV_ppc64::GetPluginNameStatic() {
   return g_name;
 }
 
-//------------------------------------------------------------------
 // PluginInterface protocol
-//------------------------------------------------------------------
 
 lldb_private::ConstString ABISysV_ppc64::GetPluginName() {
   return GetPluginNameStatic();

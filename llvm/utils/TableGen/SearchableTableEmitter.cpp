@@ -141,7 +141,7 @@ private:
   bool compareBy(Record *LHS, Record *RHS, const SearchIndex &Index);
 
   bool isIntegral(Init *I) {
-    return isa<BitsInit>(I) || isIntrinsic(I);
+    return isa<BitsInit>(I) || isa<CodeInit>(I) || isIntrinsic(I);
   }
 
   std::string searchableFieldType(const GenericField &Field, TypeContext Ctx) {
@@ -611,7 +611,7 @@ void SearchableTableEmitter::collectTableEntries(
         if (!Ty)
           PrintFatalError(Twine("Field '") + Field.Name + "' of table '" +
                           Table.Name + "' has incompatible type: " +
-                          Ty->getAsString() + " vs. " +
+                          Field.RecType->getAsString() + " vs. " +
                           TI->getType()->getAsString());
         Field.RecType = Ty;
       }

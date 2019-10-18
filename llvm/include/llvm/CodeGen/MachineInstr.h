@@ -24,6 +24,7 @@
 #include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/TargetOpcodes.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/MC/MCInstrDesc.h"
@@ -102,8 +103,10 @@ public:
                                         // no unsigned wrap.
     NoSWrap      = 1 << 12,             // Instruction supports binary operator
                                         // no signed wrap.
-    IsExact      = 1 << 13              // Instruction supports division is
+    IsExact      = 1 << 13,             // Instruction supports division is
                                         // known to be exact.
+    FPExcept     = 1 << 14,             // Instruction may raise floating-point
+                                        // exceptions.
   };
 
 private:
@@ -830,6 +833,17 @@ public:
     return mayLoad(Type) || mayStore(Type);
   }
 
+  /// Return true if this instruction could possibly raise a floating-point
+  /// exception.  This is the case if the instruction is a floating-point
+  /// instruction that can in principle raise an exception, as indicated
+  /// by the MCID::MayRaiseFPException property, *and* at the same time,
+  /// the instruction is used in a context where we expect floating-point
+  /// exceptions might be enabled, as indicated by the FPExcept MI flag.
+  bool mayRaiseFPException() const {
+    return hasProperty(MCID::MayRaiseFPException) &&
+           getFlag(MachineInstr::MIFlag::FPExcept);
+  }
+
   //===--------------------------------------------------------------------===//
   // Flags that indicate whether an instruction can be modified by a method.
   //===--------------------------------------------------------------------===//
@@ -1005,6 +1019,18 @@ public:
       && getOperand(1).isImm();
   }
 
+  /// A DBG_VALUE is an entry value iff its debug expression contains the
+  /// DW_OP_entry_value DWARF operation.
+  bool isDebugEntryValue() const {
+    return isDebugValue() && getDebugExpression()->isEntryValue();
+  }
+
+  /// Return true if the instruction is a debug value which describes a part of
+  /// a variable as unavailable.
+  bool isUndefDebugValue() const {
+    return isDebugValue() && getOperand(0).isReg() && !getOperand(0).getReg();
+  }
+
   bool isPHI() const {
     return getOpcode() == TargetOpcode::PHI ||
            getOpcode() == TargetOpcode::G_PHI;
@@ -1016,6 +1042,8 @@ public:
            getOpcode() == TargetOpcode::INLINEASM_BR;
   }
 
+  /// FIXME: Seems like a layering violation that the AsmDialect, which is X86
+  /// specific, be attached to a generic MachineInstr.
   bool isMSInlineAsm() const {
     return isInlineAsm() && getInlineAsmDialect() == InlineAsm::AD_Intel;
   }
@@ -1199,10 +1227,20 @@ public:
 
   /// Wrapper for findRegisterDefOperandIdx, it returns
   /// a pointer to the MachineOperand rather than an index.
-  MachineOperand *findRegisterDefOperand(unsigned Reg, bool isDead = false,
-                                      const TargetRegisterInfo *TRI = nullptr) {
-    int Idx = findRegisterDefOperandIdx(Reg, isDead, false, TRI);
+  MachineOperand *
+  findRegisterDefOperand(unsigned Reg, bool isDead = false,
+                         bool Overlap = false,
+                         const TargetRegisterInfo *TRI = nullptr) {
+    int Idx = findRegisterDefOperandIdx(Reg, isDead, Overlap, TRI);
     return (Idx == -1) ? nullptr : &getOperand(Idx);
+  }
+
+  const MachineOperand *
+  findRegisterDefOperand(unsigned Reg, bool isDead = false,
+                         bool Overlap = false,
+                         const TargetRegisterInfo *TRI = nullptr) const {
+    return const_cast<MachineInstr *>(this)->findRegisterDefOperand(
+        Reg, isDead, Overlap, TRI);
   }
 
   /// Find the index of the first operand in the
@@ -1366,7 +1404,7 @@ public:
   /// @param AA Optional alias analysis, used to compare memory operands.
   /// @param Other MachineInstr to check aliasing against.
   /// @param UseTBAA Whether to pass TBAA information to alias analysis.
-  bool mayAlias(AliasAnalysis *AA, MachineInstr &Other, bool UseTBAA);
+  bool mayAlias(AliasAnalysis *AA, const MachineInstr &Other, bool UseTBAA) const;
 
   /// Return true if this instruction may have an ordered
   /// or volatile memory reference, or if the information describing the memory
@@ -1535,6 +1573,10 @@ public:
   ///
   /// FIXME: This is not fully implemented yet.
   void setPostInstrSymbol(MachineFunction &MF, MCSymbol *Symbol);
+
+  /// Clone another MachineInstr's pre- and post- instruction symbols and
+  /// replace ours with it.
+  void cloneInstrSymbols(MachineFunction &MF, const MachineInstr &MI);
 
   /// Return the MIFlags which represent both MachineInstrs. This
   /// should be used when merging two MachineInstrs into one. This routine does

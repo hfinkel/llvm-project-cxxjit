@@ -210,16 +210,16 @@ define <4 x i32> @combine_vec_add_sub_add3(<4 x i32> %a, <4 x i32> %b, <4 x i32>
 define <4 x i32> @combine_vec_add_sub_sub(<4 x i32> %a, <4 x i32> %b, <4 x i32> %d) {
 ; SSE-LABEL: combine_vec_add_sub_sub:
 ; SSE:       # %bb.0:
-; SSE-NEXT:    paddd {{.*}}(%rip), %xmm0
 ; SSE-NEXT:    paddd %xmm2, %xmm1
 ; SSE-NEXT:    psubd %xmm1, %xmm0
+; SSE-NEXT:    paddd {{.*}}(%rip), %xmm0
 ; SSE-NEXT:    retq
 ;
 ; AVX-LABEL: combine_vec_add_sub_sub:
 ; AVX:       # %bb.0:
-; AVX-NEXT:    vpaddd {{.*}}(%rip), %xmm0, %xmm0
 ; AVX-NEXT:    vpaddd %xmm2, %xmm1, %xmm1
 ; AVX-NEXT:    vpsubd %xmm1, %xmm0, %xmm0
+; AVX-NEXT:    vpaddd {{.*}}(%rip), %xmm0, %xmm0
 ; AVX-NEXT:    retq
   %1 = sub <4 x i32> %a, %b
   %2 = sub <4 x i32> <i32 0, i32 1, i32 2, i32 3>, %d
@@ -348,4 +348,40 @@ define <4 x i32> @combine_vec_add_sextinreg(<4 x i32> %a0, <4 x i32> %a1) {
   %2 = ashr <4 x i32> %1, <i32 31, i32 31, i32 31, i32 31>
   %3 = add <4 x i32> %2, %a1
   ret <4 x i32> %3
+}
+
+; (add (add (xor a, -1), b), 1) -> (sub b, a)
+define i32 @combine_add_add_not(i32 %a, i32 %b) {
+; SSE-LABEL: combine_add_add_not:
+; SSE:       # %bb.0:
+; SSE-NEXT:    movl %esi, %eax
+; SSE-NEXT:    subl %edi, %eax
+; SSE-NEXT:    retq
+;
+; AVX-LABEL: combine_add_add_not:
+; AVX:       # %bb.0:
+; AVX-NEXT:    movl %esi, %eax
+; AVX-NEXT:    subl %edi, %eax
+; AVX-NEXT:    retq
+  %nota = xor i32 %a, -1
+  %add = add i32 %nota, %b
+  %r = add i32 %add, 1
+  ret i32 %r
+}
+
+define <4 x i32> @combine_vec_add_add_not(<4 x i32> %a, <4 x i32> %b) {
+; SSE-LABEL: combine_vec_add_add_not:
+; SSE:       # %bb.0:
+; SSE-NEXT:    psubd %xmm0, %xmm1
+; SSE-NEXT:    movdqa %xmm1, %xmm0
+; SSE-NEXT:    retq
+;
+; AVX-LABEL: combine_vec_add_add_not:
+; AVX:       # %bb.0:
+; AVX-NEXT:    vpsubd %xmm0, %xmm1, %xmm0
+; AVX-NEXT:    retq
+  %nota = xor <4 x i32> %a, <i32 -1, i32 -1, i32 -1, i32 -1>
+  %add = add <4 x i32> %nota, %b
+  %r = add <4 x i32> %add, <i32 1, i32 1, i32 1, i32 1>
+  ret <4 x i32> %r
 }

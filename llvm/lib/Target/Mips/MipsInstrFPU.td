@@ -142,7 +142,7 @@ multiclass ABSS_M<string opstr, InstrItinClass Itin,
                   SDPatternOperator OpNode= null_frag> {
   def _D32 : MMRel, ABSS_FT<opstr, AFGR64Opnd, AFGR64Opnd, Itin, OpNode>,
              FGR_32;
-  def _D64 : ABSS_FT<opstr, FGR64Opnd, FGR64Opnd, Itin, OpNode>, FGR_64 {
+  def _D64 : StdMMR6Rel, ABSS_FT<opstr, FGR64Opnd, FGR64Opnd, Itin, OpNode>, FGR_64 {
     string DecoderNamespace = "MipsFP64";
   }
 }
@@ -550,12 +550,7 @@ let AdditionalPredicates = [NotInMicroMips] in {
   let isMoveReg = 1 in {
     def FMOV_S   : MMRel, ABSS_FT<"mov.s", FGR32Opnd, FGR32Opnd, II_MOV_S>,
                    ABSS_FM<0x6, 16>, ISA_MIPS1;
-    def FMOV_D32 : MMRel, ABSS_FT<"mov.d", AFGR64Opnd, AFGR64Opnd, II_MOV_D>,
-                   ABSS_FM<0x6, 17>, ISA_MIPS1, FGR_32;
-    def FMOV_D64 : ABSS_FT<"mov.d", FGR64Opnd, FGR64Opnd, II_MOV_D>,
-                   ABSS_FM<0x6, 17>, ISA_MIPS1, FGR_64 {
-                     let DecoderNamespace = "MipsFP64";
-    }
+    defm FMOV : ABSS_M<"mov.d", II_MOV_D>, ABSS_FM<0x6, 17>, ISA_MIPS1;
   } // isMoveReg
 }
 
@@ -792,6 +787,11 @@ def LoadImmDoubleFGR : MipsAsmPseudoInst<(outs StrictlyFGR64Opnd:$rd),
                                          "li.d\t$rd, $fpimm">,
                        FGR_64, HARDFLOAT;
 
+def SDC1_M1 : MipsAsmPseudoInst<(outs AFGR64Opnd:$fd),
+                                (ins mem_simm16:$addr),
+                                "s.d\t$fd, $addr">,
+              FGR_32, ISA_MIPS1, HARDFLOAT;
+
 //===----------------------------------------------------------------------===//
 // InstAliases.
 //===----------------------------------------------------------------------===//
@@ -804,6 +804,9 @@ def : MipsInstAlias
 def : MipsInstAlias
         <"s.d $fd, $addr", (SDC164 FGR64Opnd:$fd, mem_simm16:$addr), 0>,
       FGR_64, ISA_MIPS2, HARDFLOAT;
+def : MipsInstAlias
+        <"s.d $fd, $addr", (SDC1_M1 AFGR64Opnd:$fd, mem_simm16:$addr), 0>,
+      FGR_32, ISA_MIPS1, HARDFLOAT;
 
 def : MipsInstAlias
         <"l.s $fd, $addr", (LWC1 FGR32Opnd:$fd, mem_simm16:$addr), 0>,

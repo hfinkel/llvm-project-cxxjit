@@ -96,6 +96,7 @@ def ParenListExpr : DStmt<Expr>;
 def VAArgExpr : DStmt<Expr>;
 def GenericSelectionExpr : DStmt<Expr>;
 def PseudoObjectExpr : DStmt<Expr>;
+def SourceLocExpr : DStmt<Expr>;
 
 // Wrapper expressions
 def FullExpr : DStmt<Expr, 1>;
@@ -191,6 +192,7 @@ def ConvertVectorExpr : DStmt<Expr>;
 def BlockExpr : DStmt<Expr>;
 def OpaqueValueExpr : DStmt<Expr>;
 def TypoExpr : DStmt<Expr>;
+def BuiltinBitCastExpr : DStmt<ExplicitCastExpr>;
 
 // Microsoft Extensions.
 def MSPropertyRefExpr : DStmt<Expr>;

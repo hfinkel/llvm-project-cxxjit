@@ -377,7 +377,8 @@ CodeGenInstruction::CodeGenInstruction(Record *R)
   isAdd        = R->getValueAsBit("isAdd");
   isTrap       = R->getValueAsBit("isTrap");
   canFoldAsLoad = R->getValueAsBit("canFoldAsLoad");
-  isPredicable = Operands.isPredicable || R->getValueAsBit("isPredicable");
+  isPredicable = !R->getValueAsBit("isUnpredicable") && (
+      Operands.isPredicable || R->getValueAsBit("isPredicable"));
   isConvertibleToThreeAddress = R->getValueAsBit("isConvertibleToThreeAddress");
   isCommutable = R->getValueAsBit("isCommutable");
   isTerminator = R->getValueAsBit("isTerminator");
@@ -400,6 +401,7 @@ CodeGenInstruction::CodeGenInstruction(Record *R)
   mayLoad_Unset = Unset;
   mayStore     = R->getValueAsBitOrUnset("mayStore", Unset);
   mayStore_Unset = Unset;
+  mayRaiseFPException = R->getValueAsBit("mayRaiseFPException");
   hasSideEffects = R->getValueAsBitOrUnset("hasSideEffects", Unset);
   hasSideEffects_Unset = Unset;
 

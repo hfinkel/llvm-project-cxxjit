@@ -8,9 +8,6 @@
 
 // UNSUPPORTED: c++98, c++03, c++11, c++14, c++17
 
-// TODO: Remove this when filesystem gets integrated into the dylib
-// REQUIRES: c++filesystem
-
 // <chrono>
 
 // file_clock
@@ -19,6 +16,8 @@
 
 #include <chrono>
 #include <cassert>
+
+#include "test_macros.h"
 
 int main(int, char**)
 {

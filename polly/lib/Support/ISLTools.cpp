@@ -12,7 +12,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "polly/Support/ISLTools.h"
-#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/raw_ostream.h"
+#include <cassert>
+#include <vector>
 
 using namespace polly;
 
@@ -503,6 +505,12 @@ isl::union_map polly::applyDomainRange(isl::union_map UMap,
 isl::map polly::intersectRange(isl::map Map, isl::union_set Range) {
   isl::set RangeSet = Range.extract_set(Map.get_space().range());
   return Map.intersect_range(RangeSet);
+}
+
+isl::map polly::subtractParams(isl::map Map, isl::set Params) {
+  auto MapSpace = Map.get_space();
+  auto ParamsMap = isl::map::universe(MapSpace).intersect_params(Params);
+  return Map.subtract(ParamsMap);
 }
 
 isl::val polly::getConstant(isl::pw_aff PwAff, bool Max, bool Min) {

@@ -42,13 +42,6 @@ set(SANITIZER_SOURCES_NOTERMINATION
   sanitizer_win.cc
   )
 
-if(UNIX AND NOT APPLE AND NOT OS_NAME MATCHES "SunOS")
-  list(APPEND SANITIZER_SOURCES_NOTERMINATION
-    sanitizer_linux_x86_64.S)
-  list(APPEND SANITIZER_SOURCES_NOTERMINATION
-    sanitizer_linux_mips64.S)
-endif()
-
 set(SANITIZER_SOURCES
   ${SANITIZER_SOURCES_NOTERMINATION} sanitizer_termination.cc)
 
@@ -65,6 +58,7 @@ set(SANITIZER_LIBCDEP_SOURCES
   sanitizer_mac_libcdep.cc
   sanitizer_posix_libcdep.cc
   sanitizer_stoptheworld_linux_libcdep.cc
+  sanitizer_stoptheworld_netbsd_libcdep.cc
   )
 
 set(SANITIZER_COVERAGE_SOURCES
@@ -209,19 +203,6 @@ append_list_if(SANITIZER_LIMIT_FRAME_SIZE -Wframe-larger-than=570
 append_list_if(COMPILER_RT_HAS_WGLOBAL_CONSTRUCTORS_FLAG -Wglobal-constructors
                SANITIZER_CFLAGS)
 
-if (LLVM_ENABLE_PEDANTIC AND UNIX AND NOT APPLE)
-  # With -pedantic, our .S files raise warnings about empty macro arguments
-  # from __USER_LABEL_PREFIX__ being an empty arg to GLUE().  Unfortunately,
-  # there is no simple way to test for an empty define, nor to disable just
-  # that warning or to disable -pedantic.  There is also no simple way to
-  # remove -pedantic from just this file (we'd have to remove from
-  # CMAKE_C*_FLAGS and re-add as a source property to all the non-.S files).
-  set_source_files_properties(sanitizer_linux_x86_64.S
-    PROPERTIES COMPILE_FLAGS "-w")
-  set_source_files_properties(sanitizer_linux_mips64.S
-    PROPERTIES COMPILE_FLAGS "-w")
-endif ()
-
 if(APPLE)
   set(OS_OPTION OS ${SANITIZER_COMMON_SUPPORTED_OS})
 endif()
@@ -292,38 +273,6 @@ add_compiler_rt_object_libraries(RTSanitizerCommonSymbolizerNoHooks
   ADDITIONAL_HEADERS ${SANITIZER_IMPL_HEADERS}
   CFLAGS ${SANITIZER_NO_WEAK_HOOKS_CFLAGS}
   DEFS ${SANITIZER_COMMON_DEFINITIONS})
-
-if(OS_NAME MATCHES "SunOS")
-  # Solaris ld doesn't support the non-standard GNU ld extension of adding
-  # __start_SECNAME and __stop_SECNAME labels to sections whose names are
-  # valid C identifiers.  Instead we add our own definitions for the
-  # __sancov_guards section.
-  add_compiler_rt_object_libraries(SancovBegin
-    ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
-    SOURCES sancov_begin.S
-    CFLAGS ${SANITIZER_CFLAGS}
-    DEFS ${SANITIZER_COMMON_DEFINITIONS})
-
-  add_compiler_rt_runtime(clang_rt.sancov_begin
-    STATIC
-    ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
-    OBJECT_LIBS SancovBegin
-    CFLAGS ${SANITIZER_CFLAGS}
-    DEFS ${SANITIZER_COMMON_DEFINITIONS})
-
-  add_compiler_rt_object_libraries(SancovEnd
-    ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
-    SOURCES sancov_end.S
-    CFLAGS ${SANITIZER_CFLAGS}
-    DEFS ${SANITIZER_COMMON_DEFINITIONS})
-
-  add_compiler_rt_runtime(clang_rt.sancov_end
-    STATIC
-    ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
-    OBJECT_LIBS SancovEnd
-    CFLAGS ${SANITIZER_CFLAGS}
-    DEFS ${SANITIZER_COMMON_DEFINITIONS})
-endif()
 
 if(WIN32)
   add_compiler_rt_object_libraries(SanitizerCommonWeakInterception

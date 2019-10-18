@@ -21,6 +21,7 @@
 #include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/FileCheck.h"
+#include <cmath>
 using namespace llvm;
 
 static cl::opt<std::string>
@@ -405,7 +406,7 @@ static void DumpAnnotatedInput(raw_ostream &OS, const FileCheckRequest &Req,
   unsigned LineCount = InputFileText.count('\n');
   if (InputFileEnd[-1] != '\n')
     ++LineCount;
-  unsigned LineNoWidth = log10(LineCount) + 1;
+  unsigned LineNoWidth = std::log10(LineCount) + 1;
   // +3 below adds spaces (1) to the left of the (right-aligned) line numbers
   // on input lines and (2) to the right of the (left-aligned) labels on
   // annotation lines so that input lines and annotation lines are more
@@ -536,8 +537,8 @@ int main(int argc, char **argv) {
       continue;
     }
     if (EqIdx == 0) {
-      errs() << "Missing pattern variable name in command-line definition '-D"
-             << G << "'\n";
+      errs() << "Missing variable name in command-line definition '-D" << G
+             << "'\n";
       GlobalDefineError = true;
       continue;
     }

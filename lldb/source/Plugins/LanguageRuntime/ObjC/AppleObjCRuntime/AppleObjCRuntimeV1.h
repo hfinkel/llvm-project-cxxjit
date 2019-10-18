@@ -10,8 +10,9 @@
 #define liblldb_AppleObjCRuntimeV1_h_
 
 #include "AppleObjCRuntime.h"
-#include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/lldb-private.h"
+
+#include "Plugins/LanguageRuntime/ObjC/ObjCLanguageRuntime.h"
 
 namespace lldb_private {
 
@@ -19,9 +20,7 @@ class AppleObjCRuntimeV1 : public AppleObjCRuntime {
 public:
   ~AppleObjCRuntimeV1() override = default;
 
-  //------------------------------------------------------------------
   // Static Functions
-  //------------------------------------------------------------------
   static void Initialize();
 
   static void Terminate();
@@ -31,13 +30,14 @@ public:
 
   static lldb_private::ConstString GetPluginNameStatic();
 
-  static bool classof(const ObjCLanguageRuntime *runtime) {
-    switch (runtime->GetRuntimeVersion()) {
-    case ObjCRuntimeVersions::eAppleObjC_V1:
-      return true;
-    default:
-      return false;
-    }
+  static char ID;
+
+  bool isA(const void *ClassID) const override {
+    return ClassID == &ID || AppleObjCRuntime::isA(ClassID);
+  }
+
+  static bool classof(const LanguageRuntime *runtime) {
+    return runtime->isA(&ID);
   }
 
   lldb::addr_t GetTaggedPointerObfuscator();
@@ -99,9 +99,7 @@ public:
 
   UtilityFunction *CreateObjectChecker(const char *) override;
 
-  //------------------------------------------------------------------
   // PluginInterface protocol
-  //------------------------------------------------------------------
   ConstString GetPluginName() override;
 
   uint32_t GetPluginVersion() override;

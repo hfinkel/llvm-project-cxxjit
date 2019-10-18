@@ -260,6 +260,16 @@ bool Constant::containsUndefElement() const {
   return false;
 }
 
+bool Constant::containsConstantExpression() const {
+  if (!getType()->isVectorTy())
+    return false;
+  for (unsigned i = 0, e = getType()->getVectorNumElements(); i != e; ++i)
+    if (isa<ConstantExpr>(getAggregateElement(i)))
+      return true;
+
+  return false;
+}
+
 /// Constructor to create a '0' constant of arbitrary type.
 Constant *Constant::getNullValue(Type *Ty) {
   switch (Ty->getTypeID()) {
@@ -1820,7 +1830,8 @@ Constant *ConstantExpr::get(unsigned Opcode, Constant *C, unsigned Flags,
   }
 #endif
 
-  // TODO: Try to constant fold operation.
+  if (Constant *FC = ConstantFoldUnaryInstruction(Opcode, C))
+    return FC;
 
   if (OnlyIfReducedTy == C->getType())
     return nullptr;
@@ -1845,51 +1856,31 @@ Constant *ConstantExpr::get(unsigned Opcode, Constant *C1, Constant *C2,
   case Instruction::Add:
   case Instruction::Sub:
   case Instruction::Mul:
-    assert(C1->getType() == C2->getType() && "Op types should be identical!");
+  case Instruction::UDiv:
+  case Instruction::SDiv:
+  case Instruction::URem:
+  case Instruction::SRem:
     assert(C1->getType()->isIntOrIntVectorTy() &&
            "Tried to create an integer operation on a non-integer type!");
     break;
   case Instruction::FAdd:
   case Instruction::FSub:
   case Instruction::FMul:
-    assert(C1->getType() == C2->getType() && "Op types should be identical!");
+  case Instruction::FDiv:
+  case Instruction::FRem:
     assert(C1->getType()->isFPOrFPVectorTy() &&
            "Tried to create a floating-point operation on a "
            "non-floating-point type!");
     break;
-  case Instruction::UDiv:
-  case Instruction::SDiv:
-    assert(C1->getType() == C2->getType() && "Op types should be identical!");
-    assert(C1->getType()->isIntOrIntVectorTy() &&
-           "Tried to create an arithmetic operation on a non-arithmetic type!");
-    break;
-  case Instruction::FDiv:
-    assert(C1->getType() == C2->getType() && "Op types should be identical!");
-    assert(C1->getType()->isFPOrFPVectorTy() &&
-           "Tried to create an arithmetic operation on a non-arithmetic type!");
-    break;
-  case Instruction::URem:
-  case Instruction::SRem:
-    assert(C1->getType() == C2->getType() && "Op types should be identical!");
-    assert(C1->getType()->isIntOrIntVectorTy() &&
-           "Tried to create an arithmetic operation on a non-arithmetic type!");
-    break;
-  case Instruction::FRem:
-    assert(C1->getType() == C2->getType() && "Op types should be identical!");
-    assert(C1->getType()->isFPOrFPVectorTy() &&
-           "Tried to create an arithmetic operation on a non-arithmetic type!");
-    break;
   case Instruction::And:
   case Instruction::Or:
   case Instruction::Xor:
-    assert(C1->getType() == C2->getType() && "Op types should be identical!");
     assert(C1->getType()->isIntOrIntVectorTy() &&
            "Tried to create a logical operation on a non-integral type!");
     break;
   case Instruction::Shl:
   case Instruction::LShr:
   case Instruction::AShr:
-    assert(C1->getType() == C2->getType() && "Op types should be identical!");
     assert(C1->getType()->isIntOrIntVectorTy() &&
            "Tried to create a shift operation on a non-integer type!");
     break;
@@ -1899,7 +1890,7 @@ Constant *ConstantExpr::get(unsigned Opcode, Constant *C1, Constant *C2,
 #endif
 
   if (Constant *FC = ConstantFoldBinaryInstruction(Opcode, C1, C2))
-    return FC;          // Fold a few common cases.
+    return FC;
 
   if (OnlyIfReducedTy == C1->getType())
     return nullptr;
@@ -2225,7 +2216,7 @@ Constant *ConstantExpr::getNeg(Constant *C, bool HasNUW, bool HasNSW) {
 Constant *ConstantExpr::getFNeg(Constant *C) {
   assert(C->getType()->isFPOrFPVectorTy() &&
          "Cannot FNEG a non-floating-point value!");
-  return getFSub(ConstantFP::getZeroValueForNegation(C->getType()), C);
+  return get(Instruction::FNeg, C);
 }
 
 Constant *ConstantExpr::getNot(Constant *C) {
@@ -2566,7 +2557,7 @@ Constant *ConstantDataArray::getFP(LLVMContext &Context,
 Constant *ConstantDataArray::getString(LLVMContext &Context,
                                        StringRef Str, bool AddNull) {
   if (!AddNull) {
-    const uint8_t *Data = reinterpret_cast<const uint8_t *>(Str.data());
+    const uint8_t *Data = Str.bytes_begin();
     return get(Context, makeArrayRef(Data, Str.size()));
   }
 
@@ -3014,7 +3005,8 @@ Instruction *ConstantExpr::getAsInstruction() {
   case Instruction::FCmp:
     return CmpInst::Create((Instruction::OtherOps)getOpcode(),
                            (CmpInst::Predicate)getPredicate(), Ops[0], Ops[1]);
-
+  case Instruction::FNeg:
+    return UnaryOperator::Create((Instruction::UnaryOps)getOpcode(), Ops[0]);
   default:
     assert(getNumOperands() == 2 && "Must be binary operator?");
     BinaryOperator *BO =

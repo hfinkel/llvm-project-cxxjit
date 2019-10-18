@@ -365,6 +365,7 @@ AddressClass ObjectFile::GetAddressClass(addr_t file_addr) {
           case eSectionTypeDWARFDebugStrOffsets:
           case eSectionTypeDWARFDebugStrOffsetsDwo:
           case eSectionTypeDWARFDebugTypes:
+          case eSectionTypeDWARFDebugTypesDwo:
           case eSectionTypeDWARFAppleNames:
           case eSectionTypeDWARFAppleTypes:
           case eSectionTypeDWARFAppleNamespaces:
@@ -533,9 +534,7 @@ size_t ObjectFile::ReadSectionData(Section *section,
   return 0;
 }
 
-//----------------------------------------------------------------------
 // Get the section data the file on disk
-//----------------------------------------------------------------------
 size_t ObjectFile::ReadSectionData(Section *section,
                                    DataExtractor &section_data) {
   // If some other objectfile owns this data, pass this to them.

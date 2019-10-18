@@ -754,6 +754,11 @@ TEST(Matcher, NullPtrLiteral) {
   EXPECT_TRUE(matches("int* i = nullptr;", cxxNullPtrLiteralExpr()));
 }
 
+TEST(Matcher, ChooseExpr) {
+  EXPECT_TRUE(matchesC("void f() { (void)__builtin_choose_expr(1, 2, 3); }",
+                       chooseExpr()));
+}
+
 TEST(Matcher, GNUNullExpr) {
   EXPECT_TRUE(matches("int* i = __null;", gnuNullExpr()));
 }
@@ -1758,6 +1763,68 @@ TEST(ObjCAutoreleaseMatcher, AutoreleasePool) {
   EXPECT_TRUE(matchesObjC(ObjCString, autoreleasePoolStmt()));
   std::string ObjCStringNoPool = "void f() { int x = 1; }";
   EXPECT_FALSE(matchesObjC(ObjCStringNoPool, autoreleasePoolStmt()));
+}
+
+TEST(OMPExecutableDirective, Matches) {
+  auto Matcher = stmt(ompExecutableDirective());
+
+  const std::string Source0 = R"(
+void x() {
+#pragma omp parallel
+;
+})";
+  EXPECT_TRUE(matchesWithOpenMP(Source0, Matcher));
+
+  const std::string Source1 = R"(
+void x() {
+#pragma omp taskyield
+;
+})";
+  EXPECT_TRUE(matchesWithOpenMP(Source1, Matcher));
+
+  const std::string Source2 = R"(
+void x() {
+;
+})";
+  EXPECT_TRUE(notMatchesWithOpenMP(Source2, Matcher));
+}
+
+TEST(OMPDefaultClause, Matches) {
+  auto Matcher = ompExecutableDirective(hasAnyClause(ompDefaultClause()));
+
+  const std::string Source0 = R"(
+void x() {
+;
+})";
+  EXPECT_TRUE(notMatchesWithOpenMP(Source0, Matcher));
+
+  const std::string Source1 = R"(
+void x() {
+#pragma omp parallel
+;
+})";
+  EXPECT_TRUE(notMatchesWithOpenMP(Source1, Matcher));
+
+  const std::string Source2 = R"(
+void x() {
+#pragma omp parallel default(none)
+;
+})";
+  EXPECT_TRUE(matchesWithOpenMP(Source2, Matcher));
+
+  const std::string Source3 = R"(
+void x() {
+#pragma omp parallel default(shared)
+;
+})";
+  EXPECT_TRUE(matchesWithOpenMP(Source3, Matcher));
+
+  const std::string Source4 = R"(
+void x(int x) {
+#pragma omp parallel num_threads(x)
+;
+})";
+  EXPECT_TRUE(notMatchesWithOpenMP(Source4, Matcher));
 }
 
 } // namespace ast_matchers

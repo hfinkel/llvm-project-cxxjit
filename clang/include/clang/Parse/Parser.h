@@ -150,10 +150,14 @@ class Parser : public CodeCompletionHandler {
   IdentifierInfo *Ident_language, *Ident_defined_in,
       *Ident_generated_declaration;
 
-  /// C++0x contextual keywords.
+  /// C++11 contextual keywords.
   mutable IdentifierInfo *Ident_final;
   mutable IdentifierInfo *Ident_GNU_final;
   mutable IdentifierInfo *Ident_override;
+
+  // C++2a contextual keywords.
+  mutable IdentifierInfo *Ident_import;
+  mutable IdentifierInfo *Ident_module;
 
   // C++ type trait keywords that can be reverted to identifiers and still be
   // used as type traits.
@@ -246,7 +250,13 @@ class Parser : public CodeCompletionHandler {
       Depth += D;
       AddedLevels += D;
     }
+    void setAddedDepth(unsigned D) {
+      Depth = Depth - AddedLevels + D;
+      AddedLevels = D;
+    }
+
     unsigned getDepth() const { return Depth; }
+    unsigned getOriginalDepth() const { return Depth - AddedLevels; }
   };
 
   /// Factory object for creating ParsedAttr objects.
@@ -428,7 +438,7 @@ public:
 
   /// ParseTopLevelDecl - Parse one top-level declaration. Returns true if
   /// the EOF was encountered.
-  bool ParseTopLevelDecl(DeclGroupPtrTy &Result);
+  bool ParseTopLevelDecl(DeclGroupPtrTy &Result, bool IsFirstDecl = false);
   bool ParseTopLevelDecl() {
     DeclGroupPtrTy Result;
     return ParseTopLevelDecl(Result);
@@ -530,9 +540,9 @@ private:
   /// token the current token.
   void UnconsumeToken(Token &Consumed) {
       Token Next = Tok;
-      PP.EnterToken(Consumed);
+      PP.EnterToken(Consumed, /*IsReinject*/true);
       PP.Lex(Tok);
-      PP.EnterToken(Next);
+      PP.EnterToken(Next, /*IsReinject*/true);
   }
 
   SourceLocation ConsumeAnnotationToken() {
@@ -793,9 +803,8 @@ private:
     /// Annotation was successful.
     ANK_Success
   };
-  AnnotatedNameKind
-  TryAnnotateName(bool IsAddressOfOperand,
-                  std::unique_ptr<CorrectionCandidateCallback> CCC = nullptr);
+  AnnotatedNameKind TryAnnotateName(bool IsAddressOfOperand,
+                                    CorrectionCandidateCallback *CCC = nullptr);
 
   /// Push a tok::annot_cxxscope token onto the token stream.
   void AnnotateScopeToken(CXXScopeSpec &SS, bool IsNewAnnotation);
@@ -1153,6 +1162,7 @@ private:
     Parser *Self;
     CachedTokens Toks;
     IdentifierInfo &AttrName;
+    IdentifierInfo *MacroII = nullptr;
     SourceLocation AttrNameLoc;
     SmallVector<Decl*, 2> Decls;
 
@@ -1578,7 +1588,8 @@ private:
   ObjCImplParsingDataRAII *CurParsedObjCImpl;
   void StashAwayMethodOrFunctionBodyTokens(Decl *MDecl);
 
-  DeclGroupPtrTy ParseObjCAtImplementationDeclaration(SourceLocation AtLoc);
+  DeclGroupPtrTy ParseObjCAtImplementationDeclaration(SourceLocation AtLoc,
+                                                      ParsedAttributes &Attrs);
   DeclGroupPtrTy ParseObjCAtEndDeclaration(SourceRange atEnd);
   Decl *ParseObjCAtAliasDeclaration(SourceLocation atLoc);
   Decl *ParseObjCPropertySynthesize(SourceLocation atLoc);
@@ -1684,10 +1695,10 @@ private:
   typedef SmallVector<SourceLocation, 20> CommaLocsTy;
 
   /// ParseExpressionList - Used for C/C++ (argument-)expression-list.
-  bool ParseExpressionList(
-      SmallVectorImpl<Expr *> &Exprs,
-      SmallVectorImpl<SourceLocation> &CommaLocs,
-      llvm::function_ref<void()> Completer = llvm::function_ref<void()>());
+  bool ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
+                           SmallVectorImpl<SourceLocation> &CommaLocs,
+                           llvm::function_ref<void()> ExpressionStarts =
+                               llvm::function_ref<void()>());
 
   /// ParseSimpleExpressionList - A simple comma-separated list of expressions,
   /// used for misc language extensions.
@@ -1745,20 +1756,36 @@ private:
                                       bool OnlyNamespace = false);
 
   //===--------------------------------------------------------------------===//
-  // C++0x 5.1.2: Lambda expressions
+  // C++11 5.1.2: Lambda expressions
+
+  /// Result of tentatively parsing a lambda-introducer.
+  enum class LambdaIntroducerTentativeParse {
+    /// This appears to be a lambda-introducer, which has been fully parsed.
+    Success,
+    /// This is a lambda-introducer, but has not been fully parsed, and this
+    /// function needs to be called again to parse it.
+    Incomplete,
+    /// This is definitely an Objective-C message send expression, rather than
+    /// a lambda-introducer, attribute-specifier, or array designator.
+    MessageSend,
+    /// This is not a lambda-introducer.
+    Invalid,
+  };
 
   // [...] () -> type {...}
   ExprResult ParseLambdaExpression();
   ExprResult TryParseLambdaExpression();
-  Optional<unsigned> ParseLambdaIntroducer(LambdaIntroducer &Intro,
-                                           bool *SkippedInits = nullptr);
-  bool TryParseLambdaIntroducer(LambdaIntroducer &Intro);
-  ExprResult ParseLambdaExpressionAfterIntroducer(
-               LambdaIntroducer &Intro);
+  bool
+  ParseLambdaIntroducer(LambdaIntroducer &Intro,
+                        LambdaIntroducerTentativeParse *Tentative = nullptr);
+  ExprResult ParseLambdaExpressionAfterIntroducer(LambdaIntroducer &Intro);
 
   //===--------------------------------------------------------------------===//
   // C++ 5.2p1: C++ Casts
   ExprResult ParseCXXCasts();
+
+  /// Parse a __builtin_bit_cast(T, E), used to implement C++2a std::bit_cast.
+  ExprResult ParseBuiltinBitCast();
 
   //===--------------------------------------------------------------------===//
   // C++ 5.2p1: C++ Type Identification
@@ -2296,12 +2323,17 @@ private:
   /// Doesn't consume tokens.
   TPResult
   isCXXDeclarationSpecifier(TPResult BracedCastResult = TPResult::False,
-                            bool *HasMissingTypename = nullptr);
+                            bool *InvalidAsDeclSpec = nullptr);
 
   /// Given that isCXXDeclarationSpecifier returns \c TPResult::True or
   /// \c TPResult::Ambiguous, determine whether the decl-specifier would be
   /// a type-specifier other than a cv-qualifier.
   bool isCXXDeclarationSpecifierAType();
+
+  /// Determine whether the current token sequence might be
+  ///   '<' template-argument-list '>'
+  /// rather than a less-than expression.
+  TPResult isTemplateArgumentList(unsigned TokensToSkip);
 
   /// Determine whether an identifier has been tentatively declared as a
   /// non-type. Such tentative declarations should not be found to name a type
@@ -2929,6 +2961,8 @@ public:
                           ParsedType ObjectType,
                           SourceLocation *TemplateKWLoc,
                           UnqualifiedId &Result);
+  /// Parses the mapper modifier in map, to, and from clauses.
+  bool parseMapperModifier(OpenMPVarListDataTy &Data);
   /// Parses map-type-modifiers in map clause.
   /// map([ [map-type-modifier[,] [map-type-modifier[,] ...] map-type : ] list)
   /// where, map-type-modifier ::= always | close | mapper(mapper-identifier)
@@ -2985,7 +3019,6 @@ private:
                                UnqualifiedId &TemplateName,
                                bool AllowTypeAnnotation = true);
   void AnnotateTemplateIdTokenAsType(bool IsClassName = false);
-  bool IsTemplateArgumentList(unsigned Skip = 0);
   bool ParseTemplateArgumentList(TemplateArgList &TemplateArgs);
   ParsedTemplateArgument ParseTemplateTemplateArgument();
   ParsedTemplateArgument ParseTemplateArgument();
@@ -2995,10 +3028,14 @@ private:
                                    SourceLocation &DeclEnd,
                                    ParsedAttributes &AccessAttrs,
                                    AccessSpecifier AS = AS_none);
+  // C++2a: Template, concept definition [temp]
+  Decl *
+  ParseConceptDefinition(const ParsedTemplateInfo &TemplateInfo,
+                         SourceLocation &DeclEnd);
 
   //===--------------------------------------------------------------------===//
   // Modules
-  DeclGroupPtrTy ParseModuleDecl();
+  DeclGroupPtrTy ParseModuleDecl(bool IsFirstDecl);
   Decl *ParseModuleImport(SourceLocation AtLoc);
   bool parseMisplacedModuleImport();
   bool tryParseMisplacedModuleImport() {

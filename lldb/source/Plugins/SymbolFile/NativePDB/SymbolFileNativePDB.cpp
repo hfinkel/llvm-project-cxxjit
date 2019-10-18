@@ -73,6 +73,8 @@ static lldb::LanguageType TranslateLanguage(PDB_Lang lang) {
     return lldb::LanguageType::eLanguageTypeC_plus_plus;
   case PDB_Lang::C:
     return lldb::LanguageType::eLanguageTypeC;
+  case PDB_Lang::Swift:
+    return lldb::LanguageType::eLanguageTypeSwift;
   default:
     return lldb::LanguageType::eLanguageTypeUnknown;
   }
@@ -593,6 +595,17 @@ TypeSP SymbolFileNativePDB::CreateArrayType(PdbTypeSymId type_id,
   return array_sp;
 }
 
+
+TypeSP SymbolFileNativePDB::CreateFunctionType(PdbTypeSymId type_id,
+                                               const MemberFunctionRecord &mfr,
+                                               CompilerType ct) {
+  Declaration decl;
+  return std::make_shared<lldb_private::Type>(
+      toOpaqueUid(type_id), this, ConstString(), 0, nullptr, LLDB_INVALID_UID,
+      lldb_private::Type::eEncodingIsUID, decl, ct,
+      lldb_private::Type::eResolveStateFull);
+}
+
 TypeSP SymbolFileNativePDB::CreateProcedureType(PdbTypeSymId type_id,
                                                 const ProcedureRecord &pr,
                                                 CompilerType ct) {
@@ -652,6 +665,11 @@ TypeSP SymbolFileNativePDB::CreateType(PdbTypeSymId type_id, CompilerType ct) {
     ProcedureRecord pr;
     llvm::cantFail(TypeDeserializer::deserializeAs<ProcedureRecord>(cvt, pr));
     return CreateProcedureType(type_id, pr, ct);
+  }
+  if (cvt.kind() == LF_MFUNCTION) {
+    MemberFunctionRecord mfr;
+    llvm::cantFail(TypeDeserializer::deserializeAs<MemberFunctionRecord>(cvt, mfr));
+    return CreateFunctionType(type_id, mfr, ct);
   }
 
   return nullptr;
@@ -1150,7 +1168,7 @@ size_t SymbolFileNativePDB::ParseBlocksRecursive(Function &func) {
 void SymbolFileNativePDB::DumpClangAST(Stream &s) { m_ast->Dump(s); }
 
 uint32_t SymbolFileNativePDB::FindGlobalVariables(
-    const ConstString &name, const CompilerDeclContext *parent_decl_ctx,
+    ConstString name, const CompilerDeclContext *parent_decl_ctx,
     uint32_t max_matches, VariableList &variables) {
   using SymbolAndOffset = std::pair<uint32_t, llvm::codeview::CVSymbol>;
 
@@ -1177,7 +1195,7 @@ uint32_t SymbolFileNativePDB::FindGlobalVariables(
 }
 
 uint32_t SymbolFileNativePDB::FindFunctions(
-    const ConstString &name, const CompilerDeclContext *parent_decl_ctx,
+    ConstString name, const CompilerDeclContext *parent_decl_ctx,
     FunctionNameType name_type_mask, bool include_inlines, bool append,
     SymbolContextList &sc_list) {
   // For now we only support lookup by method name.
@@ -1218,7 +1236,7 @@ uint32_t SymbolFileNativePDB::FindFunctions(const RegularExpression &regex,
 }
 
 uint32_t SymbolFileNativePDB::FindTypes(
-    const ConstString &name, const CompilerDeclContext *parent_decl_ctx,
+    ConstString name, const CompilerDeclContext *parent_decl_ctx,
     bool append, uint32_t max_matches,
     llvm::DenseSet<SymbolFile *> &searched_symbol_files, TypeMap &types) {
   if (!append)
@@ -1550,7 +1568,7 @@ size_t SymbolFileNativePDB::GetTypes(lldb_private::SymbolContextScope *sc_scope,
 }
 
 CompilerDeclContext
-SymbolFileNativePDB::FindNamespace(const ConstString &name,
+SymbolFileNativePDB::FindNamespace(ConstString name,
                                    const CompilerDeclContext *parent_decl_ctx) {
   return {};
 }

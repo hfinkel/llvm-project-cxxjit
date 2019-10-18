@@ -145,7 +145,7 @@ public:
 
   bool needsCustom() const { return isCustom; }
 
-  unsigned getLocReg() const { assert(isRegLoc()); return Loc; }
+  Register getLocReg() const { assert(isRegLoc()); return Loc; }
   unsigned getLocMemOffset() const { assert(isMemLoc()); return Loc; }
   unsigned getExtraInfo() const { return Loc; }
   MVT getLocVT() const { return LocVT; }
@@ -556,7 +556,7 @@ public:
 
     // Sort the locations of the arguments according to their original position.
     SmallVector<CCValAssign, 16> TmpArgLocs;
-    std::swap(TmpArgLocs, Locs);
+    TmpArgLocs.swap(Locs);
     auto B = TmpArgLocs.begin(), E = TmpArgLocs.end();
     std::merge(B, B + NumFirstPassLocs, B + NumFirstPassLocs, E,
                std::back_inserter(Locs),

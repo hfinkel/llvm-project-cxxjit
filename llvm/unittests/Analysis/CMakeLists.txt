@@ -18,6 +18,7 @@ add_llvm_unittest(AnalysisTests
   DivergenceAnalysisTest.cpp
   DomTreeUpdaterTest.cpp
   GlobalsModRefTest.cpp
+  IVDescriptorsTest.cpp
   LazyCallGraphTest.cpp
   LoopInfoTest.cpp
   MemoryBuiltinsTest.cpp
@@ -33,4 +34,5 @@ add_llvm_unittest(AnalysisTests
   UnrollAnalyzerTest.cpp
   ValueLatticeTest.cpp
   ValueTrackingTest.cpp
+  VectorUtilsTest.cpp
   )

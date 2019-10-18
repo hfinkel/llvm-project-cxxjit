@@ -52,6 +52,7 @@ LLVM_YAML_STRONG_TYPEDEF(uint8_t, ELF_RSS)
 // Just use 64, since it can hold 32-bit values too.
 LLVM_YAML_STRONG_TYPEDEF(uint64_t, ELF_SHF)
 LLVM_YAML_STRONG_TYPEDEF(uint16_t, ELF_SHN)
+LLVM_YAML_STRONG_TYPEDEF(uint8_t, ELF_STB)
 LLVM_YAML_STRONG_TYPEDEF(uint8_t, ELF_STT)
 LLVM_YAML_STRONG_TYPEDEF(uint8_t, ELF_STV)
 LLVM_YAML_STRONG_TYPEDEF(uint8_t, ELF_STO)
@@ -74,6 +75,11 @@ struct FileHeader {
   ELF_EM Machine;
   ELF_EF Flags;
   llvm::yaml::Hex64 Entry;
+
+  Optional<llvm::yaml::Hex16> SHEntSize;
+  Optional<llvm::yaml::Hex16> SHOffset;
+  Optional<llvm::yaml::Hex16> SHNum;
+  Optional<llvm::yaml::Hex16> SHStrNdx;
 };
 
 struct SectionName {
@@ -86,23 +92,22 @@ struct ProgramHeader {
   llvm::yaml::Hex64 VAddr;
   llvm::yaml::Hex64 PAddr;
   Optional<llvm::yaml::Hex64> Align;
+  Optional<llvm::yaml::Hex64> FileSize;
+  Optional<llvm::yaml::Hex64> MemSize;
+  Optional<llvm::yaml::Hex64> Offset;
   std::vector<SectionName> Sections;
 };
 
 struct Symbol {
   StringRef Name;
+  Optional<uint32_t> NameIndex;
   ELF_STT Type;
   StringRef Section;
   Optional<ELF_SHN> Index;
+  ELF_STB Binding;
   llvm::yaml::Hex64 Value;
   llvm::yaml::Hex64 Size;
   uint8_t Other;
-};
-
-struct LocalGlobalWeakSymbols {
-  std::vector<Symbol> Local;
-  std::vector<Symbol> Global;
-  std::vector<Symbol> Weak;
 };
 
 struct SectionOrType {
@@ -121,6 +126,7 @@ struct Section {
     RawContent,
     Relocation,
     NoBits,
+    Verdef,
     Verneed,
     Symver,
     MipsABIFlags
@@ -128,11 +134,19 @@ struct Section {
   SectionKind Kind;
   StringRef Name;
   ELF_SHT Type;
-  ELF_SHF Flags;
+  Optional<ELF_SHF> Flags;
   llvm::yaml::Hex64 Address;
   StringRef Link;
   llvm::yaml::Hex64 AddressAlign;
   Optional<llvm::yaml::Hex64> EntSize;
+
+  // This can be used to override the sh_offset field. It does not place the
+  // section data at the offset specified. Useful for creating invalid objects.
+  Optional<llvm::yaml::Hex64> ShOffset;
+
+  // This can be used to override the sh_size field. It does not affect the
+  // content written.
+  Optional<llvm::yaml::Hex64> ShSize;
 
   Section(SectionKind Kind) : Kind(Kind) {}
   virtual ~Section();
@@ -140,6 +154,7 @@ struct Section {
 
 struct DynamicSection : Section {
   std::vector<DynamicEntry> Entries;
+  Optional<yaml::BinaryRef> Content;
 
   DynamicSection() : Section(SectionKind::Dynamic) {}
 
@@ -149,8 +164,9 @@ struct DynamicSection : Section {
 };
 
 struct RawContentSection : Section {
-  yaml::BinaryRef Content;
-  llvm::yaml::Hex64 Size;
+  Optional<yaml::BinaryRef> Content;
+  Optional<llvm::yaml::Hex64> Size;
+  Optional<llvm::yaml::Hex64> Info;
 
   RawContentSection() : Section(SectionKind::RawContent) {}
 
@@ -200,6 +216,25 @@ struct SymverSection : Section {
 
   static bool classof(const Section *S) {
     return S->Kind == SectionKind::Symver;
+  }
+};
+
+struct VerdefEntry {
+  uint16_t Version;
+  uint16_t Flags;
+  uint16_t VersionNdx;
+  uint32_t Hash;
+  std::vector<StringRef> VerNames;
+};
+
+struct VerdefSection : Section {
+  std::vector<VerdefEntry> Entries;
+  llvm::yaml::Hex64 Info;
+
+  VerdefSection() : Section(SectionKind::Verdef) {}
+
+  static bool classof(const Section *S) {
+    return S->Kind == SectionKind::Verdef;
   }
 };
 
@@ -263,8 +298,8 @@ struct Object {
   // cleaner and nicer if we read them from the YAML as a separate
   // top-level key, which automatically ensures that invariants like there
   // being a single SHT_SYMTAB section are upheld.
-  LocalGlobalWeakSymbols Symbols;
-  LocalGlobalWeakSymbols DynamicSymbols;
+  std::vector<Symbol> Symbols;
+  std::vector<Symbol> DynamicSymbols;
 };
 
 } // end namespace ELFYAML
@@ -274,6 +309,7 @@ LLVM_YAML_IS_SEQUENCE_VECTOR(llvm::ELFYAML::DynamicEntry)
 LLVM_YAML_IS_SEQUENCE_VECTOR(llvm::ELFYAML::ProgramHeader)
 LLVM_YAML_IS_SEQUENCE_VECTOR(std::unique_ptr<llvm::ELFYAML::Section>)
 LLVM_YAML_IS_SEQUENCE_VECTOR(llvm::ELFYAML::Symbol)
+LLVM_YAML_IS_SEQUENCE_VECTOR(llvm::ELFYAML::VerdefEntry)
 LLVM_YAML_IS_SEQUENCE_VECTOR(llvm::ELFYAML::VernauxEntry)
 LLVM_YAML_IS_SEQUENCE_VECTOR(llvm::ELFYAML::VerneedEntry)
 LLVM_YAML_IS_SEQUENCE_VECTOR(llvm::ELFYAML::Relocation)
@@ -333,6 +369,10 @@ struct ScalarBitSetTraits<ELFYAML::ELF_SHF> {
 
 template <> struct ScalarEnumerationTraits<ELFYAML::ELF_SHN> {
   static void enumeration(IO &IO, ELFYAML::ELF_SHN &Value);
+};
+
+template <> struct ScalarEnumerationTraits<ELFYAML::ELF_STB> {
+  static void enumeration(IO &IO, ELFYAML::ELF_STB &Value);
 };
 
 template <>
@@ -410,13 +450,12 @@ struct MappingTraits<ELFYAML::Symbol> {
   static StringRef validate(IO &IO, ELFYAML::Symbol &Symbol);
 };
 
-template <>
-struct MappingTraits<ELFYAML::LocalGlobalWeakSymbols> {
-  static void mapping(IO &IO, ELFYAML::LocalGlobalWeakSymbols &Symbols);
-};
-
 template <> struct MappingTraits<ELFYAML::DynamicEntry> {
   static void mapping(IO &IO, ELFYAML::DynamicEntry &Rel);
+};
+
+template <> struct MappingTraits<ELFYAML::VerdefEntry> {
+  static void mapping(IO &IO, ELFYAML::VerdefEntry &E);
 };
 
 template <> struct MappingTraits<ELFYAML::VerneedEntry> {

@@ -113,8 +113,7 @@ multiclass ABSS_MMM<string opstr, InstrItinClass Itin,
                 ISA_MICROMIPS, FGR_32 {
     string DecoderNamespace = "MicroMips";
   }
-  // FIXME: This needs to be part of the instruction mapping tables.
-  def _D64_MM : ABSS_FT<opstr, FGR64Opnd, FGR64Opnd, Itin, OpNode>,
+  def _D64_MM : StdMMR6Rel, ABSS_FT<opstr, FGR64Opnd, FGR64Opnd, Itin, OpNode>,
                 ISA_MICROMIPS, FGR_64 {
     string DecoderNamespace = "MicroMipsFP64";
   }
@@ -265,7 +264,7 @@ let DecoderNamespace = "MicroMips" in {
                      ROUND_W_FM_MM<0b1, 0b01001000>, ISA_MICROMIPS, FGR_64;
   def RSQRT_S_MM : MMRel, ABSS_FT<"rsqrt.s", FGR32Opnd, FGR32Opnd,
                                   II_RECIP_S>,
-                   ROUND_W_FM_MM<0b0, 0b00001000>;
+                   ROUND_W_FM_MM<0b0, 0b00001000>, ISA_MICROMIPS;
   def RSQRT_D32_MM : MMRel, ABSS_FT<"rsqrt.d", AFGR64Opnd, AFGR64Opnd,
                                   II_RECIP_D>,
                    ROUND_W_FM_MM<0b1, 0b00001000>, ISA_MICROMIPS, FGR_32 {
@@ -424,6 +423,11 @@ def : MipsPat<(f64 (fpextend FGR32Opnd:$src)),
 def : MipsPat<(MipsTruncIntFP AFGR64Opnd:$src),
               (TRUNC_W_MM AFGR64Opnd:$src)>, ISA_MICROMIPS32_NOT_MIPS32R6,
               FGR_32;
+def : MipsPat<(MipsTruncIntFP FGR64Opnd:$src),
+              (CVT_W_D64_MM FGR64Opnd:$src)>, ISA_MICROMIPS32_NOT_MIPS32R6,
+              FGR_64;
+def : MipsPat<(MipsTruncIntFP FGR32Opnd:$src),
+              (TRUNC_W_S_MM FGR32Opnd:$src)>, ISA_MICROMIPS32_NOT_MIPS32R6;
 
 // Selects
 defm : MovzPats0<GPR32, FGR32, MOVZ_I_S_MM, SLT_MM, SLTu_MM, SLTi_MM, SLTiu_MM>,

@@ -51,6 +51,7 @@ protected:
   unsigned PersonalityEncoding = 0;
   unsigned LSDAEncoding = 0;
   unsigned TTypeEncoding = 0;
+  unsigned CallSiteEncoding = 0;
 
   /// This section contains the static constructor pointer list.
   MCSection *StaticCtorSection = nullptr;
@@ -78,6 +79,9 @@ public:
 
   /// Emit the module-level metadata that the platform cares about.
   virtual void emitModuleMetadata(MCStreamer &Streamer, Module &M) const {}
+
+  /// Get the module-level metadata that the platform cares about.
+  virtual void getModuleMetadata(Module &M) {}
 
   /// Given a constant with the SectionKind, return a section that it should be
   /// placed in.
@@ -144,6 +148,7 @@ public:
   unsigned getPersonalityEncoding() const { return PersonalityEncoding; }
   unsigned getLSDAEncoding() const { return LSDAEncoding; }
   unsigned getTTypeEncoding() const { return TTypeEncoding; }
+  unsigned getCallSiteEncoding() const { return CallSiteEncoding; }
 
   const MCExpr *getTTypeReference(const MCSymbolRefExpr *Sym, unsigned Encoding,
                                   MCStreamer &Streamer) const;

@@ -18,6 +18,10 @@
 #include <system_error>
 
 namespace llvm {
+
+// Forward declare raw_ostream: it is used for debug dumping below.
+class raw_ostream;
+
 namespace sys {
 
   /// This class encapsulates the notion of a memory block which has an address
@@ -27,14 +31,18 @@ namespace sys {
   /// Memory block abstraction.
   class MemoryBlock {
   public:
-    MemoryBlock() : Address(nullptr), Size(0) { }
-    MemoryBlock(void *addr, size_t size) : Address(addr), Size(size) { }
+    MemoryBlock() : Address(nullptr), AllocatedSize(0) {}
+    MemoryBlock(void *addr, size_t allocatedSize)
+        : Address(addr), AllocatedSize(allocatedSize) {}
     void *base() const { return Address; }
-    size_t size() const { return Size; }
-
+    /// The size as it was allocated. This is always greater or equal to the
+    /// size that was originally requested.
+    size_t allocatedSize() const { return AllocatedSize; }
+  
   private:
     void *Address;    ///< Address of first byte of memory area
-    size_t Size;      ///< Size, in bytes of the memory area
+    size_t AllocatedSize; ///< Size, in bytes of the memory area
+    unsigned Flags = 0;
     friend class Memory;
   };
 
@@ -45,9 +53,11 @@ namespace sys {
   class Memory {
   public:
     enum ProtectionFlags {
-      MF_READ  = 0x1000000,
+      MF_READ = 0x1000000,
       MF_WRITE = 0x2000000,
-      MF_EXEC  = 0x4000000
+      MF_EXEC = 0x4000000,
+      MF_RWE_MASK = 0x7000000,
+      MF_HUGE_HINT = 0x0000001
     };
 
     /// This method allocates a block of memory that is suitable for loading
@@ -132,13 +142,22 @@ namespace sys {
       Memory::releaseMappedMemory(M);
     }
     void *base() const { return M.base(); }
-    size_t size() const { return M.size(); }
+    /// The size as it was allocated. This is always greater or equal to the
+    /// size that was originally requested.
+    size_t allocatedSize() const { return M.allocatedSize(); }
     MemoryBlock getMemoryBlock() const { return M; }
   private:
     MemoryBlock M;
   };
 
-}
-}
+#ifndef NDEBUG
+  /// Debugging output for Memory::ProtectionFlags.
+  raw_ostream &operator<<(raw_ostream &OS, const Memory::ProtectionFlags &PF);
+
+  /// Debugging output for MemoryBlock.
+  raw_ostream &operator<<(raw_ostream &OS, const MemoryBlock &MB);
+#endif // ifndef NDEBUG
+  }    // end namespace sys
+  }    // end namespace llvm
 
 #endif

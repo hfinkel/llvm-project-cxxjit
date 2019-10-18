@@ -311,11 +311,9 @@ namespace clang {
 // Common Diagnostic implementation
 //===----------------------------------------------------------------------===//
 
-DiagnosticIDs::DiagnosticIDs() { CustomDiagInfo = nullptr; }
+DiagnosticIDs::DiagnosticIDs() {}
 
-DiagnosticIDs::~DiagnosticIDs() {
-  delete CustomDiagInfo;
-}
+DiagnosticIDs::~DiagnosticIDs() {}
 
 /// getCustomDiagID - Return an ID for a diagnostic with the specified message
 /// and level.  If this is the first request for this diagnostic, it is
@@ -325,7 +323,7 @@ DiagnosticIDs::~DiagnosticIDs() {
 /// mapped to a unique DiagID.
 unsigned DiagnosticIDs::getCustomDiagID(Level L, StringRef FormatString) {
   if (!CustomDiagInfo)
-    CustomDiagInfo = new diag::CustomDiagInfo();
+    CustomDiagInfo.reset(new diag::CustomDiagInfo());
   return CustomDiagInfo->getOrCreateDiagID(L, FormatString, *this);
 }
 
@@ -481,6 +479,11 @@ DiagnosticIDs::getDiagnosticSeverity(unsigned DiagID, SourceLocation Loc,
       Result = diag::Severity::Fatal;
   }
 
+  // If explicitly requested, map fatal errors to errors.
+  if (Result == diag::Severity::Fatal &&
+      Diag.CurDiagID != diag::fatal_too_many_errors && Diag.FatalsAsError)
+    Result = diag::Severity::Error;
+
   // Custom diagnostics always are emitted in system headers.
   bool ShowInSystemHeader =
       !GetDiagInfo(DiagID) || GetDiagInfo(DiagID)->WarnShowInSystemHeader;
@@ -575,11 +578,8 @@ static bool getDiagnosticsInGroup(diag::Flavor Flavor,
 bool
 DiagnosticIDs::getDiagnosticsInGroup(diag::Flavor Flavor, StringRef Group,
                                      SmallVectorImpl<diag::kind> &Diags) const {
-  auto Found = std::lower_bound(std::begin(OptionTable), std::end(OptionTable),
-                                Group,
-                                [](const WarningOption &LHS, StringRef RHS) {
-                                  return LHS.getName() < RHS;
-                                });
+  auto Found = llvm::partition_point(
+      OptionTable, [=](const WarningOption &O) { return O.getName() < Group; });
   if (Found == std::end(OptionTable) || Found->getName() != Group)
     return true; // Option not found.
 
@@ -660,7 +660,7 @@ bool DiagnosticIDs::ProcessDiag(DiagnosticsEngine &Diag) const {
 
   // If a fatal error has already been emitted, silence all subsequent
   // diagnostics.
-  if (Diag.FatalErrorOccurred && Diag.SuppressAfterFatalError) {
+  if (Diag.FatalErrorOccurred) {
     if (DiagLevel >= DiagnosticIDs::Error &&
         Diag.Client->IncludeInDiagnosticCounts()) {
       ++Diag.NumErrors;

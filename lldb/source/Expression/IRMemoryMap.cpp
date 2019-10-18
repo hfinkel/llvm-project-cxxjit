@@ -263,7 +263,7 @@ ExecutionContextScope *IRMemoryMap::GetBestExecutionContextScope() const {
   if (target_sp)
     return target_sp.get();
 
-  return NULL;
+  return nullptr;
 }
 
 IRMemoryMap::Allocation::Allocation(lldb::addr_t process_alloc,
@@ -275,7 +275,7 @@ IRMemoryMap::Allocation::Allocation(lldb::addr_t process_alloc,
       m_alignment(alignment) {
   switch (policy) {
   default:
-    assert(0 && "We cannot reach this!");
+    llvm_unreachable("Invalid AllocationPolicy");
   case eAllocationPolicyHostOnly:
   case eAllocationPolicyMirror:
     m_data.SetByteSize(size);

@@ -20,8 +20,8 @@
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Format/Format.h"
-#include "llvm/Support/Regex.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/Support/Regex.h"
 
 #include <stack>
 
@@ -48,6 +48,11 @@ private:
 
   bool tryMergeLessLess();
   bool tryMergeNSStringLiteral();
+  bool tryMergeJSPrivateIdentifier();
+  bool tryMergeCSharpVerbatimStringLiteral();
+  bool tryMergeCSharpKeywordVariables();
+  bool tryMergeCSharpNullConditionals();
+  bool tryMergeCSharpDoubleQuestion();
 
   bool tryMergeTokens(ArrayRef<tok::TokenKind> Kinds, TokenType NewType);
 

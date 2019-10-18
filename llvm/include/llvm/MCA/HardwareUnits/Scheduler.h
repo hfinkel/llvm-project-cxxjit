@@ -120,6 +120,14 @@ class Scheduler : public HardwareUnit {
   // Each bit of the mask represents an unavailable resource.
   uint64_t BusyResourceUnits;
 
+  // Counts the number of instructions in the pending set that were dispatched
+  // during this cycle.
+  unsigned NumDispatchedToThePendingSet;
+
+  // True if the previous pipeline Stage was unable to dispatch a full group of
+  // opcodes because scheduler buffers (or LS queues) were unavailable.
+  bool HadTokenStall;
+
   /// Verify the given selection strategy and set the Strategy member
   /// accordingly.  If no strategy is provided, the DefaultSchedulerStrategy is
   /// used.
@@ -141,8 +149,9 @@ class Scheduler : public HardwareUnit {
   bool promoteToReadySet(SmallVectorImpl<InstRef> &Ready);
 
   // Try to promote instructions from the WaitSet to the PendingSet.
+  // Add promoted instructions to the 'Pending' vector in input.
   // Returns true if at least one instruction was promoted.
-  bool promoteToPendingSet();
+  bool promoteToPendingSet(SmallVectorImpl<InstRef> &Pending);
 
 public:
   Scheduler(const MCSchedModel &Model, LSUnit &Lsu)
@@ -155,7 +164,8 @@ public:
 
   Scheduler(std::unique_ptr<ResourceManager> RM, LSUnit &Lsu,
             std::unique_ptr<SchedulerStrategy> SelectStrategy)
-      : LSU(Lsu), Resources(std::move(RM)), BusyResourceUnits(0) {
+      : LSU(Lsu), Resources(std::move(RM)), BusyResourceUnits(0),
+        NumDispatchedToThePendingSet(0), HadTokenStall(false) {
     initializeStrategy(std::move(SelectStrategy));
   }
 
@@ -168,15 +178,12 @@ public:
     SC_DISPATCH_GROUP_STALL,
   };
 
-  /// Check if the instruction in 'IR' can be dispatched and returns an answer
-  /// in the form of a Status value.
+  /// Check if the instruction in 'IR' can be dispatched during this cycle.
+  /// Return SC_AVAILABLE if both scheduler and LS resources are available.
   ///
-  /// The DispatchStage is responsible for querying the Scheduler before
-  /// dispatching new instructions. This routine is used for performing such
-  /// a query.  If the instruction 'IR' can be dispatched, then true is
-  /// returned, otherwise false is returned with Event set to the stall type.
-  /// Internally, it also checks if the load/store unit is available.
-  Status isAvailable(const InstRef &IR) const;
+  /// This method is also responsible for setting field HadTokenStall if
+  /// IR cannot be dispatched to the Scheduler due to unavailable resources.
+  Status isAvailable(const InstRef &IR);
 
   /// Reserves buffer and LSUnit queue resources that are necessary to issue
   /// this instruction.
@@ -184,11 +191,11 @@ public:
   /// Returns true if instruction IR is ready to be issued to the underlying
   /// pipelines. Note that this operation cannot fail; it assumes that a
   /// previous call to method `isAvailable(IR)` returned `SC_AVAILABLE`.
-  void dispatch(const InstRef &IR);
-
-  /// Returns true if IR is ready to be executed by the underlying pipelines.
-  /// This method assumes that IR has been previously dispatched.
-  bool isReady(const InstRef &IR) const;
+  ///
+  /// If IR is a memory operation, then the Scheduler queries the LS unit to
+  /// obtain a LS token. An LS token is used internally to track memory
+  /// dependencies.
+  bool dispatch(InstRef &IR);
 
   /// Issue an instruction and populates a vector of used pipeline resources,
   /// and a vector of instructions that transitioned to the ready state as a
@@ -196,6 +203,7 @@ public:
   void issueInstruction(
       InstRef &IR,
       SmallVectorImpl<std::pair<ResourceRef, ResourceCycles>> &Used,
+      SmallVectorImpl<InstRef> &Pending,
       SmallVectorImpl<InstRef> &Ready);
 
   /// Returns true if IR has to be issued immediately, or if IR is a zero
@@ -209,9 +217,15 @@ public:
   /// have changed in state, and that are now available to new instructions.
   /// Instructions executed are added to vector Executed, while vector Ready is
   /// populated with instructions that have become ready in this new cycle.
+  /// Vector Pending is popluated by instructions that have transitioned through
+  /// the pending stat during this cycle. The Pending and Ready sets may not be
+  /// disjoint. An instruction is allowed to transition from the WAIT state to
+  /// the READY state (going through the PENDING state) within a single cycle.
+  /// That means, instructions may appear in both the Pending and Ready set.
   void cycleEvent(SmallVectorImpl<ResourceRef> &Freed,
-                  SmallVectorImpl<InstRef> &Ready,
-                  SmallVectorImpl<InstRef> &Executed);
+                  SmallVectorImpl<InstRef> &Executed,
+                  SmallVectorImpl<InstRef> &Pending,
+                  SmallVectorImpl<InstRef> &Ready);
 
   /// Convert a resource mask into a valid llvm processor resource identifier.
   unsigned getResourceID(uint64_t Mask) const {
@@ -223,15 +237,25 @@ public:
   /// resources are not available.
   InstRef select();
 
-  /// Returns a mask of busy resources. Each bit of the mask identifies a unique
-  /// processor resource unit. In the absence of bottlenecks caused by resource
-  /// pressure, the mask value returned by this method is always zero.
-  uint64_t getBusyResourceUnits() const { return BusyResourceUnits; }
-  bool arePipelinesFullyUsed() const {
-    return !Resources->getAvailableProcResUnits();
-  }
   bool isReadySetEmpty() const { return ReadySet.empty(); }
   bool isWaitSetEmpty() const { return WaitSet.empty(); }
+
+  /// This method is called by the ExecuteStage at the end of each cycle to
+  /// identify bottlenecks caused by data dependencies. Vector RegDeps is
+  /// populated by instructions that were not issued because of unsolved
+  /// register dependencies.  Vector MemDeps is populated by instructions that
+  /// were not issued because of unsolved memory dependencies.
+  void analyzeDataDependencies(SmallVectorImpl<InstRef> &RegDeps,
+                               SmallVectorImpl<InstRef> &MemDeps);
+
+  /// Returns a mask of busy resources, and populates vector Insts with
+  /// instructions that could not be issued to the underlying pipelines because
+  /// not all pipeline resources were available.
+  uint64_t analyzeResourcePressure(SmallVectorImpl<InstRef> &Insts);
+
+  // Returns true if the dispatch logic couldn't dispatch a full group due to
+  // unavailable scheduler and/or LS resources.
+  bool hadTokenStall() const { return HadTokenStall; }
 
 #ifndef NDEBUG
   // Update the ready queues.

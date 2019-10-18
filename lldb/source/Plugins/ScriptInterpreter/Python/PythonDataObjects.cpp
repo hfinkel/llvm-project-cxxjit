@@ -20,11 +20,11 @@
 #include "lldb/Interpreter/ScriptInterpreter.h"
 #include "lldb/Utility/Stream.h"
 
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/ConvertUTF.h"
+#include "llvm/Support/Errno.h"
 
 #include <stdio.h>
-
-#include "llvm/ADT/StringSwitch.h"
 
 using namespace lldb_private;
 using namespace lldb;
@@ -33,13 +33,11 @@ void StructuredPythonObject::Dump(Stream &s, bool pretty_print) const {
   s << "Python Obj: 0x" << GetValue();
 }
 
-//----------------------------------------------------------------------
 // PythonObject
-//----------------------------------------------------------------------
 
 void PythonObject::Dump(Stream &strm) const {
   if (m_py_obj) {
-    FILE *file = ::tmpfile();
+    FILE *file = llvm::sys::RetryAfterSignal(nullptr, ::tmpfile);
     if (file) {
       ::PyObject_Print(m_py_obj, file, 0);
       const long length = ftell(file);
@@ -109,7 +107,7 @@ PythonString PythonObject::Str() const {
 PythonObject
 PythonObject::ResolveNameWithDictionary(llvm::StringRef name,
                                         const PythonDictionary &dict) {
-  size_t dot_pos = name.find_first_of('.');
+  size_t dot_pos = name.find('.');
   llvm::StringRef piece = name.substr(0, dot_pos);
   PythonObject result = dict.GetItemForKey(PythonString(piece));
   if (dot_pos == llvm::StringRef::npos) {
@@ -133,7 +131,7 @@ PythonObject PythonObject::ResolveName(llvm::StringRef name) const {
   // refers to the `sys` module, and `name` == "path.append", then it will find
   // the function `sys.path.append`.
 
-  size_t dot_pos = name.find_first_of('.');
+  size_t dot_pos = name.find('.');
   if (dot_pos == llvm::StringRef::npos) {
     // No dots in the name, we should be able to find the value immediately as
     // an attribute of `m_py_obj`.
@@ -202,9 +200,7 @@ StructuredData::ObjectSP PythonObject::CreateStructuredObject() const {
   }
 }
 
-//----------------------------------------------------------------------
 // PythonString
-//----------------------------------------------------------------------
 PythonBytes::PythonBytes() : PythonObject() {}
 
 PythonBytes::PythonBytes(llvm::ArrayRef<uint8_t> bytes) : PythonObject() {
@@ -218,8 +214,6 @@ PythonBytes::PythonBytes(const uint8_t *bytes, size_t length) : PythonObject() {
 PythonBytes::PythonBytes(PyRefType type, PyObject *py_obj) : PythonObject() {
   Reset(type, py_obj); // Use "Reset()" to ensure that py_obj is a string
 }
-
-PythonBytes::PythonBytes(const PythonBytes &object) : PythonObject(object) {}
 
 PythonBytes::~PythonBytes() {}
 
@@ -338,15 +332,11 @@ StructuredData::StringSP PythonByteArray::CreateStructuredString() const {
   return result;
 }
 
-//----------------------------------------------------------------------
 // PythonString
-//----------------------------------------------------------------------
 
 PythonString::PythonString(PyRefType type, PyObject *py_obj) : PythonObject() {
   Reset(type, py_obj); // Use "Reset()" to ensure that py_obj is a string
 }
-
-PythonString::PythonString(const PythonString &object) : PythonObject(object) {}
 
 PythonString::PythonString(llvm::StringRef string) : PythonObject() {
   SetString(string);
@@ -438,9 +428,7 @@ StructuredData::StringSP PythonString::CreateStructuredString() const {
   return result;
 }
 
-//----------------------------------------------------------------------
 // PythonInteger
-//----------------------------------------------------------------------
 
 PythonInteger::PythonInteger() : PythonObject() {}
 
@@ -448,9 +436,6 @@ PythonInteger::PythonInteger(PyRefType type, PyObject *py_obj)
     : PythonObject() {
   Reset(type, py_obj); // Use "Reset()" to ensure that py_obj is a integer type
 }
-
-PythonInteger::PythonInteger(const PythonInteger &object)
-    : PythonObject(object) {}
 
 PythonInteger::PythonInteger(int64_t value) : PythonObject() {
   SetInteger(value);
@@ -530,17 +515,12 @@ StructuredData::IntegerSP PythonInteger::CreateStructuredInteger() const {
   return result;
 }
 
-//----------------------------------------------------------------------
 // PythonBoolean
-//----------------------------------------------------------------------
 
 PythonBoolean::PythonBoolean(PyRefType type, PyObject *py_obj)
     : PythonObject() {
   Reset(type, py_obj); // Use "Reset()" to ensure that py_obj is a boolean type
 }
-
-PythonBoolean::PythonBoolean(const PythonBoolean &object)
-    : PythonObject(object) {}
 
 PythonBoolean::PythonBoolean(bool value) {
   SetValue(value);
@@ -579,9 +559,7 @@ StructuredData::BooleanSP PythonBoolean::CreateStructuredBoolean() const {
   return result;
 }
 
-//----------------------------------------------------------------------
 // PythonList
-//----------------------------------------------------------------------
 
 PythonList::PythonList(PyInitialValue value) : PythonObject() {
   if (value == PyInitialValue::Empty)
@@ -595,8 +573,6 @@ PythonList::PythonList(int list_size) : PythonObject() {
 PythonList::PythonList(PyRefType type, PyObject *py_obj) : PythonObject() {
   Reset(type, py_obj); // Use "Reset()" to ensure that py_obj is a list
 }
-
-PythonList::PythonList(const PythonList &list) : PythonObject(list) {}
 
 PythonList::~PythonList() {}
 
@@ -660,9 +636,7 @@ StructuredData::ArraySP PythonList::CreateStructuredArray() const {
   return result;
 }
 
-//----------------------------------------------------------------------
 // PythonTuple
-//----------------------------------------------------------------------
 
 PythonTuple::PythonTuple(PyInitialValue value) : PythonObject() {
   if (value == PyInitialValue::Empty)
@@ -676,8 +650,6 @@ PythonTuple::PythonTuple(int tuple_size) : PythonObject() {
 PythonTuple::PythonTuple(PyRefType type, PyObject *py_obj) : PythonObject() {
   Reset(type, py_obj); // Use "Reset()" to ensure that py_obj is a tuple
 }
-
-PythonTuple::PythonTuple(const PythonTuple &tuple) : PythonObject(tuple) {}
 
 PythonTuple::PythonTuple(std::initializer_list<PythonObject> objects) {
   m_py_obj = PyTuple_New(objects.size());
@@ -756,9 +728,7 @@ StructuredData::ArraySP PythonTuple::CreateStructuredArray() const {
   return result;
 }
 
-//----------------------------------------------------------------------
 // PythonDictionary
-//----------------------------------------------------------------------
 
 PythonDictionary::PythonDictionary(PyInitialValue value) : PythonObject() {
   if (value == PyInitialValue::Empty)
@@ -769,9 +739,6 @@ PythonDictionary::PythonDictionary(PyRefType type, PyObject *py_obj)
     : PythonObject() {
   Reset(type, py_obj); // Use "Reset()" to ensure that py_obj is a dictionary
 }
-
-PythonDictionary::PythonDictionary(const PythonDictionary &object)
-    : PythonObject(object) {}
 
 PythonDictionary::~PythonDictionary() {}
 
@@ -842,8 +809,6 @@ PythonModule::PythonModule(PyRefType type, PyObject *py_obj) {
   Reset(type, py_obj); // Use "Reset()" to ensure that py_obj is a module
 }
 
-PythonModule::PythonModule(const PythonModule &dict) : PythonObject(dict) {}
-
 PythonModule::~PythonModule() {}
 
 PythonModule PythonModule::BuiltinsModule() {
@@ -897,9 +862,6 @@ PythonCallable::PythonCallable() : PythonObject() {}
 PythonCallable::PythonCallable(PyRefType type, PyObject *py_obj) {
   Reset(type, py_obj); // Use "Reset()" to ensure that py_obj is a callable
 }
-
-PythonCallable::PythonCallable(const PythonCallable &callable)
-    : PythonObject(callable) {}
 
 PythonCallable::~PythonCallable() {}
 

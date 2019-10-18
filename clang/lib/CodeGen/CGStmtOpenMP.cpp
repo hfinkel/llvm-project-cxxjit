@@ -296,8 +296,7 @@ void CodeGenFunction::GenerateOpenMPCapturedVars(
 
 static Address castValueFromUintptr(CodeGenFunction &CGF, SourceLocation Loc,
                                     QualType DstType, StringRef Name,
-                                    LValue AddrLV,
-                                    bool isReferenceType = false) {
+                                    LValue AddrLV) {
   ASTContext &Ctx = CGF.getContext();
 
   llvm::Value *CastedPtr = CGF.EmitScalarConversion(
@@ -306,17 +305,6 @@ static Address castValueFromUintptr(CodeGenFunction &CGF, SourceLocation Loc,
   Address TmpAddr =
       CGF.MakeNaturalAlignAddrLValue(CastedPtr, Ctx.getPointerType(DstType))
           .getAddress();
-
-  // If we are dealing with references we need to return the address of the
-  // reference instead of the reference of the value.
-  if (isReferenceType) {
-    QualType RefType = Ctx.getLValueReferenceType(DstType);
-    llvm::Value *RefVal = TmpAddr.getPointer();
-    TmpAddr = CGF.CreateMemTemp(RefType, Twine(Name, ".ref"));
-    LValue TmpLVal = CGF.MakeAddrLValue(TmpAddr, RefType);
-    CGF.EmitStoreThroughLValue(RValue::get(RefVal), TmpLVal, /*isInit=*/true);
-  }
-
   return TmpAddr;
 }
 
@@ -473,14 +461,6 @@ static llvm::Function *emitOutlinedFunctionPrologue(
     // use the value that we get from the arguments.
     if (I->capturesVariableByCopy() && FD->getType()->isAnyPointerType()) {
       const VarDecl *CurVD = I->getCapturedVar();
-      // If the variable is a reference we need to materialize it here.
-      if (CurVD->getType()->isReferenceType()) {
-        Address RefAddr = CGF.CreateMemTemp(
-            CurVD->getType(), CGM.getPointerAlign(), ".materialized_ref");
-        CGF.EmitStoreOfScalar(LocalAddr.getPointer(), RefAddr,
-                              /*Volatile=*/false, CurVD->getType());
-        LocalAddr = RefAddr;
-      }
       if (!FO.RegisterCastedArgsOnly)
         LocalAddrs.insert({Args[Cnt], {CurVD, LocalAddr}});
       ++Cnt;
@@ -504,15 +484,12 @@ static llvm::Function *emitOutlinedFunctionPrologue(
       const VarDecl *Var = I->getCapturedVar();
       QualType VarTy = Var->getType();
       Address ArgAddr = ArgLVal.getAddress();
-      if (!VarTy->isReferenceType()) {
-        if (ArgLVal.getType()->isLValueReferenceType()) {
-          ArgAddr = CGF.EmitLoadOfReference(ArgLVal);
-        } else if (!VarTy->isVariablyModifiedType() ||
-                   !VarTy->isPointerType()) {
-          assert(ArgLVal.getType()->isPointerType());
-          ArgAddr = CGF.EmitLoadOfPointer(
-              ArgAddr, ArgLVal.getType()->castAs<PointerType>());
-        }
+      if (ArgLVal.getType()->isLValueReferenceType()) {
+        ArgAddr = CGF.EmitLoadOfReference(ArgLVal);
+      } else if (!VarTy->isVariablyModifiedType() || !VarTy->isPointerType()) {
+        assert(ArgLVal.getType()->isPointerType());
+        ArgAddr = CGF.EmitLoadOfPointer(
+            ArgAddr, ArgLVal.getType()->castAs<PointerType>());
       }
       if (!FO.RegisterCastedArgsOnly) {
         LocalAddrs.insert(
@@ -523,14 +500,12 @@ static llvm::Function *emitOutlinedFunctionPrologue(
       assert(!FD->getType()->isAnyPointerType() &&
              "Not expecting a captured pointer.");
       const VarDecl *Var = I->getCapturedVar();
-      QualType VarTy = Var->getType();
-      LocalAddrs.insert(
-          {Args[Cnt],
-           {Var, FO.UIntPtrCastRequired
-                     ? castValueFromUintptr(CGF, I->getLocation(),
-                                            FD->getType(), Args[Cnt]->getName(),
-                                            ArgLVal, VarTy->isReferenceType())
-                     : ArgLVal.getAddress()}});
+      LocalAddrs.insert({Args[Cnt],
+                         {Var, FO.UIntPtrCastRequired
+                                   ? castValueFromUintptr(
+                                         CGF, I->getLocation(), FD->getType(),
+                                         Args[Cnt]->getName(), ArgLVal)
+                                   : ArgLVal.getAddress()}});
     } else {
       // If 'this' is captured, load it into CXXThisValue.
       assert(I->capturesThis());
@@ -566,16 +541,20 @@ CodeGenFunction::GenerateOpenMPCapturedStmtFunction(const CapturedStmt &S) {
                      Out.str());
   llvm::Function *F = emitOutlinedFunctionPrologue(*this, Args, LocalAddrs,
                                                    VLASizes, CXXThisValue, FO);
+  CodeGenFunction::OMPPrivateScope LocalScope(*this);
   for (const auto &LocalAddrPair : LocalAddrs) {
     if (LocalAddrPair.second.first) {
-      setAddrOfLocalVar(LocalAddrPair.second.first,
-                        LocalAddrPair.second.second);
+      LocalScope.addPrivate(LocalAddrPair.second.first, [&LocalAddrPair]() {
+        return LocalAddrPair.second.second;
+      });
     }
   }
+  (void)LocalScope.Privatize();
   for (const auto &VLASizePair : VLASizes)
     VLASizeMap[VLASizePair.second.first] = VLASizePair.second.second;
   PGO.assignRegionCounters(GlobalDecl(CD), F);
   CapturedStmtInfo->EmitBody(*this, CD->getBody());
+  (void)LocalScope.ForceCleanup();
   FinishFunction(CD->getBodyRBrace());
   if (!NeedWrapperFunction)
     return F;
@@ -725,6 +704,9 @@ bool CodeGenFunction::EmitOMPFirstprivateClause(const OMPExecutableDirective &D,
                                                 OMPPrivateScope &PrivateScope) {
   if (!HaveInsertPoint())
     return false;
+  bool DeviceConstTarget =
+      getLangOpts().OpenMPIsDevice &&
+      isOpenMPTargetExecutionDirective(D.getDirectiveKind());
   bool FirstprivateIsLastprivate = false;
   llvm::DenseSet<const VarDecl *> Lastprivates;
   for (const auto *C : D.getClausesOfKind<OMPLastprivateClause>()) {
@@ -747,9 +729,22 @@ bool CodeGenFunction::EmitOMPFirstprivateClause(const OMPExecutableDirective &D,
       bool ThisFirstprivateIsLastprivate =
           Lastprivates.count(OrigVD->getCanonicalDecl()) > 0;
       const FieldDecl *FD = CapturedStmtInfo->lookup(OrigVD);
+      const auto *VD = cast<VarDecl>(cast<DeclRefExpr>(IInit)->getDecl());
       if (!MustEmitFirstprivateCopy && !ThisFirstprivateIsLastprivate && FD &&
-          !FD->getType()->isReferenceType()) {
+          !FD->getType()->isReferenceType() &&
+          (!VD || !VD->hasAttr<OMPAllocateDeclAttr>())) {
         EmittedAsFirstprivate.insert(OrigVD->getCanonicalDecl());
+        ++IRef;
+        ++InitsRef;
+        continue;
+      }
+      // Do not emit copy for firstprivate constant variables in target regions,
+      // captured by reference.
+      if (DeviceConstTarget && OrigVD->getType().isConstant(getContext()) &&
+          FD && FD->getType()->isReferenceType() &&
+          (!VD || !VD->hasAttr<OMPAllocateDeclAttr>())) {
+        (void)CGM.getOpenMPRuntime().registerTargetFirstprivateCopy(*this,
+                                                                    OrigVD);
         ++IRef;
         ++InitsRef;
         continue;
@@ -757,14 +752,31 @@ bool CodeGenFunction::EmitOMPFirstprivateClause(const OMPExecutableDirective &D,
       FirstprivateIsLastprivate =
           FirstprivateIsLastprivate || ThisFirstprivateIsLastprivate;
       if (EmittedAsFirstprivate.insert(OrigVD->getCanonicalDecl()).second) {
-        const auto *VD = cast<VarDecl>(cast<DeclRefExpr>(IInit)->getDecl());
         const auto *VDInit =
             cast<VarDecl>(cast<DeclRefExpr>(*InitsRef)->getDecl());
         bool IsRegistered;
         DeclRefExpr DRE(getContext(), const_cast<VarDecl *>(OrigVD),
                         /*RefersToEnclosingVariableOrCapture=*/FD != nullptr,
                         (*IRef)->getType(), VK_LValue, (*IRef)->getExprLoc());
-        LValue OriginalLVal = EmitLValue(&DRE);
+        LValue OriginalLVal;
+        if (!FD) {
+          // Check if the firstprivate variable is just a constant value.
+          ConstantEmission CE = tryEmitAsConstant(&DRE);
+          if (CE && !CE.isReference()) {
+            // Constant value, no need to create a copy.
+            ++IRef;
+            ++InitsRef;
+            continue;
+          }
+          if (CE && CE.isReference()) {
+            OriginalLVal = CE.getReferenceLValue(*this, &DRE);
+          } else {
+            assert(!CE && "Expected non-constant firstprivate.");
+            OriginalLVal = EmitLValue(&DRE);
+          }
+        } else {
+          OriginalLVal = EmitLValue(&DRE);
+        }
         QualType Type = VD->getType();
         if (Type->isArrayType()) {
           // Emit VarDecl with copy init for arrays.
@@ -1516,8 +1528,9 @@ void CodeGenFunction::EmitOMPPrivateLoopCounters(
          I < E; ++I) {
       const auto *DRE = cast<DeclRefExpr>(C->getLoopCounter(I));
       const auto *VD = cast<VarDecl>(DRE->getDecl());
-      // Override only those variables that are really emitted already.
-      if (LocalDeclMap.count(VD)) {
+      // Override only those variables that can be captured to avoid re-emission
+      // of the variables declared within the loops.
+      if (DRE->refersToEnclosingVariableOrCapture()) {
         (void)LoopScope.addPrivate(VD, [this, DRE, VD]() {
           return CreateMemTemp(DRE->getType(), VD->getName());
         });
@@ -3106,7 +3119,8 @@ void CodeGenFunction::EmitOMPTargetTaskBasedDirective(
     PVD = createImplicitFirstprivateForType(
         getContext(), Data, BaseAndPointersType, CD, S.getBeginLoc());
     QualType SizesType = getContext().getConstantArrayType(
-        getContext().getSizeType(), ArrSize, ArrayType::Normal,
+        getContext().getIntTypeForBitwidth(/*DestWidth=*/64, /*Signed=*/1),
+        ArrSize, ArrayType::Normal,
         /*IndexTypeQuals=*/0);
     SVD = createImplicitFirstprivateForType(getContext(), Data, SizesType, CD,
                                             S.getBeginLoc());
@@ -3589,7 +3603,7 @@ static void emitSimpleAtomicStore(CodeGenFunction &CGF, bool IsSeqCst,
     CGF.EmitAtomicStore(RVal, LVal,
                         IsSeqCst ? llvm::AtomicOrdering::SequentiallyConsistent
                                  : llvm::AtomicOrdering::Monotonic,
-                        LVal.isVolatile(), /*IsInit=*/false);
+                        LVal.isVolatile(), /*isInit=*/false);
   }
 }
 
@@ -3935,6 +3949,8 @@ static void emitOMPAtomicExpr(CodeGenFunction &CGF, OpenMPClauseKind Kind,
   case OMPC_in_reduction:
   case OMPC_safelen:
   case OMPC_simdlen:
+  case OMPC_allocator:
+  case OMPC_allocate:
   case OMPC_collapse:
   case OMPC_default:
   case OMPC_seq_cst:
@@ -4079,7 +4095,7 @@ static void emitCommonOMPTargetDirective(CodeGenFunction &CGF,
     // Emit calculation of the iterations count.
     llvm::Value *NumIterations = CGF.EmitScalarExpr(D.getNumIterations());
     NumIterations = CGF.Builder.CreateIntCast(NumIterations, CGF.Int64Ty,
-                                              /*IsSigned=*/false);
+                                              /*isSigned=*/false);
     return NumIterations;
   };
   if (IsOffloadEntry)

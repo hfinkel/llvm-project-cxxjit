@@ -107,6 +107,7 @@ bool AArch64CompressJumpTables::compressJumpTable(MachineInstr &MI,
       MinBlock = Block;
     }
   }
+  assert(MinBlock && "Failed to find minimum offset block");
 
   // The ADR instruction needed to calculate the address of the first reachable
   // basic block can address +/-1MB.
@@ -140,7 +141,7 @@ bool AArch64CompressJumpTables::runOnMachineFunction(MachineFunction &MFIn) {
   const auto &ST = MF->getSubtarget<AArch64Subtarget>();
   TII = ST.getInstrInfo();
 
-  if (ST.force32BitJumpTables() && !MF->getFunction().optForMinSize())
+  if (ST.force32BitJumpTables() && !MF->getFunction().hasMinSize())
     return false;
 
   scanFunction();

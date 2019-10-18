@@ -16,6 +16,7 @@
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/Driver/DriverDiagnostic.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
@@ -32,17 +33,14 @@ namespace {
 class PaddingChecker : public Checker<check::ASTDecl<TranslationUnitDecl>> {
 private:
   mutable std::unique_ptr<BugType> PaddingBug;
-  mutable int64_t AllowedPad;
   mutable BugReporter *BR;
 
 public:
+  int64_t AllowedPad;
+
   void checkASTDecl(const TranslationUnitDecl *TUD, AnalysisManager &MGR,
                     BugReporter &BRArg) const {
     BR = &BRArg;
-    AllowedPad =
-        MGR.getAnalyzerOptions()
-          .getCheckerIntegerOption("AllowedPad", 24, this);
-    assert(AllowedPad >= 0 && "AllowedPad option should be non-negative");
 
     // The calls to checkAST* from AnalysisConsumer don't
     // visit template instantiations or lambda classes. We
@@ -276,15 +274,13 @@ public:
       long long CurAlignmentBits = 1ull << (std::min)(TrailingZeros, 62u);
       CharUnits CurAlignment = CharUnits::fromQuantity(CurAlignmentBits);
       FieldInfo InsertPoint = {CurAlignment, CharUnits::Zero(), nullptr};
-      auto CurBegin = Fields.begin();
-      auto CurEnd = Fields.end();
 
       // In the typical case, this will find the last element
       // of the vector. We won't find a middle element unless
       // we started on a poorly aligned address or have an overly
       // aligned field.
-      auto Iter = std::upper_bound(CurBegin, CurEnd, InsertPoint);
-      if (Iter != CurBegin) {
+      auto Iter = llvm::upper_bound(Fields, InsertPoint);
+      if (Iter != Fields.begin()) {
         // We found a field that we can layout with the current alignment.
         --Iter;
         NewOffset += Iter->Size;
@@ -348,7 +344,12 @@ public:
 } // namespace
 
 void ento::registerPaddingChecker(CheckerManager &Mgr) {
-  Mgr.registerChecker<PaddingChecker>();
+  auto *Checker = Mgr.registerChecker<PaddingChecker>();
+  Checker->AllowedPad = Mgr.getAnalyzerOptions()
+          .getCheckerIntegerOption(Checker, "AllowedPad");
+  if (Checker->AllowedPad < 0)
+    Mgr.reportInvalidCheckerOptionValue(
+        Checker, "AllowedPad", "a non-negative value");
 }
 
 bool ento::shouldRegisterPaddingChecker(const LangOptions &LO) {

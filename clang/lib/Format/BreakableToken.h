@@ -146,9 +146,7 @@ public:
   //  * @param loooooooooooooong line
   //  *     continuation
   //  */
-  virtual unsigned getContentIndent(unsigned LineIndex) const {
-    return 0;
-  }
+  virtual unsigned getContentIndent(unsigned LineIndex) const { return 0; }
 
   /// Returns a range (offset, length) at which to break the line at
   /// \p LineIndex, if previously broken at \p TailOffset. If possible, do not
@@ -202,9 +200,7 @@ public:
 
   /// Returns whether there will be a line break at the start of the
   /// token.
-  virtual bool introducesBreakBeforeToken() const {
-    return false;
-  }
+  virtual bool introducesBreakBeforeToken() const { return false; }
 
   /// Replaces the whitespace between \p LineIndex-1 and \p LineIndex.
   virtual void adaptStartOfLine(unsigned LineIndex,
@@ -363,8 +359,11 @@ public:
   BreakableBlockComment(const FormatToken &Token, unsigned StartColumn,
                         unsigned OriginalStartColumn, bool FirstInLine,
                         bool InPPDirective, encoding::Encoding Encoding,
-                        const FormatStyle &Style);
+                        const FormatStyle &Style, bool UseCRLF);
 
+  Split getSplit(unsigned LineIndex, unsigned TailOffset, unsigned ColumnLimit,
+                 unsigned ContentStartColumn,
+                 llvm::Regex &CommentPragmasRegex) const override;
   unsigned getRangeLength(unsigned LineIndex, unsigned Offset,
                           StringRef::size_type Length,
                           unsigned StartColumn) const override;

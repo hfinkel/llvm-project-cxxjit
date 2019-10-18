@@ -18,7 +18,6 @@
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Host/ConnectionFileDescriptor.h"
 #include "lldb/Host/Host.h"
-#include "lldb/Host/Symbols.h"
 #include "lldb/Host/ThreadLauncher.h"
 #include "lldb/Host/common/TCPSocket.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
@@ -28,10 +27,12 @@
 #include "lldb/Interpreter/OptionGroupString.h"
 #include "lldb/Interpreter/OptionGroupUInt64.h"
 #include "lldb/Interpreter/OptionValueProperties.h"
+#include "lldb/Symbol/LocateSymbolFile.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
+#include "lldb/Utility/Log.h"
 #include "lldb/Utility/State.h"
 #include "lldb/Utility/StringExtractor.h"
 #include "lldb/Utility/UUID.h"
@@ -143,9 +144,7 @@ bool ProcessKDP::CanDebug(TargetSP target_sp, bool plugin_specified_by_name) {
   return false;
 }
 
-//----------------------------------------------------------------------
 // ProcessKDP constructor
-//----------------------------------------------------------------------
 ProcessKDP::ProcessKDP(TargetSP target_sp, ListenerSP listener_sp)
     : Process(target_sp, listener_sp),
       m_comm("lldb.process.kdp-remote.communication"),
@@ -162,9 +161,7 @@ ProcessKDP::ProcessKDP(TargetSP target_sp, ListenerSP listener_sp)
     m_comm.SetPacketTimeout(std::chrono::seconds(timeout_seconds));
 }
 
-//----------------------------------------------------------------------
 // Destructor
-//----------------------------------------------------------------------
 ProcessKDP::~ProcessKDP() {
   Clear();
   // We need to call finalize on the process before destroying ourselves to
@@ -174,9 +171,7 @@ ProcessKDP::~ProcessKDP() {
   Finalize();
 }
 
-//----------------------------------------------------------------------
 // PluginInterface
-//----------------------------------------------------------------------
 lldb_private::ConstString ProcessKDP::GetPluginName() {
   return GetPluginNameStatic();
 }
@@ -291,8 +286,11 @@ Status ProcessKDP::DoConnectRemote(Stream *strm, llvm::StringRef remote_url) {
               module_spec.GetArchitecture() = target.GetArchitecture();
 
               // Lookup UUID locally, before attempting dsymForUUID like action
+              FileSpecList search_paths =
+                  Target::GetDefaultDebugFileSearchPaths();
               module_spec.GetSymbolFileSpec() =
-                  Symbols::LocateExecutableSymbolFile(module_spec);
+                  Symbols::LocateExecutableSymbolFile(module_spec,
+                                                      search_paths);
               if (module_spec.GetSymbolFileSpec()) {
                 ModuleSpec executable_module_spec =
                     Symbols::LocateExecutableObjectFile(module_spec);
@@ -366,9 +364,7 @@ Status ProcessKDP::DoConnectRemote(Stream *strm, llvm::StringRef remote_url) {
   return error;
 }
 
-//----------------------------------------------------------------------
 // Process Control
-//----------------------------------------------------------------------
 Status ProcessKDP::DoLaunch(Module *exe_module,
                             ProcessLaunchInfo &launch_info) {
   Status error;
@@ -592,17 +588,13 @@ Status ProcessKDP::DoDestroy() {
   return DoDetach(keep_stopped);
 }
 
-//------------------------------------------------------------------
 // Process Queries
-//------------------------------------------------------------------
 
 bool ProcessKDP::IsAlive() {
   return m_comm.IsConnected() && Process::IsAlive();
 }
 
-//------------------------------------------------------------------
 // Process Memory
-//------------------------------------------------------------------
 size_t ProcessKDP::DoReadMemory(addr_t addr, void *buf, size_t size,
                                 Status &error) {
   uint8_t *data_buffer = (uint8_t *)buf;
@@ -748,8 +740,15 @@ bool ProcessKDP::StartAsyncThread() {
   if (m_async_thread.IsJoinable())
     return true;
 
-  m_async_thread = ThreadLauncher::LaunchThread(
-      "<lldb.process.kdp-remote.async>", ProcessKDP::AsyncThread, this, NULL);
+  llvm::Expected<HostThread> async_thread = ThreadLauncher::LaunchThread(
+      "<lldb.process.kdp-remote.async>", ProcessKDP::AsyncThread, this);
+  if (!async_thread) {
+    LLDB_LOG(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_HOST),
+             "failed to launch host thread: {}",
+             llvm::toString(async_thread.takeError()));
+    return false;
+  }
+  m_async_thread = *async_thread;
   return m_async_thread.IsJoinable();
 }
 

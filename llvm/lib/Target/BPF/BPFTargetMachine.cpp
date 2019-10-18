@@ -13,6 +13,7 @@
 #include "BPFTargetMachine.h"
 #include "BPF.h"
 #include "MCTargetDesc/BPFMCAsmInfo.h"
+#include "TargetInfo/BPFTargetInfo.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
@@ -33,6 +34,7 @@ extern "C" void LLVMInitializeBPFTarget() {
   RegisterTargetMachine<BPFTargetMachine> Z(getTheBPFTarget());
 
   PassRegistry &PR = *PassRegistry::getPassRegistry();
+  initializeBPFAbstractMemberAccessPass(PR);
   initializeBPFMIPeepholePass(PR);
 }
 
@@ -67,6 +69,7 @@ BPFTargetMachine::BPFTargetMachine(const Target &T, const Triple &TT,
       static_cast<BPFMCAsmInfo *>(const_cast<MCAsmInfo *>(AsmInfo.get()));
   MAI->setDwarfUsesRelocationsAcrossSections(!Subtarget.getUseDwarfRIS());
 }
+
 namespace {
 // BPF Code Generator Pass Configuration Options.
 class BPFPassConfig : public TargetPassConfig {
@@ -78,6 +81,7 @@ public:
     return getTM<BPFTargetMachine>();
   }
 
+  void addIRPasses() override;
   bool addInstSelector() override;
   void addMachineSSAOptimization() override;
   void addPreEmitPass() override;
@@ -86,6 +90,13 @@ public:
 
 TargetPassConfig *BPFTargetMachine::createPassConfig(PassManagerBase &PM) {
   return new BPFPassConfig(*this, PM);
+}
+
+void BPFPassConfig::addIRPasses() {
+
+  addPass(createBPFAbstractMemberAccess());
+
+  TargetPassConfig::addIRPasses();
 }
 
 // Install an instruction selector pass using
@@ -97,6 +108,8 @@ bool BPFPassConfig::addInstSelector() {
 }
 
 void BPFPassConfig::addMachineSSAOptimization() {
+  addPass(createBPFMISimplifyPatchablePass());
+
   // The default implementation must be called first as we want eBPF
   // Peephole ran at last.
   TargetPassConfig::addMachineSSAOptimization();

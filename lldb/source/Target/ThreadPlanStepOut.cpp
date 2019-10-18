@@ -30,9 +30,7 @@ using namespace lldb_private;
 
 uint32_t ThreadPlanStepOut::s_default_flag_values = 0;
 
-//----------------------------------------------------------------------
 // ThreadPlanStepOut: Step out of the current frame
-//----------------------------------------------------------------------
 ThreadPlanStepOut::ThreadPlanStepOut(
     Thread &thread, SymbolContext *context, bool first_insn, bool stop_others,
     Vote stop_vote, Vote run_vote, uint32_t frame_idx,
@@ -112,8 +110,9 @@ ThreadPlanStepOut::ThreadPlanStepOut(
       return_address_decr_pc.CalculateSymbolContext(
           &return_address_sc, lldb::eSymbolContextLineEntry);
       if (return_address_sc.line_entry.IsValid()) {
-        range =
-            return_address_sc.line_entry.GetSameLineContiguousAddressRange();
+        const bool include_inlined_functions = false;
+        range = return_address_sc.line_entry.GetSameLineContiguousAddressRange(
+            include_inlined_functions);
         if (range.GetByteSize() > 0) {
           return_address =
               m_thread.GetProcess()->AdvanceAddressToNextBranchInstruction(

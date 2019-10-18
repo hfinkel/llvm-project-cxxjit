@@ -143,7 +143,7 @@ static Error handleArgs(const CopyConfig &Config, Object &Obj) {
         reportError(Config.OutputFilename,
                     createStringError(llvm::errc::invalid_argument,
                                       "not stripping symbol '%s' because it is "
-                                      "named in a relocation.",
+                                      "named in a relocation",
                                       Sym.Name.str().c_str()));
       return true;
     }
@@ -174,9 +174,10 @@ static Error handleArgs(const CopyConfig &Config, Object &Obj) {
   if (!Config.AddGnuDebugLink.empty())
     addGnuDebugLink(Obj, Config.AddGnuDebugLink);
 
-  if (!Config.BuildIdLinkDir.empty() || Config.BuildIdLinkInput ||
-      Config.BuildIdLinkOutput || !Config.SplitDWO.empty() ||
-      !Config.SymbolsPrefix.empty() || !Config.AddSection.empty() ||
+  if (Config.AllowBrokenLinks || !Config.BuildIdLinkDir.empty() ||
+      Config.BuildIdLinkInput || Config.BuildIdLinkOutput ||
+      !Config.SplitDWO.empty() || !Config.SymbolsPrefix.empty() ||
+      !Config.AllocSectionsPrefix.empty() || !Config.AddSection.empty() ||
       !Config.DumpSection.empty() || !Config.KeepSection.empty() ||
       !Config.SymbolsToGlobalize.empty() || !Config.SymbolsToKeep.empty() ||
       !Config.SymbolsToLocalize.empty() || !Config.SymbolsToWeaken.empty() ||
@@ -185,9 +186,10 @@ static Error handleArgs(const CopyConfig &Config, Object &Obj) {
       Config.ExtractDWO || Config.KeepFileSymbols || Config.LocalizeHidden ||
       Config.PreserveDates || Config.StripDWO || Config.StripNonAlloc ||
       Config.StripSections || Config.Weaken || Config.DecompressDebugSections ||
-      Config.DiscardMode == DiscardType::Locals) {
+      Config.DiscardMode == DiscardType::Locals ||
+      !Config.SymbolsToAdd.empty() || Config.EntryExpr) {
     return createStringError(llvm::errc::invalid_argument,
-                             "Option not supported by llvm-objcopy for COFF");
+                             "option not supported by llvm-objcopy for COFF");
   }
 
   return Error::success();

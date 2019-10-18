@@ -37,14 +37,12 @@ add_host_subdirectory(common
   common/NativeWatchpointList.cpp
   common/OptionParser.cpp
   common/PipeBase.cpp
-  common/ProcessInfo.cpp
   common/ProcessLaunchInfo.cpp
   common/ProcessRunLock.cpp
   common/PseudoTerminal.cpp
   common/SocketAddress.cpp
   common/Socket.cpp
   common/StringConvert.cpp
-  common/Symbols.cpp
   common/TaskPool.cpp
   common/TCPSocket.cpp
   common/Terminal.cpp
@@ -95,7 +93,6 @@ else()
     add_subdirectory(macosx/objcxx)
     set(LLDBObjCLibs lldbHostMacOSXObjCXX)
     add_host_subdirectory(macosx
-      macosx/Symbols.cpp
       macosx/cfcpp/CFCBundle.cpp
       macosx/cfcpp/CFCData.cpp
       macosx/cfcpp/CFCMutableArray.cpp
@@ -104,7 +101,7 @@ else()
       macosx/cfcpp/CFCString.cpp
       )
     if(IOS)
-      set_property(SOURCE macosx/Host.mm APPEND PROPERTY 
+      set_property(SOURCE macosx/Host.mm APPEND PROPERTY
                COMPILE_DEFINITIONS "NO_XPC_SERVICES=1")
     endif()
 
@@ -161,16 +158,21 @@ if (NOT LLDB_DISABLE_LIBEDIT)
   list(APPEND EXTRA_LIBS ${libedit_LIBRARIES})
 endif()
 
+if (NOT LLDB_DISABLE_LIBEDIT)
+  list(APPEND LLDB_LIBEDIT_LIBS ${libedit_LIBRARIES})
+  if (LLVM_BUILD_STATIC)
+    list(APPEND LLDB_SYSTEM_LIBS gpm)
+  endif()
+endif()
+
 add_lldb_library(lldbHost
   ${HOST_SOURCES}
 
   LINK_LIBS
-    lldbCore
-    lldbSymbol
-    lldbTarget
     lldbUtility
     ${EXTRA_LIBS}
     ${LLDBObjCLibs}
+    ${LLDB_LIBEDIT_LIBS}
 
   LINK_COMPONENTS
     Object

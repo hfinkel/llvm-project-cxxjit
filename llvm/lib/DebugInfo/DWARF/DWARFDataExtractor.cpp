@@ -15,15 +15,19 @@ using namespace llvm;
 uint64_t DWARFDataExtractor::getRelocatedValue(uint32_t Size, uint32_t *Off,
                                                uint64_t *SecNdx) const {
   if (SecNdx)
-    *SecNdx = -1ULL;
+    *SecNdx = object::SectionedAddress::UndefSection;
   if (!Section)
     return getUnsigned(Off, Size);
-  Optional<RelocAddrEntry> Rel = Obj->find(*Section, *Off);
-  if (!Rel)
-    return getUnsigned(Off, Size);
+  Optional<RelocAddrEntry> E = Obj->find(*Section, *Off);
+  uint64_t A = getUnsigned(Off, Size);
+  if (!E)
+    return A;
   if (SecNdx)
-    *SecNdx = Rel->SectionIndex;
-  return getUnsigned(Off, Size) + Rel->Value;
+    *SecNdx = E->SectionIndex;
+  uint64_t R = E->Resolver(E->Reloc, E->SymbolValue, A);
+  if (E->Reloc2)
+    R = E->Resolver(*E->Reloc2, E->SymbolValue2, R);
+  return R;
 }
 
 Optional<uint64_t>

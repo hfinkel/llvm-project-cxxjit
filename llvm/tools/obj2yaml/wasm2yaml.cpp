@@ -93,7 +93,7 @@ WasmDumper::dumpCustomSection(const WasmSection &WasmSec) {
         SegmentInfo.Name = Segment.Data.Name;
         SegmentInfo.Index = SegmentIndex;
         SegmentInfo.Alignment = Segment.Data.Alignment;
-        SegmentInfo.Flags = Segment.Data.Flags;
+        SegmentInfo.Flags = Segment.Data.LinkerFlags;
         LinkingSec->SegmentInfos.push_back(SegmentInfo);
       }
       if (Segment.Data.Comdat != UINT32_MAX) {
@@ -155,6 +155,16 @@ WasmDumper::dumpCustomSection(const WasmSection &WasmSec) {
       ProducersSec->SDKs.push_back(Producer);
     }
     CustomSec = std::move(ProducersSec);
+  } else if (WasmSec.Name == "target_features") {
+    std::unique_ptr<WasmYAML::TargetFeaturesSection> TargetFeaturesSec =
+        make_unique<WasmYAML::TargetFeaturesSection>();
+    for (auto &E : Obj.getTargetFeatures()) {
+      WasmYAML::FeatureEntry Feature;
+      Feature.Prefix = E.Prefix;
+      Feature.Name = E.Name;
+      TargetFeaturesSec->Features.push_back(Feature);
+    }
+    CustomSec = std::move(TargetFeaturesSec);
   } else {
     CustomSec = make_unique<WasmYAML::CustomSection>(WasmSec.Name);
   }
@@ -334,12 +344,19 @@ ErrorOr<WasmYAML::Object *> WasmDumper::dump() {
       for (const object::WasmSegment &Segment : Obj.dataSegments()) {
         WasmYAML::DataSegment Seg;
         Seg.SectionOffset = Segment.SectionOffset;
+        Seg.InitFlags = Segment.Data.InitFlags;
         Seg.MemoryIndex = Segment.Data.MemoryIndex;
         Seg.Offset = Segment.Data.Offset;
         Seg.Content = yaml::BinaryRef(Segment.Data.Content);
         DataSec->Segments.push_back(Seg);
       }
       S = std::move(DataSec);
+      break;
+    }
+    case wasm::WASM_SEC_DATACOUNT: {
+      auto DataCountSec = make_unique<WasmYAML::DataCountSection>();
+      DataCountSec->Count = Obj.dataSegments().size();
+      S = std::move(DataCountSec);
       break;
     }
     default:

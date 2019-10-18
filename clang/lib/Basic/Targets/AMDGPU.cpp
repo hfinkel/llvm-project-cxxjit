@@ -34,7 +34,8 @@ static const char *const DataLayoutStringR600 =
 static const char *const DataLayoutStringAMDGCN =
     "e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32"
     "-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128"
-    "-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5";
+    "-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5"
+    "-ni:7";
 
 const LangASMap AMDGPUTargetInfo::AMDGPUDefIsGenMap = {
     Generic,  // Default
@@ -134,6 +135,29 @@ bool AMDGPUTargetInfo::initFeatureMap(
       CPU = "gfx600";
 
     switch (llvm::AMDGPU::parseArchAMDGCN(CPU)) {
+    case GK_GFX1012:
+    case GK_GFX1011:
+      Features["dot1-insts"] = true;
+      Features["dot2-insts"] = true;
+      Features["dot5-insts"] = true;
+      Features["dot6-insts"] = true;
+      LLVM_FALLTHROUGH;
+    case GK_GFX1010:
+      Features["dl-insts"] = true;
+      Features["ci-insts"] = true;
+      Features["16-bit-insts"] = true;
+      Features["dpp"] = true;
+      Features["gfx8-insts"] = true;
+      Features["gfx9-insts"] = true;
+      Features["gfx10-insts"] = true;
+      Features["s-memrealtime"] = true;
+      break;
+    case GK_GFX908:
+      Features["dot3-insts"] = true;
+      Features["dot4-insts"] = true;
+      Features["dot5-insts"] = true;
+      Features["dot6-insts"] = true;
+      LLVM_FALLTHROUGH;
     case GK_GFX906:
       Features["dl-insts"] = true;
       Features["dot1-insts"] = true;
@@ -149,7 +173,7 @@ bool AMDGPUTargetInfo::initFeatureMap(
     case GK_GFX803:
     case GK_GFX802:
     case GK_GFX801:
-      Features["vi-insts"] = true;
+      Features["gfx8-insts"] = true;
       Features["16-bit-insts"] = true;
       Features["dpp"] = true;
       Features["s-memrealtime"] = true;
@@ -250,6 +274,9 @@ AMDGPUTargetInfo::AMDGPUTargetInfo(const llvm::Triple &Triple,
   setAddressSpaceMap(Triple.getOS() == llvm::Triple::Mesa3D ||
                      !isAMDGCN(Triple));
   UseAddrSpaceMapMangling = true;
+
+  HasLegalHalfType = true;
+  HasFloat16 = true;
 
   // Set pointer width and alignment for target address space 0.
   PointerWidth = PointerAlign = DataLayout->getPointerSizeInBits();

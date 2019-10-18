@@ -12,6 +12,7 @@
 #include "ARCTargetMachine.h"
 #include "ARC.h"
 #include "ARCTargetTransformInfo.h"
+#include "TargetInfo/ARCTargetInfo.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
@@ -74,7 +75,10 @@ bool ARCPassConfig::addInstSelector() {
 
 void ARCPassConfig::addPreEmitPass() { addPass(createARCBranchFinalizePass()); }
 
-void ARCPassConfig::addPreRegAlloc() { addPass(createARCExpandPseudosPass()); }
+void ARCPassConfig::addPreRegAlloc() {
+    addPass(createARCExpandPseudosPass());
+    addPass(createARCOptAddrMode());
+}
 
 // Force static initialization.
 extern "C" void LLVMInitializeARCTarget() {

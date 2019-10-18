@@ -48,6 +48,8 @@ using namespace lldb_renderscript;
 
 #define FMT_COORD "(%" PRIu32 ", %" PRIu32 ", %" PRIu32 ")"
 
+char RenderScriptRuntime::ID = 0;
+
 namespace {
 
 // The empirical_type adds a basic level of validation to arbitrary data
@@ -592,7 +594,7 @@ struct RenderScriptRuntime::Element {
       array_size;        // Number of items in array, only needed for structs
   ConstString type_name; // Name of type, only needed for structs
 
-  static const ConstString &
+  static ConstString 
   GetFallbackStructName(); // Print this as the type name of a struct Element
                            // If we can't resolve the actual struct name
 
@@ -692,7 +694,7 @@ struct RenderScriptRuntime::AllocationDetails {
   }
 };
 
-const ConstString &RenderScriptRuntime::Element::GetFallbackStructName() {
+ConstString RenderScriptRuntime::Element::GetFallbackStructName() {
   static const ConstString FallbackStructName("struct");
   return FallbackStructName;
 }
@@ -790,9 +792,7 @@ const uint32_t RenderScriptRuntime::AllocationDetails::RSTypeToFormat[][3] = {
     // RS_TYPE_MATRIX_2X2
     {eFormatVectorOfFloat32, eFormatVectorOfFloat32, sizeof(float) * 4}};
 
-//------------------------------------------------------------------
 // Static Functions
-//------------------------------------------------------------------
 LanguageRuntime *
 RenderScriptRuntime::CreateInstance(Process *process,
                                     lldb::LanguageType language) {
@@ -1030,16 +1030,12 @@ void RenderScriptRuntime::ModulesDidLoad(const ModuleList &module_list) {
   }
 }
 
-//------------------------------------------------------------------
 // PluginInterface protocol
-//------------------------------------------------------------------
 lldb_private::ConstString RenderScriptRuntime::GetPluginName() {
   return GetPluginNameStatic();
 }
 
 uint32_t RenderScriptRuntime::GetPluginVersion() { return 1; }
-
-bool RenderScriptRuntime::IsVTableName(const char *name) { return false; }
 
 bool RenderScriptRuntime::GetDynamicTypeAndAddress(
     ValueObject &in_value, lldb::DynamicValueType use_dynamic,
@@ -1127,9 +1123,9 @@ bool RenderScriptRuntime::HookCallback(void *baton,
   RuntimeHook *hook = (RuntimeHook *)baton;
   ExecutionContext exe_ctx(ctx->exe_ctx_ref);
 
-  RenderScriptRuntime *lang_rt =
-      (RenderScriptRuntime *)exe_ctx.GetProcessPtr()->GetLanguageRuntime(
-          eLanguageTypeExtRenderScript);
+  RenderScriptRuntime *lang_rt = llvm::cast<RenderScriptRuntime>(
+      exe_ctx.GetProcessPtr()->GetLanguageRuntime(
+          eLanguageTypeExtRenderScript));
 
   lang_rt->HookCallback(hook, exe_ctx);
 
@@ -1976,8 +1972,8 @@ bool RenderScriptRuntime::JITTypePacked(AllocationDetails *alloc,
 
   // We want 4 elements from packed data
   const uint32_t num_exprs = 4;
-  assert(num_exprs == (eExprTypeElemPtr - eExprTypeDimX + 1) &&
-         "Invalid number of expressions");
+  static_assert(num_exprs == (eExprTypeElemPtr - eExprTypeDimX + 1),
+                "Invalid number of expressions");
 
   char expr_bufs[num_exprs][jit_max_expr_size];
   uint64_t results[num_exprs];
@@ -2035,8 +2031,8 @@ bool RenderScriptRuntime::JITElementPacked(Element &elem,
 
   // We want 4 elements from packed data
   const uint32_t num_exprs = 4;
-  assert(num_exprs == (eExprElementFieldCount - eExprElementType + 1) &&
-         "Invalid number of expressions");
+  static_assert(num_exprs == (eExprElementFieldCount - eExprElementType + 1),
+                "Invalid number of expressions");
 
   char expr_bufs[num_exprs][jit_max_expr_size];
   uint64_t results[num_exprs];
@@ -2094,8 +2090,8 @@ bool RenderScriptRuntime::JITSubelements(Element &elem,
   }
 
   const short num_exprs = 3;
-  assert(num_exprs == (eExprSubelementsArrSize - eExprSubelementsId + 1) &&
-         "Invalid number of expressions");
+  static_assert(num_exprs == (eExprSubelementsArrSize - eExprSubelementsId + 1),
+                "Invalid number of expressions");
 
   char expr_buffer[jit_max_expr_size];
   uint64_t results;
@@ -2363,7 +2359,7 @@ void RenderScriptRuntime::FindStructTypeName(Element &elem,
                     size_diff);
 
       for (uint32_t i = 0; i < size_diff; ++i) {
-        const ConstString &name = elem.children[num_children + i].type_name;
+        ConstString name = elem.children[num_children + i].type_name;
         if (strcmp(name.AsCString(), "#rs_padding") < 0)
           found = false;
       }
@@ -3594,7 +3590,7 @@ void RenderScriptRuntime::SetBreakAllKernels(bool do_break, TargetSP target) {
 // Given the name of a kernel this function creates a breakpoint using our own
 // breakpoint resolver, and returns the Breakpoint shared pointer.
 BreakpointSP
-RenderScriptRuntime::CreateKernelBreakpoint(const ConstString &name) {
+RenderScriptRuntime::CreateKernelBreakpoint(ConstString name) {
   Log *log(
       GetLogIfAnyCategoriesSet(LIBLLDB_LOG_LANGUAGE | LIBLLDB_LOG_BREAKPOINTS));
 
@@ -3622,7 +3618,7 @@ RenderScriptRuntime::CreateKernelBreakpoint(const ConstString &name) {
 }
 
 BreakpointSP
-RenderScriptRuntime::CreateReductionBreakpoint(const ConstString &name,
+RenderScriptRuntime::CreateReductionBreakpoint(ConstString name,
                                                int kernel_types) {
   Log *log(
       GetLogIfAnyCategoriesSet(LIBLLDB_LOG_LANGUAGE | LIBLLDB_LOG_BREAKPOINTS));
@@ -3863,7 +3859,7 @@ bool RenderScriptRuntime::PlaceBreakpointOnKernel(TargetSP target,
 }
 
 BreakpointSP
-RenderScriptRuntime::CreateScriptGroupBreakpoint(const ConstString &name,
+RenderScriptRuntime::CreateScriptGroupBreakpoint(ConstString name,
                                                  bool stop_on_all) {
   Log *log(
       GetLogIfAnyCategoriesSet(LIBLLDB_LOG_LANGUAGE | LIBLLDB_LOG_BREAKPOINTS));
@@ -3893,7 +3889,7 @@ RenderScriptRuntime::CreateScriptGroupBreakpoint(const ConstString &name,
 
 bool RenderScriptRuntime::PlaceBreakpointOnScriptGroup(TargetSP target,
                                                        Stream &strm,
-                                                       const ConstString &name,
+                                                       ConstString name,
                                                        bool multi) {
   InitSearchFilter(target);
   BreakpointSP bp = CreateScriptGroupBreakpoint(name, multi);
@@ -4126,9 +4122,9 @@ public:
   ~CommandObjectRenderScriptRuntimeModuleDump() override = default;
 
   bool DoExecute(Args &command, CommandReturnObject &result) override {
-    RenderScriptRuntime *runtime =
-        (RenderScriptRuntime *)m_exe_ctx.GetProcessPtr()->GetLanguageRuntime(
-            eLanguageTypeExtRenderScript);
+    RenderScriptRuntime *runtime = llvm::cast<RenderScriptRuntime>(
+        m_exe_ctx.GetProcessPtr()->GetLanguageRuntime(
+            eLanguageTypeExtRenderScript));
     runtime->DumpModules(result.GetOutputStream());
     result.SetStatus(eReturnStatusSuccessFinishResult);
     return true;
@@ -4161,9 +4157,9 @@ public:
   ~CommandObjectRenderScriptRuntimeKernelList() override = default;
 
   bool DoExecute(Args &command, CommandReturnObject &result) override {
-    RenderScriptRuntime *runtime =
-        (RenderScriptRuntime *)m_exe_ctx.GetProcessPtr()->GetLanguageRuntime(
-            eLanguageTypeExtRenderScript);
+    RenderScriptRuntime *runtime = llvm::cast<RenderScriptRuntime>(
+        m_exe_ctx.GetProcessPtr()->GetLanguageRuntime(
+            eLanguageTypeExtRenderScript));
     runtime->DumpKernels(result.GetOutputStream());
     result.SetStatus(eReturnStatusSuccessFinishResult);
     return true;
@@ -4408,9 +4404,9 @@ public:
       return false;
     }
 
-    RenderScriptRuntime *runtime =
-        (RenderScriptRuntime *)m_exe_ctx.GetProcessPtr()->GetLanguageRuntime(
-            eLanguageTypeExtRenderScript);
+    RenderScriptRuntime *runtime = llvm::cast<RenderScriptRuntime>(
+        m_exe_ctx.GetProcessPtr()->GetLanguageRuntime(
+            eLanguageTypeExtRenderScript));
 
     auto &outstream = result.GetOutputStream();
     auto &target = m_exe_ctx.GetTargetSP();
@@ -4592,9 +4588,9 @@ public:
   ~CommandObjectRenderScriptRuntimeContextDump() override = default;
 
   bool DoExecute(Args &command, CommandReturnObject &result) override {
-    RenderScriptRuntime *runtime =
-        (RenderScriptRuntime *)m_exe_ctx.GetProcessPtr()->GetLanguageRuntime(
-            eLanguageTypeExtRenderScript);
+    RenderScriptRuntime *runtime = llvm::cast<RenderScriptRuntime>(
+        m_exe_ctx.GetProcessPtr()->GetLanguageRuntime(
+            eLanguageTypeExtRenderScript));
     runtime->DumpContexts(result.GetOutputStream());
     result.SetStatus(eReturnStatusSuccessFinishResult);
     return true;
@@ -4984,9 +4980,9 @@ public:
   ~CommandObjectRenderScriptRuntimeStatus() override = default;
 
   bool DoExecute(Args &command, CommandReturnObject &result) override {
-    RenderScriptRuntime *runtime =
-        (RenderScriptRuntime *)m_exe_ctx.GetProcessPtr()->GetLanguageRuntime(
-            eLanguageTypeExtRenderScript);
+    RenderScriptRuntime *runtime = llvm::cast<RenderScriptRuntime>(
+        m_exe_ctx.GetProcessPtr()->GetLanguageRuntime(
+            eLanguageTypeExtRenderScript));
     runtime->DumpStatus(result.GetOutputStream());
     result.SetStatus(eReturnStatusSuccessFinishResult);
     return true;

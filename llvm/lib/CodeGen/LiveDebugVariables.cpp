@@ -22,6 +22,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/IntervalMap.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -165,10 +166,6 @@ class UserValue {
 
   /// Map of slot indices where this value is live.
   LocMap locInts;
-
-  /// Set of interval start indexes that have been trimmed to the
-  /// lexical scope.
-  SmallSet<SlotIndex, 2> trimmedDefs;
 
   /// Insert a DBG_VALUE into MBB at Idx for LocNo.
   void insertDebugValue(MachineBasicBlock *MBB, SlotIndex StartIdx,
@@ -503,7 +500,8 @@ static void printExtendedName(raw_ostream &OS, const DINode *Node,
 
   if (!Res.empty())
     OS << Res << "," << Line;
-  if (auto *InlinedAt = DL->getInlinedAt()) {
+  auto *InlinedAt = DL ? DL->getInlinedAt() : nullptr;
+  if (InlinedAt) {
     if (DebugLoc InlinedAtDL = InlinedAt) {
       OS << " @[";
       printDebugLoc(InlinedAtDL, OS, Ctx);
@@ -619,7 +617,7 @@ bool LDVImpl::handleDebugValue(MachineInstr &MI, SlotIndex Idx) {
     } else {
       // The DBG_VALUE is only valid if either Reg is live out from Idx, or Reg
       // is defined dead at Idx (where Idx is the slot index for the instruction
-      // preceeding the DBG_VALUE).
+      // preceding the DBG_VALUE).
       const LiveInterval &LI = LIS->getInterval(Reg);
       LiveQueryResult LRQ = LI.Query(Idx);
       if (!LRQ.valueOutOrDead()) {
@@ -742,10 +740,8 @@ void UserValue::extendDef(SlotIndex Idx, DbgValueLocation Loc, LiveRange *LR,
   }
 
   // Limited by the next def.
-  if (I.valid() && I.start() < Stop) {
+  if (I.valid() && I.start() < Stop)
     Stop = I.start();
-    ToEnd = false;
-  }
   // Limited by VNI's live range.
   else if (!ToEnd && Kills)
     Kills->push_back(Stop);
@@ -913,8 +909,7 @@ void UserValue::computeIntervals(MachineRegisterInfo &MRI,
       ++I;
 
       // If the interval also overlaps the start of the "next" (i.e.
-      // current) range create a new interval for the remainder (which
-      // may be further trimmed).
+      // current) range create a new interval for the remainder
       if (RStart < IStop)
         I.insert(RStart, IStop, Loc);
     }
@@ -923,13 +918,6 @@ void UserValue::computeIntervals(MachineRegisterInfo &MRI,
     I.advanceTo(RStart);
     if (!I.valid())
       return;
-
-    if (I.start() < RStart) {
-      // Interval start overlaps range - trim to the scope range.
-      I.setStartUnchecked(RStart);
-      // Remember that this interval was trimmed.
-      trimmedDefs.insert(RStart);
-    }
 
     // The end of a lexical scope range is the last instruction in the
     // range. To convert to an interval we need the index of the
@@ -1314,11 +1302,13 @@ void UserValue::insertDebugValue(MachineBasicBlock *MBB, SlotIndex StartIdx,
   // that the original virtual register was a pointer. Also, add the stack slot
   // offset for the spilled register to the expression.
   const DIExpression *Expr = Expression;
+  uint8_t DIExprFlags = DIExpression::ApplyOffset;
   bool IsIndirect = Loc.wasIndirect();
   if (Spilled) {
-    auto Deref = IsIndirect ? DIExpression::WithDeref : DIExpression::NoDeref;
+    if (IsIndirect)
+      DIExprFlags |= DIExpression::DerefAfter;
     Expr =
-        DIExpression::prepend(Expr, DIExpression::NoDeref, SpillOffset, Deref);
+        DIExpression::prepend(Expr, DIExprFlags, SpillOffset);
     IsIndirect = true;
   }
 
@@ -1357,12 +1347,6 @@ void UserValue::emitDebugValues(VirtRegMap *VRM, LiveIntervals &LIS,
         !Loc.isUndef() ? SpillOffsets.find(Loc.locNo()) : SpillOffsets.end();
     bool Spilled = SpillIt != SpillOffsets.end();
     unsigned SpillOffset = Spilled ? SpillIt->second : 0;
-
-    // If the interval start was trimmed to the lexical scope insert the
-    // DBG_VALUE at the previous index (otherwise it appears after the
-    // first instruction in the range).
-    if (trimmedDefs.count(Start))
-      Start = Start.getPrevIndex();
 
     LLVM_DEBUG(dbgs() << "\t[" << Start << ';' << Stop << "):" << Loc.locNo());
     MachineFunction::iterator MBB = LIS.getMBBFromIndex(Start)->getIterator();

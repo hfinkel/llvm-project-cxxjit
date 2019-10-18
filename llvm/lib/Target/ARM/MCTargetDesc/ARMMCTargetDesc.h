@@ -14,6 +14,7 @@
 #define LLVM_LIB_TARGET_ARM_MCTARGETDESC_ARMMCTARGETDESC_H
 
 #include "llvm/Support/DataTypes.h"
+#include "llvm/MC/MCInstrDesc.h"
 #include <memory>
 #include <string>
 
@@ -37,11 +38,6 @@ class Target;
 class Triple;
 class raw_ostream;
 class raw_pwrite_stream;
-
-Target &getTheARMLETarget();
-Target &getTheThumbLETarget();
-Target &getTheARMBETarget();
-Target &getTheThumbBETarget();
 
 namespace ARM_MC {
 std::string ParseARMTriple(const Triple &TT, StringRef CPU);
@@ -99,6 +95,20 @@ createARMWinCOFFObjectWriter(bool Is64Bit);
 
 /// Construct ARM Mach-O relocation info.
 MCRelocationInfo *createARMMachORelocationInfo(MCContext &Ctx);
+
+namespace ARM {
+enum OperandType {
+  OPERAND_VPRED_R = MCOI::OPERAND_FIRST_TARGET,
+  OPERAND_VPRED_N,
+};
+inline bool isVpred(OperandType op) {
+  return op == OPERAND_VPRED_R || op == OPERAND_VPRED_N;
+}
+inline bool isVpred(uint8_t op) {
+  return isVpred(static_cast<OperandType>(op));
+}
+} // end namespace ARM
+
 } // End llvm namespace
 
 // Defines symbolic names for ARM registers.  This defines a mapping from

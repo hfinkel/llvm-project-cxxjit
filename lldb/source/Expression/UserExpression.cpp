@@ -15,12 +15,11 @@
 #include <map>
 #include <string>
 
-#include "Plugins/ExpressionParser/Clang/ClangPersistentVariables.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/StreamFile.h"
 #include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/Expression/DiagnosticManager.h"
-#include "lldb/Expression/ExpressionSourceCode.h"
+#include "lldb/Expression/ExpressionVariable.h"
 #include "lldb/Expression/IRExecutionUnit.h"
 #include "lldb/Expression/IRInterpreter.h"
 #include "lldb/Expression/Materializer.h"
@@ -49,8 +48,9 @@ UserExpression::UserExpression(ExecutionContextScope &exe_scope,
                                llvm::StringRef expr, llvm::StringRef prefix,
                                lldb::LanguageType language,
                                ResultType desired_type,
-                               const EvaluateExpressionOptions &options)
-    : Expression(exe_scope), m_expr_text(expr), m_expr_prefix(prefix),
+                               const EvaluateExpressionOptions &options,
+                               ExpressionKind kind)
+    : Expression(exe_scope, kind), m_expr_text(expr), m_expr_prefix(prefix),
       m_language(language), m_desired_type(desired_type), m_options(options) {}
 
 UserExpression::~UserExpression() {}
@@ -139,7 +139,7 @@ lldb::addr_t UserExpression::GetObjectPointer(lldb::StackFrameSP frame_sp,
 lldb::ExpressionResults UserExpression::Evaluate(
     ExecutionContext &exe_ctx, const EvaluateExpressionOptions &options,
     llvm::StringRef expr, llvm::StringRef prefix,
-    lldb::ValueObjectSP &result_valobj_sp, Status &error, uint32_t line_offset,
+    lldb::ValueObjectSP &result_valobj_sp, Status &error,
     std::string *fixed_expression, lldb::ModuleSP *jit_module_sp_ptr,
     ValueObject *ctx_obj) {
   Log *log(lldb_private::GetLogIfAnyCategoriesSet(LIBLLDB_LOG_EXPRESSIONS |
@@ -174,7 +174,7 @@ lldb::ExpressionResults UserExpression::Evaluate(
 
   Process *process = exe_ctx.GetProcessPtr();
 
-  if (process == NULL || process->GetState() != lldb::eStateStopped) {
+  if (process == nullptr || process->GetState() != lldb::eStateStopped) {
     if (execution_policy == eExecutionPolicyAlways) {
       if (log)
         log->Printf("== [UserExpression::Evaluate] Expression may not run, but "
@@ -186,7 +186,7 @@ lldb::ExpressionResults UserExpression::Evaluate(
     }
   }
 
-  if (process == NULL || !process->CanJIT())
+  if (process == nullptr || !process->CanJIT())
     execution_policy = eExecutionPolicyNever;
 
   // We need to set the expression execution thread here, turns out parse can
@@ -375,7 +375,7 @@ lldb::ExpressionResults UserExpression::Evaluate(
     return lldb::eExpressionInterrupted;
   }
 
-  if (result_valobj_sp.get() == NULL) {
+  if (result_valobj_sp.get() == nullptr) {
     result_valobj_sp = ValueObjectConstResult::Create(
         exe_ctx.GetBestExecutionContextScope(), error);
   }

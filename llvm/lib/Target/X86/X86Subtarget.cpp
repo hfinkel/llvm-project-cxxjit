@@ -14,6 +14,7 @@
 
 #include "X86CallLowering.h"
 #include "X86LegalizerInfo.h"
+#include "X86MacroFusion.h"
 #include "X86RegisterBankInfo.h"
 #include "X86Subtarget.h"
 #include "MCTargetDesc/X86BaseInfo.h"
@@ -145,6 +146,9 @@ unsigned char X86Subtarget::classifyGlobalReference(const GlobalValue *GV,
       return X86II::MO_DLLIMPORT;
     return X86II::MO_COFFSTUB;
   }
+  // Some JIT users use *-win32-elf triples; these shouldn't use GOT tables.
+  if (isOSWindows())
+    return X86II::MO_NO_FLAG;
 
   if (is64Bit()) {
     // ELF supports a large, truly PIC code model with non-PC relative GOT
@@ -175,10 +179,13 @@ X86Subtarget::classifyGlobalFunctionReference(const GlobalValue *GV,
   if (TM.shouldAssumeDSOLocal(M, GV))
     return X86II::MO_NO_FLAG;
 
+  // Functions on COFF can be non-DSO local for two reasons:
+  // - They are marked dllimport
+  // - They are extern_weak, and a stub is needed
   if (isTargetCOFF()) {
-    assert(GV->hasDLLImportStorageClass() &&
-           "shouldAssumeDSOLocal gave inconsistent answer");
-    return X86II::MO_DLLIMPORT;
+    if (GV->hasDLLImportStorageClass())
+      return X86II::MO_DLLIMPORT;
+    return X86II::MO_COFFSTUB;
   }
 
   const Function *F = dyn_cast_or_null<Function>(GV);
@@ -365,4 +372,9 @@ const RegisterBankInfo *X86Subtarget::getRegBankInfo() const {
 
 bool X86Subtarget::enableEarlyIfConversion() const {
   return hasCMov() && X86EarlyIfConv;
+}
+
+void X86Subtarget::getPostRAMutations(
+    std::vector<std::unique_ptr<ScheduleDAGMutation>> &Mutations) const {
+  Mutations.push_back(createX86MacroFusionDAGMutation());
 }

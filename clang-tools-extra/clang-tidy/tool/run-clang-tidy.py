@@ -47,7 +47,11 @@ import sys
 import tempfile
 import threading
 import traceback
-import yaml
+
+try:
+  import yaml
+except ImportError:
+  yaml = None
 
 is_py2 = sys.version[0] == '2'
 
@@ -80,9 +84,6 @@ def get_tidy_invocation(f, clang_tidy_binary, checks, tmpdir, build_path,
   start = [clang_tidy_binary]
   if header_filter is not None:
     start.append('-header-filter=' + header_filter)
-  else:
-    # Show warnings in all in-project headers by default.
-    start.append('-header-filter=^' + build_path + '/.*')
   if checks:
     start.append('-checks=' + checks)
   if tmpdir is not None:
@@ -166,9 +167,10 @@ def run_tidy(args, tmpdir, build_path, queue, lock, failed_files):
     if proc.returncode != 0:
       failed_files.append(name)
     with lock:
-      sys.stdout.write(' '.join(invocation) + '\n' + output.decode('utf-8') + '\n')
+      sys.stdout.write(' '.join(invocation) + '\n' + output.decode('utf-8'))
       if len(err) > 0:
-        sys.stderr.write(err.decode('utf-8') + '\n')
+        sys.stdout.flush()
+        sys.stderr.write(err.decode('utf-8'))
     queue.task_done()
 
 
@@ -199,9 +201,10 @@ def main():
                       'headers to output diagnostics from. Diagnostics from '
                       'the main file of each translation unit are always '
                       'displayed.')
-  parser.add_argument('-export-fixes', metavar='filename', dest='export_fixes',
-                      help='Create a yaml file to store suggested fixes in, '
-                      'which can be applied with clang-apply-replacements.')
+  if yaml:
+    parser.add_argument('-export-fixes', metavar='filename', dest='export_fixes',
+                        help='Create a yaml file to store suggested fixes in, '
+                        'which can be applied with clang-apply-replacements.')
   parser.add_argument('-j', type=int, default=0,
                       help='number of tidy instances to be run in parallel.')
   parser.add_argument('files', nargs='*', default=['.*'],
@@ -239,7 +242,12 @@ def main():
     if args.checks:
       invocation.append('-checks=' + args.checks)
     invocation.append('-')
-    subprocess.check_call(invocation)
+    if args.quiet:
+      # Even with -quiet we still want to check if we can call clang-tidy.
+      with open(os.devnull, 'w') as dev_null:
+        subprocess.check_call(invocation, stdout=dev_null)
+    else:
+      subprocess.check_call(invocation)
   except:
     print("Unable to run clang-tidy.", file=sys.stderr)
     sys.exit(1)
@@ -254,7 +262,7 @@ def main():
     max_task = multiprocessing.cpu_count()
 
   tmpdir = None
-  if args.fix or args.export_fixes:
+  if args.fix or (yaml and args.export_fixes):
     check_clang_apply_replacements_binary(args)
     tmpdir = tempfile.mkdtemp()
 
@@ -292,7 +300,7 @@ def main():
       shutil.rmtree(tmpdir)
     os.kill(0, 9)
 
-  if args.export_fixes:
+  if yaml and args.export_fixes:
     print('Writing fixes to ' + args.export_fixes + ' ...')
     try:
       merge_replacement_files(tmpdir, args.export_fixes)

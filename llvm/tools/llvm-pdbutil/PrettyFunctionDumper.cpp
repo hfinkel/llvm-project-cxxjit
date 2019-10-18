@@ -138,7 +138,8 @@ void FunctionDumper::start(const PDBSymbolFunc &Symbol, PointerType Pointer) {
 
   if (Symbol.hasFramePointer()) {
     WithColor(Printer, PDB_ColorItem::Register).get()
-        << Symbol.getLocalBasePointerRegisterId();
+        << CPURegister{Symbol.getRawSymbol().getPlatform(),
+                       Symbol.getLocalBasePointerRegisterId()};
   } else {
     WithColor(Printer, PDB_ColorItem::Register).get() << "FPO";
   }
@@ -228,9 +229,9 @@ void FunctionDumper::dump(const PDBSymbolTypeFunctionArg &Symbol) {
   uint32_t TypeId = Symbol.getTypeId();
   auto Type = Symbol.getSession().getSymbolById(TypeId);
   if (Type)
-    Printer << "<unknown-type>";
-  else
     Type->dump(*this);
+  else
+    Printer << "<unknown-type>";
 }
 
 void FunctionDumper::dump(const PDBSymbolTypeTypedef &Symbol) {

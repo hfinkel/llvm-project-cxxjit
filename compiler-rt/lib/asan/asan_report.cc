@@ -190,7 +190,7 @@ class ScopedInErrorReport {
   void ReportError(const ErrorDescription &description) {
     // Can only report one error per ScopedInErrorReport.
     CHECK_EQ(current_error_.kind, kErrorKindInvalid);
-    current_error_ = description;
+    internal_memcpy(&current_error_, &description, sizeof(current_error_));
   }
 
   static ErrorDescription &CurrentError() {
@@ -260,6 +260,13 @@ void ReportSanitizerGetAllocatedSizeNotOwned(uptr addr,
 void ReportCallocOverflow(uptr count, uptr size, BufferedStackTrace *stack) {
   ScopedInErrorReport in_report(/*fatal*/ true);
   ErrorCallocOverflow error(GetCurrentTidOrInvalid(), stack, count, size);
+  in_report.ReportError(error);
+}
+
+void ReportReallocArrayOverflow(uptr count, uptr size,
+                                BufferedStackTrace *stack) {
+  ScopedInErrorReport in_report(/*fatal*/ true);
+  ErrorReallocArrayOverflow error(GetCurrentTidOrInvalid(), stack, count, size);
   in_report.ReportError(error);
 }
 

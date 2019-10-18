@@ -687,7 +687,6 @@ PreambleBounds Lexer::ComputePreamble(StringRef Buffer,
       // We only end up here if we didn't recognize the preprocessor
       // directive or it was one that can't occur in the preamble at this
       // point. Roll back the current token to the location of the '#'.
-      InPreprocessorDirective = false;
       TheTok = HashTok;
     }
 
@@ -2072,7 +2071,7 @@ bool Lexer::LexAngledStringLiteral(Token &Result, const char *CurPtr) {
 
   // Update the location of token as well as BufferPtr.
   const char *TokStart = BufferPtr;
-  FormTokenWithChars(Result, CurPtr, tok::angle_string_literal);
+  FormTokenWithChars(Result, CurPtr, tok::header_name);
   Result.setLiteralData(TokStart);
   return true;
 }
@@ -3232,7 +3231,7 @@ LexNextToken:
 
   case '\r':
     if (CurPtr[0] == '\n')
-      Char = getAndAdvanceChar(CurPtr, Result);
+      (void)getAndAdvanceChar(CurPtr, Result);
     LLVM_FALLTHROUGH;
   case '\n':
     // If we are inside a preprocessor directive and we see the end of line,
@@ -3465,7 +3464,9 @@ LexNextToken:
   case '"':
     // Notify MIOpt that we read a non-whitespace/non-comment token.
     MIOpt.ReadToken();
-    return LexStringLiteral(Result, CurPtr, tok::string_literal);
+    return LexStringLiteral(Result, CurPtr,
+                            ParsingFilename ? tok::header_name
+                                            : tok::string_literal);
 
   // C99 6.4.6: Punctuators.
   case '?':

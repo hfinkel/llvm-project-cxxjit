@@ -12,6 +12,7 @@
 #include "Diagnostics.h"
 #include "Headers.h"
 #include "index/Index.h"
+#include "index/Symbol.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/SourceLocation.h"
@@ -57,9 +58,7 @@ private:
   struct UnresolvedName {
     std::string Name;   // E.g. "X" in foo::X.
     SourceLocation Loc; // Start location of the unresolved name.
-    // Lazily get the possible scopes of the unresolved name. `Sema` must be
-    // alive when this is called.
-    std::function<std::vector<std::string>()> GetScopes;
+    std::vector<std::string> Scopes; // Namespace scopes we should search in.
   };
 
   /// Records the last unresolved name seen by Sema.

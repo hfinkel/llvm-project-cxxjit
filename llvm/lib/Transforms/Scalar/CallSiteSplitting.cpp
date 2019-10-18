@@ -183,6 +183,9 @@ static SmallVector<BasicBlock *, 2> getTwoPredecessors(BasicBlock *BB) {
 }
 
 static bool canSplitCallSite(CallSite CS, TargetTransformInfo &TTI) {
+  if (CS.isConvergent() || CS.cannotDuplicate())
+    return false;
+
   // FIXME: As of now we handle only CallInst. InvokeInst could be handled
   // without too much effort.
   Instruction *Instr = CS.getInstruction();
@@ -366,7 +369,7 @@ static void splitCallSite(
     assert(Splits.size() == 2 && "Expected exactly 2 splits!");
     for (unsigned i = 0; i < Splits.size(); i++) {
       Splits[i]->getTerminator()->eraseFromParent();
-      DTU.deleteEdge(Splits[i], TailBB);
+      DTU.applyUpdatesPermissive({{DominatorTree::Delete, Splits[i], TailBB}});
     }
 
     // Erase the tail block once done with musttail patching

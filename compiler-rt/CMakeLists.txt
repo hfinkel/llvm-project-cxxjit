@@ -5,6 +5,10 @@
 
 cmake_minimum_required(VERSION 3.4.3)
 
+if(POLICY CMP0075)
+  cmake_policy(SET CMP0075 NEW)
+endif()
+
 # Check if compiler-rt is built as a standalone project.
 if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR OR COMPILER_RT_STANDALONE_BUILD)
   project(CompilerRT C CXX ASM)
@@ -29,6 +33,8 @@ include(CompilerRTUtils)
 
 option(COMPILER_RT_BUILD_BUILTINS "Build builtins" ON)
 mark_as_advanced(COMPILER_RT_BUILD_BUILTINS)
+option(COMPILER_RT_BUILD_CRT "Build crtbegin.o/crtend.o" ON)
+mark_as_advanced(COMPILER_RT_BUILD_CRT)
 option(COMPILER_RT_BUILD_SANITIZERS "Build sanitizers" ON)
 mark_as_advanced(COMPILER_RT_BUILD_SANITIZERS)
 option(COMPILER_RT_BUILD_XRAY "Build xray" ON)
@@ -59,10 +65,10 @@ if (NOT COMPILER_RT_ASAN_SHADOW_SCALE STREQUAL "")
       -D${COMPILER_RT_ASAN_SHADOW_SCALE_DEFINITION})
 endif()
 
-set(COMPILER_RT_HWASAN_WITH_INTERCEPTORS ON CACHE BOOLEAN
+set(COMPILER_RT_HWASAN_WITH_INTERCEPTORS ON CACHE BOOL
     "Enable libc interceptors in HWASan (testing mode)")
 
-set(COMPILER_RT_BAREMETAL_BUILD OFF CACHE BOOLEAN
+set(COMPILER_RT_BAREMETAL_BUILD OFF CACHE BOOL
   "Build for a bare-metal target.")
 
 if (COMPILER_RT_STANDALONE_BUILD)
@@ -74,7 +80,6 @@ if (COMPILER_RT_STANDALONE_BUILD)
   endif()
 
   # Find Python interpreter.
-  set(Python_ADDITIONAL_VERSIONS 2.7 2.6 2.5)
   include(FindPythonInterp)
   if(NOT PYTHONINTERP_FOUND)
     message(FATAL_ERROR "
@@ -83,58 +88,8 @@ if (COMPILER_RT_STANDALONE_BUILD)
   endif()
 
   # Ensure that fat libraries are built correctly on Darwin
-  if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
-    if(NOT CMAKE_LIBTOOL)
-      find_program(CMAKE_XCRUN
-                   NAMES
-                     xcrun)
-      if(CMAKE_XCRUN)
-        execute_process(COMMAND
-                          ${CMAKE_XCRUN} -find libtool
-                        OUTPUT_VARIABLE
-                          CMAKE_LIBTOOL
-                        OUTPUT_STRIP_TRAILING_WHITESPACE)
-      endif()
-
-      if(NOT CMAKE_LIBTOOL OR NOT EXISTS CMAKE_LIBTOOL)
-        find_program(CMAKE_LIBTOOL
-                     NAMES
-                       libtool)
-      endif()
-    endif()
-
-    get_property(languages GLOBAL PROPERTY ENABLED_LANGUAGES)
-
-    if(CMAKE_LIBTOOL)
-      set(CMAKE_LIBTOOL ${CMAKE_LIBTOOL} CACHE PATH "libtool executable")
-      message(STATUS "Found libtool - ${CMAKE_LIBTOOL}")
-
-      execute_process(COMMAND
-                        ${CMAKE_LIBTOOL} -V
-                      OUTPUT_VARIABLE
-                        LIBTOOL_V_OUTPUT
-                      OUTPUT_STRIP_TRAILING_WHITESPACE)
-      if("${LIBTOOL_V_OUTPUT}" MATCHES ".*cctools-([0-9]+).*")
-        string(REGEX REPLACE ".*cctools-([0-9]+).*" "\\1" LIBTOOL_VERSION ${LIBTOOL_V_OUTPUT})
-        if(NOT LIBTOOL_VERSION VERSION_LESS "862")
-          set(LIBTOOL_NO_WARNING_FLAG "-no_warning_for_no_symbols")
-        endif()
-      endif()
-
-      foreach(lang ${languages})
-        set(CMAKE_${lang}_CREATE_STATIC_LIBRARY "\"${CMAKE_LIBTOOL}\" -static ${LIBTOOL_NO_WARNING_FLAG} -o <TARGET> <LINK_FLAGS> <OBJECTS>")
-      endforeach()
-    endif()
-
-    # Workaround SIP :-(
-    if(DYLD_LIBRARY_PATH)
-      set(dyld_envar "DYLD_LIBRARY_PATH=${DYLD_LIBRARY_PATH}")
-      foreach(lang ${languages})
-        foreach(cmd ${CMAKE_${lang}_CREATE_STATIC_LIBRARY})
-          list(APPEND CMAKE_${lang}_CREATE_STATIC_LIBRARY_NEW "${dyld_envar} ${cmd}")
-        endforeach()
-      endforeach()
-    endif()
+  if(CMAKE_HOST_APPLE AND APPLE)
+    include(UseLibtool)
   endif()
 
   # Define default arguments to lit.
@@ -180,6 +135,26 @@ option(COMPILER_RT_EXTERNALIZE_DEBUGINFO
   "Generate dSYM files and strip executables and libraries (Darwin Only)" OFF)
 # COMPILER_RT_DEBUG_PYBOOL is used by lit.common.configured.in.
 pythonize_bool(COMPILER_RT_DEBUG)
+
+option(COMPILER_RT_INTERCEPT_LIBDISPATCH
+  "Support interception of libdispatch (GCD). Requires '-fblocks'" OFF)
+option(COMPILER_RT_LIBDISPATCH_INSTALL_PATH
+  "Specify if libdispatch is installed in a custom location" "")
+if (COMPILER_RT_INTERCEPT_LIBDISPATCH AND NOT APPLE)
+  set(COMPILER_RT_LIBDISPATCH_CFLAGS -fblocks)
+  set(COMPILER_RT_TEST_LIBDISPATCH_CFLAGS)
+  if (COMPILER_RT_LIBDISPATCH_INSTALL_PATH)
+    list(APPEND COMPILER_RT_TEST_LIBDISPATCH_CFLAGS
+        -I${COMPILER_RT_LIBDISPATCH_INSTALL_PATH}/include
+        -L${COMPILER_RT_LIBDISPATCH_INSTALL_PATH}/lib
+        -Wl,-rpath=${COMPILER_RT_LIBDISPATCH_INSTALL_PATH}/lib)
+  endif()
+  list(APPEND COMPILER_RT_TEST_LIBDISPATCH_CFLAGS -lBlocksRuntime -ldispatch)
+endif()
+if (APPLE) # Always enable on Apple platforms.
+  set(COMPILER_RT_INTERCEPT_LIBDISPATCH ON)
+endif()
+pythonize_bool(COMPILER_RT_INTERCEPT_LIBDISPATCH)
 
 if(APPLE AND SANITIZER_MIN_OSX_VERSION AND SANITIZER_MIN_OSX_VERSION VERSION_LESS "10.9")
   # Mac OS X prior to 10.9 had problems with exporting symbols from
@@ -312,6 +287,15 @@ if(DEFINED TARGET_powerpc64le_CFLAGS)
   append_list_if(COMPILER_RT_HAS_FNO_FUNCTION_SECTIONS_FLAG -fno-function-sections TARGET_powerpc64le_CFLAGS)
 endif()
 
+# The following is a workaround for s390x.  This avoids creation of "partial
+# inline" function fragments when building the asan libraries with certain
+# GCC versions.  The presence of those fragments, in particular for the
+# interceptors, changes backtraces seen in asan error cases, which causes
+# testsuite failures.
+if("${COMPILER_RT_DEFAULT_TARGET_ARCH}" MATCHES "s390x")
+  append_list_if(COMPILER_RT_HAS_FNO_PARTIAL_INLINING_FLAG -fno-partial-inlining SANITIZER_COMMON_CFLAGS)
+endif()
+
 if(MSVC)
   # Replace the /M[DT][d] flags with /MT, and strip any definitions of _DEBUG,
   # which cause definition mismatches at link time.
@@ -375,9 +359,13 @@ if(MSVC)
   # warning from the MS linker complaining that it can't find the 'vc140.pdb'
   # file used by our object library compilations.
   list(APPEND SANITIZER_COMMON_CFLAGS /Z7)
-  llvm_replace_compiler_option(CMAKE_CXX_FLAGS "/Z[i7I]" "/Z7")
-  llvm_replace_compiler_option(CMAKE_CXX_FLAGS_DEBUG "/Z[i7I]" "/Z7")
-  llvm_replace_compiler_option(CMAKE_CXX_FLAGS_RELWITHDEBINFO "/Z[i7I]" "/Z7")
+  foreach(var_to_update
+    CMAKE_CXX_FLAGS
+    CMAKE_CXX_FLAGS_DEBUG
+    CMAKE_CXX_FLAGS_RELWITHDEBINFO)
+    string(REGEX REPLACE "(^| )/Z[i7I]($| )" " /Z7 "
+           "${var_to_update}" "${${var_to_update}}")
+  endforeach()
 elseif(COMPILER_RT_HAS_GLINE_TABLES_ONLY_FLAG AND NOT COMPILER_RT_DEBUG)
   list(APPEND SANITIZER_COMMON_CFLAGS -gline-tables-only)
 elseif(COMPILER_RT_HAS_G_FLAG)
@@ -405,6 +393,7 @@ append_list_if(MINGW -fms-extensions SANITIZER_COMMON_CFLAGS)
 
 # Set common link flags.
 append_list_if(COMPILER_RT_HAS_NODEFAULTLIBS_FLAG -nodefaultlibs SANITIZER_COMMON_LINK_FLAGS)
+append_list_if(COMPILER_RT_HAS_Z_TEXT -Wl,-z,text SANITIZER_COMMON_LINK_FLAGS)
 
 if (COMPILER_RT_USE_BUILTINS_LIBRARY)
   list(APPEND SANITIZER_COMMON_LINK_LIBS ${COMPILER_RT_BUILTINS_LIBRARY})

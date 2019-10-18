@@ -13,8 +13,8 @@
 #include <vector>
 #include <algorithm>
 #include <cassert>
-#include <iostream>
 
+#include "test_macros.h"
 #include "min_allocator.h"
 #include "asan_testing.h"
 

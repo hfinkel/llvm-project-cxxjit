@@ -190,6 +190,9 @@ public:
 
   const MemRegion *getAsRegion() const;
 
+  /// printJson - Pretty-prints in JSON format.
+  void printJson(raw_ostream &Out, bool AddQuotes) const;
+
   void dumpToStream(raw_ostream &OS) const;
   void dump() const;
 
@@ -303,7 +306,7 @@ public:
 
   static bool isCompoundType(QualType T) {
     return T->isArrayType() || T->isRecordType() ||
-           T->isComplexType() || T->isVectorType();
+           T->isAnyComplexType() || T->isVectorType();
   }
 
 private:

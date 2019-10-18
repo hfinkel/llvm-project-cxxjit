@@ -88,6 +88,9 @@ protected:
   /// True if the processor supports X87 instructions.
   bool HasX87 = false;
 
+  /// True if the processor supports CMPXCHG8B.
+  bool HasCmpxchg8b = false;
+
   /// True if this processor has NOPL instruction
   /// (generally pentium pro+).
   bool HasNOPL = false;
@@ -294,6 +297,9 @@ protected:
   /// True if the processor supports macrofusion.
   bool HasMacroFusion = false;
 
+  /// True if the processor supports branch fusion.
+  bool HasBranchFusion = false;
+
   /// True if the processor has enhanced REP MOVSB/STOSB.
   bool HasERMSB = false;
 
@@ -347,8 +353,17 @@ protected:
   /// Processor has AVX-512 Vector Neural Network Instructions
   bool HasVNNI = false;
 
+  /// Processor has AVX-512 bfloat16 floating-point extensions
+  bool HasBF16 = false;
+
+  /// Processor supports ENQCMD instructions
+  bool HasENQCMD = false;
+
   /// Processor has AVX-512 Bit Algorithms instructions
   bool HasBITALG = false;
+
+  /// Processor has AVX-512 vp2intersect instructions
+  bool HasVP2INTERSECT = false;
 
   /// Processor supports MPX - Memory Protection Extensions
   bool HasMPX = false;
@@ -386,6 +401,12 @@ protected:
 
   /// Try harder to combine to horizontal vector ops if they are fast.
   bool HasFastHorizontalOps = false;
+
+  /// Prefer a left/right scalar logical shifts pair over a shift+and pair.
+  bool HasFastScalarShiftMasks = false;
+
+  /// Prefer a left/right vector logical shifts pair over a shift+and pair.
+  bool HasFastVectorShiftMasks = false;
 
   /// Use a retpoline thunk rather than indirect calls to block speculative
   /// execution.
@@ -546,6 +567,7 @@ public:
   void setPICStyle(PICStyles::Style Style)  { PICStyle = Style; }
 
   bool hasX87() const { return HasX87; }
+  bool hasCmpxchg8b() const { return HasCmpxchg8b; }
   bool hasNOPL() const { return HasNOPL; }
   // SSE codegen depends on cmovs, and all SSE1+ processors support them.
   // All 64-bit processors support cmov.
@@ -620,7 +642,7 @@ public:
   int getGatherOverhead() const { return GatherOverhead; }
   int getScatterOverhead() const { return ScatterOverhead; }
   bool hasSSEUnalignedMem() const { return HasSSEUnalignedMem; }
-  bool hasCmpxchg16b() const { return HasCmpxchg16b; }
+  bool hasCmpxchg16b() const { return HasCmpxchg16b && is64Bit(); }
   bool useLeaForSP() const { return UseLeaForSP; }
   bool hasPOPCNTFalseDeps() const { return HasPOPCNTFalseDeps; }
   bool hasLZCNTFalseDeps() const { return HasLZCNTFalseDeps; }
@@ -637,7 +659,10 @@ public:
   bool hasFastSHLDRotate() const { return HasFastSHLDRotate; }
   bool hasFastBEXTR() const { return HasFastBEXTR; }
   bool hasFastHorizontalOps() const { return HasFastHorizontalOps; }
+  bool hasFastScalarShiftMasks() const { return HasFastScalarShiftMasks; }
+  bool hasFastVectorShiftMasks() const { return HasFastVectorShiftMasks; }
   bool hasMacroFusion() const { return HasMacroFusion; }
+  bool hasBranchFusion() const { return HasBranchFusion; }
   bool hasERMSB() const { return HasERMSB; }
   bool hasSlowDivide32() const { return HasSlowDivide32; }
   bool hasSlowDivide64() const { return HasSlowDivide64; }
@@ -656,6 +681,8 @@ public:
   bool hasVLX() const { return HasVLX; }
   bool hasPKU() const { return HasPKU; }
   bool hasVNNI() const { return HasVNNI; }
+  bool hasBF16() const { return HasBF16; }
+  bool hasVP2INTERSECT() const { return HasVP2INTERSECT; }
   bool hasBITALG() const { return HasBITALG; }
   bool hasMPX() const { return HasMPX; }
   bool hasSHSTK() const { return HasSHSTK; }
@@ -668,6 +695,7 @@ public:
   bool hasSGX() const { return HasSGX; }
   bool threewayBranchProfitable() const { return ThreewayBranchProfitable; }
   bool hasINVPCID() const { return HasINVPCID; }
+  bool hasENQCMD() const { return HasENQCMD; }
   bool useRetpolineIndirectCalls() const { return UseRetpolineIndirectCalls; }
   bool useRetpolineIndirectBranches() const {
     return UseRetpolineIndirectBranches;
@@ -741,10 +769,6 @@ public:
 
   bool isTargetWindowsMSVC() const {
     return TargetTriple.isWindowsMSVCEnvironment();
-  }
-
-  bool isTargetKnownWindowsMSVC() const {
-    return TargetTriple.isKnownWindowsMSVCEnvironment();
   }
 
   bool isTargetWindowsCoreCLR() const {
@@ -834,6 +858,9 @@ public:
   bool enableMachineScheduler() const override { return true; }
 
   bool enableEarlyIfConversion() const override;
+
+  void getPostRAMutations(std::vector<std::unique_ptr<ScheduleDAGMutation>>
+                              &Mutations) const override;
 
   AntiDepBreakMode getAntiDepBreakMode() const override {
     return TargetSubtargetInfo::ANTIDEP_CRITICAL;

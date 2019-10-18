@@ -64,7 +64,6 @@ UnixSignalsSP &GetFreeBSDSignals() {
 }
 }
 
-//------------------------------------------------------------------------------
 // Static functions.
 
 lldb::ProcessSP
@@ -96,7 +95,6 @@ const char *ProcessFreeBSD::GetPluginDescriptionStatic() {
   return "Process plugin for FreeBSD";
 }
 
-//------------------------------------------------------------------------------
 // ProcessInterface protocol.
 
 lldb_private::ConstString ProcessFreeBSD::GetPluginName() {
@@ -250,7 +248,6 @@ void ProcessFreeBSD::SendMessage(const ProcessMessage &message) {
   m_message_queue.push(message);
 }
 
-//------------------------------------------------------------------------------
 // Constructors and destructors.
 
 ProcessFreeBSD::ProcessFreeBSD(lldb::TargetSP target_sp,
@@ -269,7 +266,6 @@ ProcessFreeBSD::ProcessFreeBSD(lldb::TargetSP target_sp,
 
 ProcessFreeBSD::~ProcessFreeBSD() { delete m_monitor; }
 
-//------------------------------------------------------------------------------
 // Process protocol.
 void ProcessFreeBSD::Finalize() {
   Process::Finalize();
@@ -835,7 +831,6 @@ size_t ProcessFreeBSD::PutSTDIN(const char *buf, size_t len, Status &error) {
   return status;
 }
 
-//------------------------------------------------------------------------------
 // Utility functions.
 
 bool ProcessFreeBSD::HasExited() {
@@ -881,7 +876,7 @@ bool ProcessFreeBSD::IsAThreadRunning() {
   return is_running;
 }
 
-const DataBufferSP ProcessFreeBSD::GetAuxvData() {
+lldb_private::DataExtractor ProcessFreeBSD::GetAuxvData() {
   // If we're the local platform, we can ask the host for auxv data.
   PlatformSP platform_sp = GetTarget().GetPlatform();
   assert(platform_sp && platform_sp->IsHost());
@@ -895,7 +890,7 @@ const DataBufferSP ProcessFreeBSD::GetAuxvData() {
     buf_sp.reset();
   }
 
-  return buf_sp;
+  return DataExtractor(buf_sp, GetByteOrder(), GetAddressByteSize());
 }
 
 struct EmulatorBaton {
@@ -1025,11 +1020,7 @@ bool ProcessFreeBSD::IsSoftwareStepBreakpoint(lldb::tid_t tid) {
 
 bool ProcessFreeBSD::SupportHardwareSingleStepping() const {
   lldb_private::ArchSpec arch = GetTarget().GetArchitecture();
-  if (arch.GetMachine() == llvm::Triple::arm ||
-      arch.GetMachine() == llvm::Triple::mips64 ||
-      arch.GetMachine() == llvm::Triple::mips64el ||
-      arch.GetMachine() == llvm::Triple::mips ||
-      arch.GetMachine() == llvm::Triple::mipsel)
+  if (arch.GetMachine() == llvm::Triple::arm || arch.IsMIPS())
     return false;
   return true;
 }

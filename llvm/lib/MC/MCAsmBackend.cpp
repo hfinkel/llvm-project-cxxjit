@@ -16,6 +16,7 @@
 #include "llvm/MC/MCObjectWriter.h"
 #include "llvm/MC/MCWasmObjectWriter.h"
 #include "llvm/MC/MCWinCOFFObjectWriter.h"
+#include "llvm/MC/MCXCOFFObjectWriter.h"
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -43,6 +44,9 @@ MCAsmBackend::createObjectWriter(raw_pwrite_stream &OS) const {
   case Triple::Wasm:
     return createWasmObjectWriter(cast<MCWasmObjectTargetWriter>(std::move(TW)),
                                   OS);
+  case Triple::XCOFF:
+    return createXCOFFObjectWriter(
+        cast<MCXCOFFObjectTargetWriter>(std::move(TW)), OS);
   default:
     llvm_unreachable("unexpected object format");
   }
@@ -64,6 +68,7 @@ Optional<MCFixupKind> MCAsmBackend::getFixupKind(StringRef Name) const {
 
 const MCFixupKindInfo &MCAsmBackend::getFixupKindInfo(MCFixupKind Kind) const {
   static const MCFixupKindInfo Builtins[] = {
+      {"FK_NONE", 0, 0, 0},
       {"FK_Data_1", 0, 8, 0},
       {"FK_Data_2", 0, 16, 0},
       {"FK_Data_4", 0, 32, 0},

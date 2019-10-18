@@ -134,21 +134,29 @@ inline raw_ostream &operator<<(raw_ostream &OS, const MCExpr &E) {
 ////  Represent a constant integer expression.
 class MCConstantExpr : public MCExpr {
   int64_t Value;
+  bool PrintInHex = false;
 
-  explicit MCConstantExpr(int64_t Value)
+  MCConstantExpr(int64_t Value)
       : MCExpr(MCExpr::Constant, SMLoc()), Value(Value) {}
+
+  MCConstantExpr(int64_t Value, bool PrintInHex)
+      : MCExpr(MCExpr::Constant, SMLoc()), Value(Value),
+        PrintInHex(PrintInHex) {}
 
 public:
   /// \name Construction
   /// @{
 
-  static const MCConstantExpr *create(int64_t Value, MCContext &Ctx);
+  static const MCConstantExpr *create(int64_t Value, MCContext &Ctx,
+                                      bool PrintInHex = false);
 
   /// @}
   /// \name Accessors
   /// @{
 
   int64_t getValue() const { return Value; }
+
+  bool useHexFormat() const { return PrintInHex; }
 
   /// @}
 
@@ -284,16 +292,17 @@ public:
     VK_Hexagon_IE,
     VK_Hexagon_IE_GOT,
 
-    VK_WebAssembly_FUNCTION, // Function table index, rather than virtual addr
-    VK_WebAssembly_GLOBAL,   // Global object index
-    VK_WebAssembly_TYPEINDEX,// Type table index
-    VK_WebAssembly_EVENT,    // Event index
+    VK_WASM_TYPEINDEX, // Reference to a symbol's type (signature)
+    VK_WASM_MBREL,     // Memory address relative to memory base
+    VK_WASM_TBREL,     // Table index relative to table bare
 
     VK_AMDGPU_GOTPCREL32_LO, // symbol@gotpcrel32@lo
     VK_AMDGPU_GOTPCREL32_HI, // symbol@gotpcrel32@hi
     VK_AMDGPU_REL32_LO,      // symbol@rel32@lo
     VK_AMDGPU_REL32_HI,      // symbol@rel32@hi
     VK_AMDGPU_REL64,         // symbol@rel64
+    VK_AMDGPU_ABS32_LO,      // symbol@abs32@lo
+    VK_AMDGPU_ABS32_HI,      // symbol@abs32@hi
 
     VK_TPREL,
     VK_DTPREL

@@ -91,6 +91,11 @@ class AArch64FunctionInfo final : public MachineFunctionInfo {
   /// other stack allocations.
   bool CalleeSaveStackHasFreeSpace = false;
 
+  /// SRetReturnReg - sret lowering includes returning the value of the
+  /// returned struct in a register. This field holds the virtual register into
+  /// which the sret argument is passed.
+  unsigned SRetReturnReg = 0;
+
   /// Has a value when it is known whether or not the function uses a
   /// redzone, and no value otherwise.
   /// Initialized during frame lowering, unless the function has the noredzone
@@ -100,6 +105,12 @@ class AArch64FunctionInfo final : public MachineFunctionInfo {
   /// ForwardedMustTailRegParms - A list of virtual and physical registers
   /// that must be forwarded to every musttail call.
   SmallVector<ForwardedRegister, 1> ForwardedMustTailRegParms;
+
+  // Offset from SP-at-entry to the tagged base pointer.
+  // Tagged base pointer is set up to point to the first (lowest address) tagged
+  // stack slot.
+  unsigned TaggedBasePointerOffset;
+
 public:
   AArch64FunctionInfo() = default;
 
@@ -165,6 +176,9 @@ public:
   unsigned getVarArgsFPRSize() const { return VarArgsFPRSize; }
   void setVarArgsFPRSize(unsigned Size) { VarArgsFPRSize = Size; }
 
+  unsigned getSRetReturnReg() const { return SRetReturnReg; }
+  void setSRetReturnReg(unsigned Reg) { SRetReturnReg = Reg; }
+
   unsigned getJumpTableEntrySize(int Idx) const {
     auto It = JumpTableEntryInfo.find(Idx);
     if (It != JumpTableEntryInfo.end())
@@ -214,6 +228,13 @@ public:
 
   SmallVectorImpl<ForwardedRegister> &getForwardedMustTailRegParms() {
     return ForwardedMustTailRegParms;
+  }
+
+  unsigned getTaggedBasePointerOffset() const {
+    return TaggedBasePointerOffset;
+  }
+  void setTaggedBasePointerOffset(unsigned Offset) {
+    TaggedBasePointerOffset = Offset;
   }
 
 private:

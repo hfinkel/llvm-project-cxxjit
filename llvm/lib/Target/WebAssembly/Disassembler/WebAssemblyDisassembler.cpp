@@ -14,8 +14,9 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#include "InstPrinter/WebAssemblyInstPrinter.h"
+#include "MCTargetDesc/WebAssemblyInstPrinter.h"
 #include "MCTargetDesc/WebAssemblyMCTargetDesc.h"
+#include "TargetInfo/WebAssemblyTargetInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDisassembler/MCDisassembler.h"
 #include "llvm/MC/MCFixedLenDisassembler.h"
@@ -199,6 +200,7 @@ MCDisassembler::DecodeStatus WebAssemblyDisassembler::getInstruction(
     case WebAssembly::OPERAND_OFFSET32:
     case WebAssembly::OPERAND_P2ALIGN:
     case WebAssembly::OPERAND_TYPEINDEX:
+    case WebAssembly::OPERAND_EVENT:
     case MCOI::OPERAND_IMMEDIATE: {
       if (!parseLEBImmediate(MI, Size, Bytes, false))
         return MCDisassembler::Fail;

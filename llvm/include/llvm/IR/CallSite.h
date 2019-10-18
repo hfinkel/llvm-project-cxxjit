@@ -415,6 +415,11 @@ public:
     CALLSITE_DELEGATE_GETTER(getParamAlignment(ArgNo));
   }
 
+  /// Extract the byval type for a call or parameter (nullptr=unknown).
+  Type *getParamByValType(unsigned ArgNo) const {
+    CALLSITE_DELEGATE_GETTER(getParamByValType(ArgNo));
+  }
+
   /// Extract the number of dereferenceable bytes for a call or parameter
   /// (0=unknown).
   uint64_t getDereferenceableBytes(unsigned i) const {
@@ -724,7 +729,7 @@ public:
     /// through (also identified by position but in the call site instruction).
     ///
     /// NOTE that we use LLVM argument numbers (starting at 0) and not
-    /// clang/soruce argument numbers (starting at 1). The -1 entries represent
+    /// clang/source argument numbers (starting at 1). The -1 entries represent
     /// unknown values that are passed to the callee.
     using ParameterEncodingTy = SmallVector<int, 0>;
     ParameterEncodingTy ParameterEncoding;

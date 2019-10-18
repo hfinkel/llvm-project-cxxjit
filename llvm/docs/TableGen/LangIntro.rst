@@ -189,6 +189,10 @@ supported include:
     More than two arguments are accepted with the result being the concatenation
     of all the lists given.
 
+``!listsplat(a, size)``
+    A list value that contains the value ``a`` ``size`` times.
+    Example: ``!listsplat(0, 2)`` results in ``[0, 0]``.
+
 ``!strconcat(a, b, ...)``
     A string value that is the result of concatenating the 'a' and 'b' strings.
     More than two arguments are accepted with the result being the concatenation
@@ -284,7 +288,7 @@ supported include:
     The usual shift operators. Operations are on 64-bit integers, the result
     is undefined for shift counts outside [0, 63].
 
-``!add(a,b,...)`` ``!and(a,b,...)`` ``!or(a,b,...)``
+``!add(a,b,...)`` ``!mul(a,b,...)`` ``!and(a,b,...)`` ``!or(a,b,...)``
     The usual arithmetic and binary operators.
 
 Note that all of the values have rules specifying how they convert to values

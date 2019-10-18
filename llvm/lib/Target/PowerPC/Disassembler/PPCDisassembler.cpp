@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/PPCMCTargetDesc.h"
+#include "TargetInfo/PowerPCTargetInfo.h"
 #include "llvm/MC/MCDisassembler/MCDisassembler.h"
 #include "llvm/MC/MCFixedLenDisassembler.h"
 #include "llvm/MC/MCInst.h"
@@ -80,12 +81,6 @@ static DecodeStatus decodeRegisterClass(MCInst &Inst, uint64_t RegNo,
 }
 
 static DecodeStatus DecodeCRRCRegisterClass(MCInst &Inst, uint64_t RegNo,
-                                            uint64_t Address,
-                                            const void *Decoder) {
-  return decodeRegisterClass(Inst, RegNo, CRRegs);
-}
-
-static DecodeStatus DecodeCRRC0RegisterClass(MCInst &Inst, uint64_t RegNo,
                                             uint64_t Address,
                                             const void *Decoder) {
   return decodeRegisterClass(Inst, RegNo, CRRegs);

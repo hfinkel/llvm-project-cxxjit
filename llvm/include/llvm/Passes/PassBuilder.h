@@ -31,26 +31,74 @@ class ModuleSummaryIndex;
 
 /// A struct capturing PGO tunables.
 struct PGOOptions {
-  PGOOptions(std::string ProfileGenFile = "", std::string ProfileUseFile = "",
-             std::string SampleProfileFile = "",
-             std::string ProfileRemappingFile = "",
-             bool RunProfileGen = false, bool SamplePGOSupport = false)
-      : ProfileGenFile(ProfileGenFile), ProfileUseFile(ProfileUseFile),
-        SampleProfileFile(SampleProfileFile),
-        ProfileRemappingFile(ProfileRemappingFile),
-        RunProfileGen(RunProfileGen),
-        SamplePGOSupport(SamplePGOSupport || !SampleProfileFile.empty()) {
-    assert((RunProfileGen ||
-            !SampleProfileFile.empty() ||
-            !ProfileUseFile.empty() ||
-            SamplePGOSupport) && "Illegal PGOOptions.");
+  enum PGOAction { NoAction, IRInstr, IRUse, SampleUse };
+  enum CSPGOAction { NoCSAction, CSIRInstr, CSIRUse };
+  PGOOptions(std::string ProfileFile = "", std::string CSProfileGenFile = "",
+             std::string ProfileRemappingFile = "", PGOAction Action = NoAction,
+             CSPGOAction CSAction = NoCSAction, bool SamplePGOSupport = false)
+      : ProfileFile(ProfileFile), CSProfileGenFile(CSProfileGenFile),
+        ProfileRemappingFile(ProfileRemappingFile), Action(Action),
+        CSAction(CSAction),
+        SamplePGOSupport(SamplePGOSupport || Action == SampleUse) {
+    // Note, we do allow ProfileFile.empty() for Action=IRUse LTO can
+    // callback with IRUse action without ProfileFile.
+
+    // If there is a CSAction, PGOAction cannot be IRInstr or SampleUse.
+    assert(this->CSAction == NoCSAction ||
+           (this->Action != IRInstr && this->Action != SampleUse));
+
+    // For CSIRInstr, CSProfileGenFile also needs to be nonempty.
+    assert(this->CSAction != CSIRInstr || !this->CSProfileGenFile.empty());
+
+    // If CSAction is CSIRUse, PGOAction needs to be IRUse as they share
+    // a profile.
+    assert(this->CSAction != CSIRUse || this->Action == IRUse);
+
+    // If neither Action nor CSAction, SamplePGOSupport needs to be true.
+    assert(this->Action != NoAction || this->CSAction != NoCSAction ||
+           this->SamplePGOSupport);
   }
-  std::string ProfileGenFile;
-  std::string ProfileUseFile;
-  std::string SampleProfileFile;
+  std::string ProfileFile;
+  std::string CSProfileGenFile;
   std::string ProfileRemappingFile;
-  bool RunProfileGen;
+  PGOAction Action;
+  CSPGOAction CSAction;
   bool SamplePGOSupport;
+};
+
+/// Tunable parameters for passes in the default pipelines.
+class PipelineTuningOptions {
+public:
+  /// Constructor sets pipeline tuning defaults based on cl::opts. Each option
+  /// can be set in the PassBuilder when using a LLVM as a library.
+  PipelineTuningOptions();
+
+  /// Tuning option to set loop interleaving on/off. Its default value is that
+  /// of the flag: `-interleave-loops`.
+  bool LoopInterleaving;
+
+  /// Tuning option to enable/disable loop vectorization. Its default value is
+  /// that of the flag: `-vectorize-loops`.
+  bool LoopVectorization;
+
+  /// Tuning option to enable/disable slp loop vectorization. Its default value
+  /// is that of the flag: `vectorize-slp`.
+  bool SLPVectorization;
+
+  /// Tuning option to enable/disable loop unrolling. Its default value is true.
+  bool LoopUnrolling;
+
+  /// Tuning option to forget all SCEV loops in LoopUnroll. Its default value
+  /// is that of the flag: `-forget-scev-loop-unroll`.
+  bool ForgetAllSCEVInLoopUnroll;
+
+  /// Tuning option to cap the number of calls to retrive clobbering accesses in
+  /// MemorySSA, in LICM.
+  unsigned LicmMssaOptCap;
+
+  /// Tuning option to disable promotion to scalars in LICM with MemorySSA, if
+  /// the number of access is too large.
+  unsigned LicmMssaNoAccForPromotionCap;
 };
 
 /// This class provides access to building LLVM's passes.
@@ -61,6 +109,7 @@ struct PGOOptions {
 /// construction.
 class PassBuilder {
   TargetMachine *TM;
+  PipelineTuningOptions PTO;
   Optional<PGOOptions> PGOOpt;
   PassInstrumentationCallbacks *PIC;
 
@@ -84,9 +133,9 @@ public:
   enum class ThinLTOPhase {
     /// No ThinLTO behavior needed.
     None,
-    // ThinLTO prelink (summary) phase.
+    /// ThinLTO prelink (summary) phase.
     PreLink,
-    // ThinLTO postlink (backend compile) phase.
+    /// ThinLTO postlink (backend compile) phase.
     PostLink
   };
 
@@ -177,14 +226,15 @@ public:
   };
 
   explicit PassBuilder(TargetMachine *TM = nullptr,
+                       PipelineTuningOptions PTO = PipelineTuningOptions(),
                        Optional<PGOOptions> PGOOpt = None,
                        PassInstrumentationCallbacks *PIC = nullptr)
-      : TM(TM), PGOOpt(PGOOpt), PIC(PIC) {}
+      : TM(TM), PTO(PTO), PGOOpt(PGOOpt), PIC(PIC) {}
 
   /// Cross register the analysis managers through their proxies.
   ///
   /// This is an interface that can be used to cross register each
-  // AnalysisManager with all the others analysis managers.
+  /// AnalysisManager with all the others analysis managers.
   void crossRegisterProxies(LoopAnalysisManager &LAM,
                             FunctionAnalysisManager &FAM,
                             CGSCCAnalysisManager &CGAM,
@@ -393,7 +443,7 @@ public:
   /// {{@ Parse a textual pass pipeline description into a specific PassManager
   ///
   /// Automatic deduction of an appropriate pass manager stack is not supported.
-  /// For example, to insert a loop pass 'lpass' into a FunctinoPassManager,
+  /// For example, to insert a loop pass 'lpass' into a FunctionPassManager,
   /// this is the valid pipeline text:
   ///
   ///   function(lpass)
@@ -607,9 +657,8 @@ private:
                                 bool VerifyEachPass, bool DebugLogging);
 
   void addPGOInstrPasses(ModulePassManager &MPM, bool DebugLogging,
-                         OptimizationLevel Level, bool RunProfileGen,
-                         std::string ProfileGenFile,
-                         std::string ProfileUseFile,
+                         OptimizationLevel Level, bool RunProfileGen, bool IsCS,
+                         std::string ProfileFile,
                          std::string ProfileRemappingFile);
 
   void invokePeepholeEPCallbacks(FunctionPassManager &, OptimizationLevel);

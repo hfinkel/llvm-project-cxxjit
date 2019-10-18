@@ -334,11 +334,12 @@ static bool canThrow(const Value *V) {
 // which will generate an import and asssumes that it will exist at link time.
 static GlobalVariable *getGlobalVariableI32(Module &M, IRBuilder<> &IRB,
                                             const char *Name) {
-  if (M.getNamedGlobal(Name))
-    report_fatal_error(Twine("variable name is reserved: ") + Name);
 
-  return new GlobalVariable(M, IRB.getInt32Ty(), false,
-                            GlobalValue::ExternalLinkage, nullptr, Name);
+  auto* GV = dyn_cast<GlobalVariable>(M.getOrInsertGlobal(Name, IRB.getInt32Ty()));
+  if (!GV)
+    report_fatal_error(Twine("unable to create global: ") + Name);
+
+  return GV;
 }
 
 // Simple function name mangler.
@@ -483,6 +484,13 @@ bool WebAssemblyLowerEmscriptenEHSjLj::canLongjmp(Module &M,
   if (auto *CalleeF = dyn_cast<Function>(Callee))
     if (CalleeF->isIntrinsic())
       return false;
+
+  // Attempting to transform inline assembly will result in something like:
+  //     call void @__invoke_void(void ()* asm ...)
+  // which is invalid because inline assembly blocks do not have addresses
+  // and can't be passed by pointer. The result is a crash with illegal IR.
+  if (isa<InlineAsm>(Callee))
+    return false;
 
   // The reason we include malloc/free here is to exclude the malloc/free
   // calls generated in setjmp prep / cleanup routines.

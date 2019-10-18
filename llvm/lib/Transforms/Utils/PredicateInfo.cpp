@@ -473,7 +473,8 @@ void PredicateInfo::buildPredicateInfo() {
   }
   for (auto &Assume : AC.assumptions()) {
     if (auto *II = dyn_cast_or_null<IntrinsicInst>(Assume))
-      processAssume(II, II->getParent(), OpsToRename);
+      if (DT.isReachableFromEntry(II->getParent()))
+        processAssume(II, II->getParent(), OpsToRename);
   }
   // Now rename all our operations.
   renameUses(OpsToRename);
@@ -634,7 +635,7 @@ void PredicateInfo::renameUses(SmallPtrSetImpl<Value *> &OpSet) {
     // uses in the same instruction do not have a strict sort order
     // currently and will be considered equal. We could get rid of the
     // stable sort by creating one if we wanted.
-    std::stable_sort(OrderedUses.begin(), OrderedUses.end(), Compare);
+    llvm::stable_sort(OrderedUses, Compare);
     SmallVector<ValueDFS, 8> RenameStack;
     // For each use, sorted into dfs order, push values and replaces uses with
     // top of stack, which will represent the reaching def.

@@ -56,7 +56,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/iterator.h"
 #include "llvm/ADT/iterator_range.h"
-#include "llvm/Bitcode/BitstreamReader.h"
+#include "llvm/Bitstream/BitstreamReader.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -97,7 +97,7 @@ class HeaderSearchOptions;
 class LangOptions;
 class LazyASTUnresolvedSet;
 class MacroInfo;
-class MemoryBufferCache;
+class InMemoryModuleCache;
 class NamedDecl;
 class NamespaceDecl;
 class ObjCCategoryDecl;
@@ -439,9 +439,6 @@ private:
 
   /// The module manager which manages modules and their dependencies
   ModuleManager ModuleMgr;
-
-  /// The cache that manages memory buffers for PCM files.
-  MemoryBufferCache &PCMCache;
 
   /// A dummy identifier resolver used to merge TU-scope declarations in
   /// C, for the cases where we don't have a Sema object to provide a real
@@ -1440,6 +1437,7 @@ private:
   void Error(StringRef Msg) const;
   void Error(unsigned DiagID, StringRef Arg1 = StringRef(),
              StringRef Arg2 = StringRef()) const;
+  void Error(llvm::Error &&Err) const;
 
 public:
   /// Load the AST file and validate its contents against the given
@@ -1481,8 +1479,8 @@ public:
   ///
   /// \param ReadTimer If non-null, a timer used to track the time spent
   /// deserializing.
-  ASTReader(Preprocessor &PP, ASTContext *Context,
-            const PCHContainerReader &PCHContainerRdr,
+  ASTReader(Preprocessor &PP, InMemoryModuleCache &ModuleCache,
+            ASTContext *Context, const PCHContainerReader &PCHContainerRdr,
             ArrayRef<std::shared_ptr<ModuleFileExtension>> Extensions,
             StringRef isysroot = "", bool DisableValidation = false,
             bool AllowASTWithCompilerErrors = false,
@@ -2223,6 +2221,9 @@ public:
   llvm::APFloat ReadAPFloat(const RecordData &Record,
                             const llvm::fltSemantics &Sem, unsigned &Idx);
 
+  /// Read an APValue
+  APValue ReadAPValue(const RecordData &Record, unsigned &Idx);
+
   // Read a string
   static std::string ReadString(const RecordData &Record, unsigned &Idx);
 
@@ -2233,6 +2234,10 @@ public:
 
   // Read a path
   std::string ReadPath(ModuleFile &F, const RecordData &Record, unsigned &Idx);
+
+  // Read a path
+  std::string ReadPath(StringRef BaseDirectory, const RecordData &Record,
+                       unsigned &Idx);
 
   // Skip a path
   static void SkipPath(const RecordData &Record, unsigned &Idx) {
@@ -2375,7 +2380,8 @@ public:
 
   /// Reads a record with id AbbrevID from Cursor, resetting the
   /// internal state.
-  unsigned readRecord(llvm::BitstreamCursor &Cursor, unsigned AbbrevID);
+  Expected<unsigned> readRecord(llvm::BitstreamCursor &Cursor,
+                                unsigned AbbrevID);
 
   /// Is this a module file for a module (rather than a PCH or similar).
   bool isModule() const { return F->isModule(); }
@@ -2427,6 +2433,14 @@ public:
                                      serialization::DeclID ID) {
     return Reader->ReadVisibleDeclContextStorage(*F, F->DeclsCursor, Offset,
                                                  ID);
+  }
+
+  ExplicitSpecifier readExplicitSpec() {
+    uint64_t Kind = readInt();
+    bool HasExpr = Kind & 0x1;
+    Kind = Kind >> 1;
+    return ExplicitSpecifier(HasExpr ? readExpr() : nullptr,
+                             static_cast<ExplicitSpecKind>(Kind));
   }
 
   void readExceptionSpec(SmallVectorImpl<QualType> &ExceptionStorage,
@@ -2603,6 +2617,8 @@ public:
     return Reader->ReadSourceRange(*F, Record, Idx);
   }
 
+  APValue readAPValue() { return Reader->ReadAPValue(Record, Idx); }
+
   /// Read an integral value, advancing Idx.
   llvm::APInt readAPInt() {
     return Reader->ReadAPInt(Record, Idx);
@@ -2665,7 +2681,10 @@ struct SavedStreamPosition {
       : Cursor(Cursor), Offset(Cursor.GetCurrentBitNo()) {}
 
   ~SavedStreamPosition() {
-    Cursor.JumpToBit(Offset);
+    if (llvm::Error Err = Cursor.JumpToBit(Offset))
+      llvm::report_fatal_error(
+          "Cursor should always be able to go back, failed: " +
+          toString(std::move(Err)));
   }
 
 private:
@@ -2686,7 +2705,6 @@ public:
       : Record(Record), Context(Record.getContext()) {}
 
 #define OPENMP_CLAUSE(Name, Class) void Visit##Class(Class *C);
-  OPENMP_CLAUSE(flush, OMPFlushClause)
 #include "clang/Basic/OpenMPKinds.def"
   OMPClause *readClause();
   void VisitOMPClauseWithPreInit(OMPClauseWithPreInit *C);

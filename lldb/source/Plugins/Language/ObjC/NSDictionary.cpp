@@ -19,7 +19,6 @@
 #include "lldb/DataFormatters/FormattersHelpers.h"
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Target/Language.h"
-#include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/DataBufferHeap.h"
@@ -111,7 +110,7 @@ public:
 
   bool MightHaveChildren() override;
 
-  size_t GetIndexOfChildWithName(const ConstString &name) override;
+  size_t GetIndexOfChildWithName(ConstString name) override;
 
 private:
   struct DataDescriptor_32 {
@@ -154,7 +153,7 @@ public:
 
   bool MightHaveChildren() override;
 
-  size_t GetIndexOfChildWithName(const ConstString &name) override;
+  size_t GetIndexOfChildWithName(ConstString name) override;
 
 private:
   ValueObjectSP m_pair;
@@ -175,7 +174,7 @@ public:
 
   bool MightHaveChildren() override;
 
-  size_t GetIndexOfChildWithName(const ConstString &name) override;
+  size_t GetIndexOfChildWithName(ConstString name) override;
 
 private:
   struct DictionaryItemDescriptor {
@@ -208,7 +207,7 @@ namespace Foundation1100 {
     
     bool MightHaveChildren() override;
     
-    size_t GetIndexOfChildWithName(const ConstString &name) override;
+    size_t GetIndexOfChildWithName(ConstString name) override;
     
   private:
     struct DataDescriptor_32 {
@@ -347,9 +346,7 @@ bool lldb_private::formatters::NSDictionarySummaryProvider(
   if (!process_sp)
     return false;
 
-  ObjCLanguageRuntime *runtime =
-      (ObjCLanguageRuntime *)process_sp->GetLanguageRuntime(
-          lldb::eLanguageTypeObjC);
+  ObjCLanguageRuntime *runtime = ObjCLanguageRuntime::Get(*process_sp);
 
   if (!runtime)
     return false;
@@ -439,8 +436,8 @@ lldb_private::formatters::NSDictionarySyntheticFrontEndCreator(
   lldb::ProcessSP process_sp(valobj_sp->GetProcessSP());
   if (!process_sp)
     return nullptr;
-  AppleObjCRuntime *runtime =
-      llvm::dyn_cast_or_null<AppleObjCRuntime>(process_sp->GetObjCLanguageRuntime());
+  AppleObjCRuntime *runtime = llvm::dyn_cast_or_null<AppleObjCRuntime>(
+      ObjCLanguageRuntime::Get(*process_sp));
   if (!runtime)
     return nullptr;
 
@@ -512,7 +509,7 @@ lldb_private::formatters::NSDictionaryISyntheticFrontEnd::
 }
 
 size_t lldb_private::formatters::NSDictionaryISyntheticFrontEnd::
-    GetIndexOfChildWithName(const ConstString &name) {
+    GetIndexOfChildWithName(ConstString name) {
   const char *item_name = name.GetCString();
   uint32_t idx = ExtractIndexFromString(item_name);
   if (idx < UINT32_MAX && idx >= CalculateNumChildren())
@@ -648,7 +645,7 @@ lldb_private::formatters::NSDictionary1SyntheticFrontEnd::
     : SyntheticChildrenFrontEnd(*valobj_sp.get()), m_pair(nullptr) {}
 
 size_t lldb_private::formatters::NSDictionary1SyntheticFrontEnd::
-    GetIndexOfChildWithName(const ConstString &name) {
+    GetIndexOfChildWithName(ConstString name) {
   static const ConstString g_zero("[0]");
   return name == g_zero ? 0 : UINT32_MAX;
 }
@@ -736,7 +733,7 @@ lldb_private::formatters::GenericNSDictionaryMSyntheticFrontEnd<D32,D64>::
 
 template <typename D32, typename D64>
 size_t
-lldb_private::formatters::GenericNSDictionaryMSyntheticFrontEnd<D32,D64>::    GetIndexOfChildWithName(const ConstString &name) {
+lldb_private::formatters::GenericNSDictionaryMSyntheticFrontEnd<D32,D64>::    GetIndexOfChildWithName(ConstString name) {
   const char *item_name = name.GetCString();
   uint32_t idx = ExtractIndexFromString(item_name);
   if (idx < UINT32_MAX && idx >= CalculateNumChildren())
@@ -905,7 +902,7 @@ lldb_private::formatters::Foundation1100::
 
 size_t
 lldb_private::formatters::Foundation1100::
-  NSDictionaryMSyntheticFrontEnd::GetIndexOfChildWithName(const ConstString &name) {
+  NSDictionaryMSyntheticFrontEnd::GetIndexOfChildWithName(ConstString name) {
   const char *item_name = name.GetCString();
   uint32_t idx = ExtractIndexFromString(item_name);
   if (idx < UINT32_MAX && idx >= CalculateNumChildren())

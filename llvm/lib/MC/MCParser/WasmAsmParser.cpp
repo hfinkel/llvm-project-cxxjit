@@ -56,6 +56,15 @@ public:
     addDirectiveHandler<&WasmAsmParser::parseSectionDirective>(".section");
     addDirectiveHandler<&WasmAsmParser::parseDirectiveSize>(".size");
     addDirectiveHandler<&WasmAsmParser::parseDirectiveType>(".type");
+    addDirectiveHandler<&WasmAsmParser::ParseDirectiveIdent>(".ident");
+    addDirectiveHandler<
+      &WasmAsmParser::ParseDirectiveSymbolAttribute>(".weak");
+    addDirectiveHandler<
+      &WasmAsmParser::ParseDirectiveSymbolAttribute>(".local");
+    addDirectiveHandler<
+      &WasmAsmParser::ParseDirectiveSymbolAttribute>(".internal");
+    addDirectiveHandler<
+      &WasmAsmParser::ParseDirectiveSymbolAttribute>(".hidden");
   }
 
   bool error(const StringRef &Msg, const AsmToken &Tok) {
@@ -81,20 +90,65 @@ public:
     return false;
   }
 
+  bool parseSectionFlags(StringRef FlagStr, bool &Passive) {
+    SmallVector<StringRef, 2> Flags;
+    // If there are no flags, keep Flags empty
+    FlagStr.split(Flags, ",", -1, false);
+    for (auto &Flag : Flags) {
+      if (Flag == "passive")
+        Passive = true;
+      else
+        return error("Expected section flags, instead got: ", Lexer->getTok());
+    }
+    return false;
+  }
+
   bool parseSectionDirective(StringRef, SMLoc) {
     StringRef Name;
     if (Parser->parseIdentifier(Name))
       return TokError("expected identifier in directive");
-    // FIXME: currently requiring this very fixed format.
-    if (expect(AsmToken::Comma, ",") || expect(AsmToken::String, "string") ||
-        expect(AsmToken::Comma, ",") || expect(AsmToken::At, "@") ||
+
+    if (expect(AsmToken::Comma, ","))
+      return true;
+
+    if (Lexer->isNot(AsmToken::String))
+      return error("expected string in directive, instead got: ", Lexer->getTok());
+
+    auto Kind = StringSwitch<Optional<SectionKind>>(Name)
+                    .StartsWith(".data", SectionKind::getData())
+                    .StartsWith(".rodata", SectionKind::getReadOnly())
+                    .StartsWith(".text", SectionKind::getText())
+                    .StartsWith(".custom_section", SectionKind::getMetadata())
+                    .StartsWith(".bss", SectionKind::getBSS())
+                    // See use of .init_array in WasmObjectWriter and
+                    // TargetLoweringObjectFileWasm
+                    .StartsWith(".init_array", SectionKind::getData())
+                    .Default(Optional<SectionKind>());
+    if (!Kind.hasValue())
+      return Parser->Error(Lexer->getLoc(), "unknown section kind: " + Name);
+
+    MCSectionWasm *Section = getContext().getWasmSection(Name, Kind.getValue());
+
+    // Update section flags if present in this .section directive
+    bool Passive = false;
+    if (parseSectionFlags(getTok().getStringContents(), Passive))
+      return true;
+
+    if (Passive) {
+      if (!Section->isWasmData())
+        return Parser->Error(getTok().getLoc(),
+                             "Only data sections can be passive");
+      Section->setPassive();
+    }
+
+    Lex();
+
+    if (expect(AsmToken::Comma, ",") || expect(AsmToken::At, "@") ||
         expect(AsmToken::EndOfStatement, "eol"))
       return true;
-    // This is done automatically by the assembler for text sections currently,
-    // so we don't need to emit that here. This is what it would do (and may
-    // be needed later for other section types):
-    // auto WS = getContext().getWasmSection(Name, SectionKind::getText());
-    // getStreamer().SwitchSection(WS);
+
+    auto WS = getContext().getWasmSection(Name, Kind.getValue());
+    getStreamer().SwitchSection(WS);
     return false;
   }
 
@@ -113,9 +167,8 @@ public:
     if (expect(AsmToken::EndOfStatement, "eol"))
       return true;
     // This is done automatically by the assembler for functions currently,
-    // so we don't need to emit that here. This is what it would do:
-    (void)Sym;
-    // getStreamer().emitELFSize(Sym, Expr);
+    // so this is only currently needed for data sections:
+    getStreamer().emitELFSize(Sym, Expr);
     return false;
   }
 
@@ -137,10 +190,57 @@ public:
       WasmSym->setType(wasm::WASM_SYMBOL_TYPE_FUNCTION);
     else if (TypeName == "global")
       WasmSym->setType(wasm::WASM_SYMBOL_TYPE_GLOBAL);
+    else if (TypeName == "object")
+      WasmSym->setType(wasm::WASM_SYMBOL_TYPE_DATA);
     else
       return error("Unknown WASM symbol type: ", Lexer->getTok());
     Lex();
     return expect(AsmToken::EndOfStatement, "EOL");
+  }
+
+  // FIXME: Shared with ELF.
+  /// ParseDirectiveIdent
+  ///  ::= .ident string
+  bool ParseDirectiveIdent(StringRef, SMLoc) {
+    if (getLexer().isNot(AsmToken::String))
+      return TokError("unexpected token in '.ident' directive");
+    StringRef Data = getTok().getIdentifier();
+    Lex();
+    if (getLexer().isNot(AsmToken::EndOfStatement))
+      return TokError("unexpected token in '.ident' directive");
+    Lex();
+    getStreamer().EmitIdent(Data);
+    return false;
+  }
+
+  // FIXME: Shared with ELF.
+  /// ParseDirectiveSymbolAttribute
+  ///  ::= { ".local", ".weak", ... } [ identifier ( , identifier )* ]
+  bool ParseDirectiveSymbolAttribute(StringRef Directive, SMLoc) {
+    MCSymbolAttr Attr = StringSwitch<MCSymbolAttr>(Directive)
+      .Case(".weak", MCSA_Weak)
+      .Case(".local", MCSA_Local)
+      .Case(".hidden", MCSA_Hidden)
+      .Case(".internal", MCSA_Internal)
+      .Case(".protected", MCSA_Protected)
+      .Default(MCSA_Invalid);
+    assert(Attr != MCSA_Invalid && "unexpected symbol attribute directive!");
+    if (getLexer().isNot(AsmToken::EndOfStatement)) {
+      while (true) {
+        StringRef Name;
+        if (getParser().parseIdentifier(Name))
+          return TokError("expected identifier in directive");
+        MCSymbol *Sym = getContext().getOrCreateSymbol(Name);
+        getStreamer().EmitSymbolAttribute(Sym, Attr);
+        if (getLexer().is(AsmToken::EndOfStatement))
+          break;
+        if (getLexer().isNot(AsmToken::Comma))
+          return TokError("unexpected token in directive");
+        Lex();
+      }
+    }
+    Lex();
+    return false;
   }
 };
 

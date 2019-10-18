@@ -79,6 +79,9 @@ public:
   ConstraintManager() = default;
   virtual ~ConstraintManager();
 
+  virtual bool haveEqualConstraints(ProgramStateRef S1,
+                                    ProgramStateRef S2) const = 0;
+
   virtual ProgramStateRef assume(ProgramStateRef state,
                                  DefinedSVal Cond,
                                  bool Assumption) = 0;
@@ -159,12 +162,9 @@ public:
   virtual ProgramStateRef removeDeadBindings(ProgramStateRef state,
                                                  SymbolReaper& SymReaper) = 0;
 
-  virtual void print(ProgramStateRef state,
-                     raw_ostream &Out,
-                     const char* nl,
-                     const char *sep) = 0;
-
-  virtual void EndPath(ProgramStateRef state) {}
+  virtual void printJson(raw_ostream &Out, ProgramStateRef State,
+                         const char *NL, unsigned int Space,
+                         bool IsDot) const = 0;
 
   /// Convenience method to query the state to see if a symbol is null or
   /// not null, or if neither assumption can be made.

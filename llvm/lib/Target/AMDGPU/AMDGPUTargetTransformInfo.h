@@ -77,14 +77,16 @@ class GCNTTIImpl final : public BasicTTIImplBase<GCNTTIImpl> {
     AMDGPU::FeatureUnalignedScratchAccess,
 
     AMDGPU::FeatureAutoWaitcntBeforeBarrier,
-    AMDGPU::FeatureDebuggerEmitPrologue,
-    AMDGPU::FeatureDebuggerInsertNops,
 
     // Property of the kernel/environment which can't actually differ.
     AMDGPU::FeatureSGPRInitBug,
     AMDGPU::FeatureXNACK,
     AMDGPU::FeatureTrapHandler,
     AMDGPU::FeatureCodeObjectV3,
+
+    // The default assumption needs to be ecc is enabled, but no directly
+    // exposed operations depend on it, so it can be safely inlined.
+    AMDGPU::FeatureSRAMECC,
 
     // Perf-tuning features
     AMDGPU::FeatureFastFMAF32,
@@ -178,8 +180,7 @@ public:
     // don't use flat addressing.
     if (IsGraphicsShader)
       return -1;
-    return ST->hasFlatAddressSpace() ?
-      AMDGPUAS::FLAT_ADDRESS : AMDGPUAS::UNKNOWN_ADDRESS_SPACE;
+    return AMDGPUAS::FLAT_ADDRESS;
   }
 
   unsigned getVectorSplitCost() { return 0; }
@@ -190,7 +191,9 @@ public:
   bool areInlineCompatible(const Function *Caller,
                            const Function *Callee) const;
 
-  unsigned getInliningThresholdMultiplier() { return 9; }
+  unsigned getInliningThresholdMultiplier() { return 7; }
+
+  int getInlinerVectorBonusPercent() { return 0; }
 
   int getArithmeticReductionCost(unsigned Opcode,
                                  Type *Ty,

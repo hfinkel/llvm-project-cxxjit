@@ -143,7 +143,7 @@ static KeywordStatus getKeywordStatus(const LangOptions &LangOpts,
   // in non-arc mode.
   if (LangOpts.ObjC && (Flags & KEYOBJC)) return KS_Enabled;
   if (LangOpts.ConceptsTS && (Flags & KEYCONCEPTS)) return KS_Enabled;
-  if (LangOpts.CoroutinesTS && (Flags & KEYCOROUTINES)) return KS_Enabled;
+  if (LangOpts.Coroutines && (Flags & KEYCOROUTINES)) return KS_Enabled;
   if (LangOpts.ModulesTS && (Flags & KEYMODULES)) return KS_Enabled;
   if (LangOpts.CPlusPlus && (Flags & KEYALLCXX)) return KS_Future;
   return KS_Disabled;
@@ -218,7 +218,7 @@ void IdentifierTable::AddKeywords(const LangOptions &LangOpts) {
   if (LangOpts.DeclSpecKeyword)
     AddKeyword("__declspec", tok::kw___declspec, KEYALL, LangOpts, *this);
 
-  // Add the '_experimental_modules_import' contextual keyword.
+  // Add the 'import' contextual keyword.
   get("import").setModulesImport(true);
 }
 

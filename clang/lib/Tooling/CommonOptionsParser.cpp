@@ -39,7 +39,7 @@ const char *const CommonOptionsParser::HelpMessage =
     "\tCMake option to get this output). When no build path is specified,\n"
     "\ta search for compile_commands.json will be attempted through all\n"
     "\tparent paths of the first input file . See:\n"
-    "\thttp://clang.llvm.org/docs/HowToSetupToolingForLLVM.html for an\n"
+    "\thttps://clang.llvm.org/docs/HowToSetupToolingForLLVM.html for an\n"
     "\texample of setting up Clang Tooling on a source tree.\n"
     "\n"
     "<source0> ... specify the paths of source files. These paths are\n"
@@ -83,8 +83,6 @@ std::vector<CompileCommand> ArgumentsAdjustingCompilations::adjustCommands(
 llvm::Error CommonOptionsParser::init(
     int &argc, const char **argv, cl::OptionCategory &Category,
     llvm::cl::NumOccurrencesFlag OccurrencesFlag, const char *Overview) {
-  static cl::opt<bool> Help("h", cl::desc("Alias for -help"), cl::Hidden,
-                            cl::sub(*cl::AllSubCommands));
 
   static cl::opt<std::string> BuildPath("p", cl::desc("Build path"),
                                         cl::Optional, cl::cat(Category),

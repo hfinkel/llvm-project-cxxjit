@@ -14,7 +14,6 @@
 #include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
 #include "lldb/Symbol/ClangASTContext.h"
-#include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/ProcessStructReader.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/DataBufferHeap.h"
@@ -23,6 +22,7 @@
 #include "lldb/Utility/Stream.h"
 
 #include "Plugins/Language/ObjC/NSString.h"
+#include "Plugins/LanguageRuntime/ObjC/ObjCLanguageRuntime.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -163,7 +163,7 @@ public:
 
   bool MightHaveChildren() override { return true; }
 
-  size_t GetIndexOfChildWithName(const ConstString &name) override {
+  size_t GetIndexOfChildWithName(ConstString name) override {
     static ConstString g___userInfo("_userInfo");
     if (name == g___userInfo)
       return 0;
@@ -187,9 +187,7 @@ lldb_private::formatters::NSErrorSyntheticFrontEndCreator(
   lldb::ProcessSP process_sp(valobj_sp->GetProcessSP());
   if (!process_sp)
     return nullptr;
-  ObjCLanguageRuntime *runtime =
-      (ObjCLanguageRuntime *)process_sp->GetLanguageRuntime(
-          lldb::eLanguageTypeObjC);
+  ObjCLanguageRuntime *runtime = ObjCLanguageRuntime::Get(*process_sp);
   if (!runtime)
     return nullptr;
 

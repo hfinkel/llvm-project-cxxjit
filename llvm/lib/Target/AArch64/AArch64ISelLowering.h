@@ -214,7 +214,13 @@ enum NodeType : unsigned {
   LD4LANEpost,
   ST2LANEpost,
   ST3LANEpost,
-  ST4LANEpost
+  ST4LANEpost,
+
+  STG,
+  STZG,
+  ST2G,
+  STZ2G
+
 };
 
 } // end namespace AArch64ISD
@@ -262,9 +268,10 @@ public:
 
   /// Returns true if the target allows unaligned memory accesses of the
   /// specified type.
-  bool allowsMisalignedMemoryAccesses(EVT VT, unsigned AddrSpace = 0,
-                                      unsigned Align = 1,
-                                      bool *Fast = nullptr) const override;
+  bool allowsMisalignedMemoryAccesses(
+      EVT VT, unsigned AddrSpace = 0, unsigned Align = 1,
+      MachineMemOperand::Flags Flags = MachineMemOperand::MONone,
+      bool *Fast = nullptr) const override;
 
   /// Provide custom lowering hooks for some operations.
   SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
@@ -286,7 +293,8 @@ public:
 
   bool isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const override;
 
-  bool isFPImmLegal(const APFloat &Imm, EVT VT) const override;
+  bool isFPImmLegal(const APFloat &Imm, EVT VT,
+                    bool ForCodeSize) const override;
 
   /// Return true if the given shuffle mask can be codegen'd directly, or if it
   /// should be stack expanded.
@@ -348,7 +356,7 @@ public:
 
   EVT getOptimalMemOpType(uint64_t Size, unsigned DstAlign, unsigned SrcAlign,
                           bool IsMemset, bool ZeroMemset, bool MemcpyStrSrc,
-                          MachineFunction &MF) const override;
+                          const AttributeList &FuncAttributes) const override;
 
   /// Return true if the addressing mode represented by AM is legal for this
   /// target, for a load/store of the specified type.
@@ -472,11 +480,7 @@ public:
     return VT.getSizeInBits() >= 64; // vector 'bic'
   }
 
-  bool shouldExpandShift(SelectionDAG &DAG, SDNode *N) const override {
-    if (DAG.getMachineFunction().getFunction().optForMinSize())
-      return false;
-    return true;
-  }
+  bool shouldExpandShift(SelectionDAG &DAG, SDNode *N) const override;
 
   bool shouldTransformSignedTruncationCheck(EVT XVT,
                                             unsigned KeptBits) const override {
@@ -494,6 +498,8 @@ public:
     MVT KeptBitsVT = MVT::getIntegerVT(KeptBits);
     return VTIsOk(XVT) && VTIsOk(KeptBitsVT);
   }
+
+  bool preferIncOfAddToSubOfNot(EVT VT) const override;
 
   bool hasBitPreservingFPLogic(EVT VT) const override {
     // FIXME: Is this always true? It should be true for vectors at least.
@@ -656,9 +662,9 @@ private:
   SDValue LowerFCOPYSIGN(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerFP_EXTEND(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerFP_ROUND(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerVectorFP_TO_INT(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerFP_TO_INT(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerINT_TO_FP(SDValue Op, SelectionDAG &DAG) const;
-  SDValue LowerVectorAND(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerVectorOR(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerCONCAT_VECTORS(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerFSINCOS(SDValue Op, SelectionDAG &DAG) const;

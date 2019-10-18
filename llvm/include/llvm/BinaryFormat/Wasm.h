@@ -48,6 +48,11 @@ struct WasmProducerInfo {
   std::vector<std::pair<std::string, std::string>> SDKs;
 };
 
+struct WasmFeatureEntry {
+  uint8_t Prefix;
+  std::string Name;
+};
+
 struct WasmExport {
   StringRef Name;
   uint8_t Kind;
@@ -131,12 +136,13 @@ struct WasmFunction {
 };
 
 struct WasmDataSegment {
-  uint32_t MemoryIndex;
-  WasmInitExpr Offset;
+  uint32_t InitFlags;
+  uint32_t MemoryIndex; // present if InitFlags & WASM_SEGMENT_HAS_MEMINDEX
+  WasmInitExpr Offset; // present if InitFlags & WASM_SEGMENT_IS_PASSIVE == 0
   ArrayRef<uint8_t> Content;
   StringRef Name; // from the "segment info" section
   uint32_t Alignment;
-  uint32_t Flags;
+  uint32_t LinkerFlags;
   uint32_t Comdat; // from the "comdat info" section
 };
 
@@ -218,7 +224,7 @@ enum : unsigned {
   WASM_TYPE_F64 = 0x7C,
   WASM_TYPE_V128 = 0x7B,
   WASM_TYPE_FUNCREF = 0x70,
-  WASM_TYPE_EXCEPT_REF = 0x68,
+  WASM_TYPE_EXNREF = 0x68,
   WASM_TYPE_FUNC = 0x60,
   WASM_TYPE_NORESULT = 0x40, // for blocks with no result values
 };
@@ -235,16 +241,36 @@ enum : unsigned {
 // Opcodes used in initializer expressions.
 enum : unsigned {
   WASM_OPCODE_END = 0x0b,
+  WASM_OPCODE_CALL = 0x10,
+  WASM_OPCODE_LOCAL_GET = 0x20,
   WASM_OPCODE_GLOBAL_GET = 0x23,
+  WASM_OPCODE_GLOBAL_SET = 0x24,
+  WASM_OPCODE_I32_STORE = 0x36,
   WASM_OPCODE_I32_CONST = 0x41,
   WASM_OPCODE_I64_CONST = 0x42,
   WASM_OPCODE_F32_CONST = 0x43,
   WASM_OPCODE_F64_CONST = 0x44,
+  WASM_OPCODE_I32_ADD = 0x6a,
+  WASM_OPCODE_MISC_PREFIX = 0xfc,
+  WASM_OPCODE_MEMORY_INIT = 0x08,
+  WASM_OPCODE_DATA_DROP = 0x09,
 };
 
 enum : unsigned {
   WASM_LIMITS_FLAG_HAS_MAX = 0x1,
   WASM_LIMITS_FLAG_IS_SHARED = 0x2,
+};
+
+enum : unsigned {
+  WASM_SEGMENT_IS_PASSIVE = 0x01,
+  WASM_SEGMENT_HAS_MEMINDEX = 0x02,
+};
+
+// Feature policy prefixes used in the custom "target_features" section
+enum : uint8_t {
+  WASM_FEATURE_PREFIX_USED = '+',
+  WASM_FEATURE_PREFIX_REQUIRED = '=',
+  WASM_FEATURE_PREFIX_DISALLOWED = '-',
 };
 
 // Kind codes used in the custom "name" section
@@ -308,7 +334,7 @@ enum class ValType {
   F32 = WASM_TYPE_F32,
   F64 = WASM_TYPE_F64,
   V128 = WASM_TYPE_V128,
-  EXCEPT_REF = WASM_TYPE_EXCEPT_REF,
+  EXNREF = WASM_TYPE_EXNREF,
 };
 
 struct WasmSignature {
@@ -343,6 +369,7 @@ inline bool operator!=(const WasmGlobalType &LHS, const WasmGlobalType &RHS) {
 
 std::string toString(WasmSymbolType type);
 std::string relocTypetoString(uint32_t type);
+bool relocTypeHasAddend(uint32_t type);
 
 } // end namespace wasm
 } // end namespace llvm

@@ -1,59 +1,59 @@
 import("//llvm/utils/TableGen/tablegen.gni")
 
+tablegen("BPFGenAsmWriter") {
+  visibility = [ ":MCTargetDesc" ]
+  args = [ "-gen-asm-writer" ]
+  td_file = "../BPF.td"
+}
+
 tablegen("BPFGenInstrInfo") {
-  visibility = [ ":tablegen" ]
+  visibility = [ ":MCTargetDesc" ]
   args = [ "-gen-instr-info" ]
   td_file = "../BPF.td"
 }
 
 tablegen("BPFGenMCCodeEmitter") {
-  visibility = [ ":tablegen" ]
+  visibility = [ ":MCTargetDesc" ]
   args = [ "-gen-emitter" ]
   td_file = "../BPF.td"
 }
 
 tablegen("BPFGenRegisterInfo") {
-  visibility = [ ":tablegen" ]
+  visibility = [ ":MCTargetDesc" ]
   args = [ "-gen-register-info" ]
   td_file = "../BPF.td"
 }
 
 tablegen("BPFGenSubtargetInfo") {
-  visibility = [ ":tablegen" ]
+  visibility = [ ":MCTargetDesc" ]
   args = [ "-gen-subtarget" ]
   td_file = "../BPF.td"
 }
 
-group("tablegen") {
-  visibility = [
-    ":MCTargetDesc",
-    "../InstPrinter",
-    "../TargetInfo",
-  ]
+static_library("MCTargetDesc") {
+  output_name = "LLVMBPFDesc"
+
+  # This should contain tablegen targets generating .inc files included
+  # by other targets. .inc files only used by .cpp files in this directory
+  # should be in deps instead.
   public_deps = [
     ":BPFGenInstrInfo",
-    ":BPFGenMCCodeEmitter",
     ":BPFGenRegisterInfo",
     ":BPFGenSubtargetInfo",
   ]
-}
-
-static_library("MCTargetDesc") {
-  output_name = "LLVMBPFDesc"
-  public_deps = [
-    ":tablegen",
-  ]
   deps = [
+    ":BPFGenAsmWriter",
+    ":BPFGenMCCodeEmitter",
     "//llvm/lib/MC",
     "//llvm/lib/MC/MCDisassembler",
     "//llvm/lib/Support",
-    "//llvm/lib/Target/BPF/InstPrinter",
     "//llvm/lib/Target/BPF/TargetInfo",
   ]
   include_dirs = [ ".." ]
   sources = [
     "BPFAsmBackend.cpp",
     "BPFELFObjectWriter.cpp",
+    "BPFInstPrinter.cpp",
     "BPFMCCodeEmitter.cpp",
     "BPFMCTargetDesc.cpp",
   ]

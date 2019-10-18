@@ -31,6 +31,7 @@ add_llvm_target(AArch64CodeGen
   AArch64CondBrTuning.cpp
   AArch64ConditionalCompares.cpp
   AArch64DeadRegisterDefinitionsPass.cpp
+  AArch64ExpandImm.cpp
   AArch64ExpandPseudoInsts.cpp
   AArch64FalkorHWPFFix.cpp
   AArch64FastISel.cpp
@@ -54,6 +55,7 @@ add_llvm_target(AArch64CodeGen
   AArch64RegisterInfo.cpp
   AArch64SelectionDAGInfo.cpp
   AArch64SpeculationHardening.cpp
+  AArch64StackTagging.cpp
   AArch64StorePairSuppress.cpp
   AArch64Subtarget.cpp
   AArch64TargetMachine.cpp
@@ -67,7 +69,6 @@ add_llvm_target(AArch64CodeGen
 
 add_subdirectory(AsmParser)
 add_subdirectory(Disassembler)
-add_subdirectory(InstPrinter)
 add_subdirectory(MCTargetDesc)
 add_subdirectory(TargetInfo)
 add_subdirectory(Utils)

@@ -163,6 +163,7 @@ X86RegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
     case X86::RFP32RegClassID:
     case X86::RFP64RegClassID:
     case X86::RFP80RegClassID:
+    case X86::VR512_0_15RegClassID:
     case X86::VR512RegClassID:
       // Don't return a super-class that would shrink the spill size.
       // That can happen with the vector and float classes.
@@ -213,6 +214,21 @@ X86RegisterInfo::getPointerRegClass(const MachineFunction &MF,
   case 4: // Available for tailcall (not callee-saved GPRs).
     return getGPRsForTailCall(MF);
   }
+}
+
+bool X86RegisterInfo::shouldRewriteCopySrc(const TargetRegisterClass *DefRC,
+                                           unsigned DefSubReg,
+                                           const TargetRegisterClass *SrcRC,
+                                           unsigned SrcSubReg) const {
+  // Prevent rewriting a copy where the destination size is larger than the
+  // input size. See PR41619.
+  // FIXME: Should this be factored into the base implementation somehow.
+  if (DefRC->hasSuperClassEq(&X86::GR64RegClass) && DefSubReg == 0 &&
+      SrcRC->hasSuperClassEq(&X86::GR64RegClass) && SrcSubReg == X86::sub_32bit)
+    return false;
+
+  return TargetRegisterInfo::shouldRewriteCopySrc(DefRC, DefSubReg,
+                                                  SrcRC, SrcSubReg);
 }
 
 const TargetRegisterClass *
@@ -749,7 +765,7 @@ X86RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   }
 }
 
-unsigned X86RegisterInfo::getFrameRegister(const MachineFunction &MF) const {
+Register X86RegisterInfo::getFrameRegister(const MachineFunction &MF) const {
   const X86FrameLowering *TFI = getFrameLowering(MF);
   return TFI->hasFP(MF) ? FramePtr : StackPtr;
 }

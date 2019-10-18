@@ -11,12 +11,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "InstPrinter/SparcInstPrinter.h"
+#include "MCTargetDesc/SparcInstPrinter.h"
 #include "MCTargetDesc/SparcMCExpr.h"
 #include "MCTargetDesc/SparcTargetStreamer.h"
 #include "Sparc.h"
 #include "SparcInstrInfo.h"
 #include "SparcTargetMachine.h"
+#include "TargetInfo/SparcTargetInfo.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineModuleInfoImpls.h"
@@ -59,11 +60,9 @@ namespace {
     }
 
     bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
-                         unsigned AsmVariant, const char *ExtraCode,
-                         raw_ostream &O) override;
+                         const char *ExtraCode, raw_ostream &O) override;
     bool PrintAsmMemoryOperand(const MachineInstr *MI, unsigned OpNo,
-                               unsigned AsmVariant, const char *ExtraCode,
-                               raw_ostream &O) override;
+                               const char *ExtraCode, raw_ostream &O) override;
 
     void LowerGETPCXAndEmitMCInsts(const MachineInstr *MI,
                                    const MCSubtargetInfo &STI);
@@ -359,7 +358,7 @@ void SparcAsmPrinter::printOperand(const MachineInstr *MI, int opNum,
     MO.getMBB()->getSymbol()->print(O, MAI);
     return;
   case MachineOperand::MO_GlobalAddress:
-    getSymbol(MO.getGlobal())->print(O, MAI);
+    PrintSymbolOperand(MO, O);
     break;
   case MachineOperand::MO_BlockAddress:
     O <<  GetBlockAddressSymbol(MO.getBlockAddress())->getName();
@@ -405,7 +404,6 @@ void SparcAsmPrinter::printMemOperand(const MachineInstr *MI, int opNum,
 /// PrintAsmOperand - Print out an operand for an inline asm expression.
 ///
 bool SparcAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
-                                      unsigned AsmVariant,
                                       const char *ExtraCode,
                                       raw_ostream &O) {
   if (ExtraCode && ExtraCode[0]) {
@@ -414,7 +412,7 @@ bool SparcAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
     switch (ExtraCode[0]) {
     default:
       // See if this is a generic print operand
-      return AsmPrinter::PrintAsmOperand(MI, OpNo, AsmVariant, ExtraCode, O);
+      return AsmPrinter::PrintAsmOperand(MI, OpNo, ExtraCode, O);
     case 'f':
     case 'r':
      break;
@@ -427,7 +425,7 @@ bool SparcAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
 }
 
 bool SparcAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
-                                            unsigned OpNo, unsigned AsmVariant,
+                                            unsigned OpNo,
                                             const char *ExtraCode,
                                             raw_ostream &O) {
   if (ExtraCode && ExtraCode[0])

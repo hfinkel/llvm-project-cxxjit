@@ -30,14 +30,12 @@ public:
   SBRegistry();
 };
 
-struct SBInfo {
-  static const char *name;
-  static const char *file;
-};
-
 class SBProvider : public Provider<SBProvider> {
 public:
-  typedef SBInfo info;
+  struct Info {
+    static const char *name;
+    static const char *file;
+  };
 
   SBProvider(const FileSpec &directory)
       : Provider(directory),
@@ -58,12 +56,18 @@ private:
 };
 
 inline InstrumentationData GetInstrumentationData() {
+  if (!lldb_private::repro::Reproducer::Initialized())
+    return {};
+
   if (auto *g = lldb_private::repro::Reproducer::Instance().GetGenerator()) {
     auto &p = g->GetOrCreate<SBProvider>();
     return {p.GetSerializer(), p.GetRegistry()};
   }
+
   return {};
 }
+
+template <typename T> void RegisterMethods(Registry &R);
 
 } // namespace repro
 } // namespace lldb_private

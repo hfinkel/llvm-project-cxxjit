@@ -67,8 +67,6 @@ const char *clang::getOpenMPClauseName(OpenMPClauseKind Kind) {
   case OMPC_##Name:                                                            \
     return #Name;
 #include "clang/Basic/OpenMPKinds.def"
-  case OMPC_flush:
-    return "flush";
   case OMPC_uniform:
     return "uniform";
   case OMPC_threadprivate:
@@ -116,6 +114,18 @@ unsigned clang::getOpenMPSimpleClauseType(OpenMPClauseKind Kind,
   .Case(#Name, static_cast<unsigned>(OMPC_MAP_MODIFIER_##Name))
 #include "clang/Basic/OpenMPKinds.def"
         .Default(OMPC_MAP_unknown);
+  case OMPC_to:
+    return llvm::StringSwitch<unsigned>(Str)
+#define OPENMP_TO_MODIFIER_KIND(Name)                                          \
+  .Case(#Name, static_cast<unsigned>(OMPC_TO_MODIFIER_##Name))
+#include "clang/Basic/OpenMPKinds.def"
+        .Default(OMPC_TO_MODIFIER_unknown);
+  case OMPC_from:
+    return llvm::StringSwitch<unsigned>(Str)
+#define OPENMP_FROM_MODIFIER_KIND(Name)                                     \
+  .Case(#Name, static_cast<unsigned>(OMPC_FROM_MODIFIER_##Name))
+#include "clang/Basic/OpenMPKinds.def"
+        .Default(OMPC_FROM_MODIFIER_unknown);
   case OMPC_dist_schedule:
     return llvm::StringSwitch<OpenMPDistScheduleClauseKind>(Str)
 #define OPENMP_DIST_SCHEDULE_KIND(Name) .Case(#Name, OMPC_DIST_SCHEDULE_##Name)
@@ -142,6 +152,8 @@ unsigned clang::getOpenMPSimpleClauseType(OpenMPClauseKind Kind,
   case OMPC_num_threads:
   case OMPC_safelen:
   case OMPC_simdlen:
+  case OMPC_allocator:
+  case OMPC_allocate:
   case OMPC_collapse:
   case OMPC_private:
   case OMPC_firstprivate:
@@ -174,8 +186,6 @@ unsigned clang::getOpenMPSimpleClauseType(OpenMPClauseKind Kind,
   case OMPC_num_tasks:
   case OMPC_hint:
   case OMPC_uniform:
-  case OMPC_to:
-  case OMPC_from:
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
   case OMPC_unified_address:
@@ -260,6 +270,30 @@ const char *clang::getOpenMPSimpleClauseTypeName(OpenMPClauseKind Kind,
       break;
     }
     llvm_unreachable("Invalid OpenMP 'map' clause type");
+  case OMPC_to:
+    switch (Type) {
+    case OMPC_TO_MODIFIER_unknown:
+      return "unknown";
+#define OPENMP_TO_MODIFIER_KIND(Name)                                          \
+  case OMPC_TO_MODIFIER_##Name:                                                \
+    return #Name;
+#include "clang/Basic/OpenMPKinds.def"
+    default:
+      break;
+    }
+    llvm_unreachable("Invalid OpenMP 'to' clause type");
+  case OMPC_from:
+    switch (Type) {
+    case OMPC_FROM_MODIFIER_unknown:
+      return "unknown";
+#define OPENMP_FROM_MODIFIER_KIND(Name)                                        \
+  case OMPC_FROM_MODIFIER_##Name:                                              \
+    return #Name;
+#include "clang/Basic/OpenMPKinds.def"
+    default:
+      break;
+    }
+    llvm_unreachable("Invalid OpenMP 'from' clause type");
   case OMPC_dist_schedule:
     switch (Type) {
     case OMPC_DIST_SCHEDULE_unknown:
@@ -301,6 +335,8 @@ const char *clang::getOpenMPSimpleClauseTypeName(OpenMPClauseKind Kind,
   case OMPC_num_threads:
   case OMPC_safelen:
   case OMPC_simdlen:
+  case OMPC_allocator:
+  case OMPC_allocate:
   case OMPC_collapse:
   case OMPC_private:
   case OMPC_firstprivate:
@@ -333,8 +369,6 @@ const char *clang::getOpenMPSimpleClauseTypeName(OpenMPClauseKind Kind,
   case OMPC_num_tasks:
   case OMPC_hint:
   case OMPC_uniform:
-  case OMPC_to:
-  case OMPC_from:
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
   case OMPC_unified_address:
@@ -776,6 +810,16 @@ bool clang::isAllowedClauseForDirective(OpenMPDirectiveKind DKind,
       break;
     }
     break;
+  case OMPD_allocate:
+    switch (CKind) {
+#define OPENMP_ALLOCATE_CLAUSE(Name)                                           \
+  case OMPC_##Name:                                                            \
+    return true;
+#include "clang/Basic/OpenMPKinds.def"
+    default:
+      break;
+    }
+    break;
   case OMPD_declare_target:
   case OMPD_end_declare_target:
   case OMPD_unknown:
@@ -1003,6 +1047,7 @@ void clang::getOpenMPCaptureRegions(
     CaptureRegions.push_back(OMPD_unknown);
     break;
   case OMPD_threadprivate:
+  case OMPD_allocate:
   case OMPD_taskyield:
   case OMPD_barrier:
   case OMPD_taskwait:

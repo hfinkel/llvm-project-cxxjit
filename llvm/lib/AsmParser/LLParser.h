@@ -339,6 +339,7 @@ namespace llvm {
     bool ParseFnAttributeValuePairs(AttrBuilder &B,
                                     std::vector<unsigned> &FwdRefAttrGrps,
                                     bool inAttrGrp, LocTy &BuiltinLoc);
+    bool ParseByValWithOptionalType(Type *&Result);
 
     // Module Summary Index Parsing.
     bool SkipModuleSummaryEntry();
@@ -368,9 +369,11 @@ namespace llvm {
                          IdToIndexMapType &IdToIndexMap, unsigned Index);
     bool ParseVFuncId(FunctionSummary::VFuncId &VFuncId,
                       IdToIndexMapType &IdToIndexMap, unsigned Index);
+    bool ParseOptionalVTableFuncs(VTableFuncList &VTableFuncs);
     bool ParseOptionalRefs(std::vector<ValueInfo> &Refs);
     bool ParseTypeIdEntry(unsigned ID);
     bool ParseTypeIdSummary(TypeIdSummary &TIS);
+    bool ParseTypeIdCompatibleVtableEntry(unsigned ID);
     bool ParseTypeTestResolution(TypeTestResolution &TTRes);
     bool ParseOptionalWpdResolutions(
         std::map<uint64_t, WholeProgramDevirtResolution> &WPDResMap);
@@ -445,7 +448,7 @@ namespace llvm {
       /// DefineBB - Define the specified basic block, which is either named or
       /// unnamed.  If there is an error, this returns null otherwise it returns
       /// the block being defined.
-      BasicBlock *DefineBB(const std::string &Name, LocTy Loc);
+      BasicBlock *DefineBB(const std::string &Name, int NameID, LocTy Loc);
 
       bool resolveForwardRefBlockAddresses();
     };
@@ -573,9 +576,9 @@ namespace llvm {
     bool ParseCallBr(Instruction *&Inst, PerFunctionState &PFS);
 
     bool ParseUnaryOp(Instruction *&Inst, PerFunctionState &PFS, unsigned Opc,
-                      unsigned OperandType);
+                      bool IsFP);
     bool ParseArithmetic(Instruction *&Inst, PerFunctionState &PFS, unsigned Opc,
-                         unsigned OperandType);
+                         bool IsFP);
     bool ParseLogical(Instruction *&Inst, PerFunctionState &PFS, unsigned Opc);
     bool ParseCompare(Instruction *&Inst, PerFunctionState &PFS, unsigned Opc);
     bool ParseCast(Instruction *&Inst, PerFunctionState &PFS, unsigned Opc);

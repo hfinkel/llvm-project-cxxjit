@@ -147,7 +147,7 @@ void ScalarEnumerationTraits<CPUType>::enumeration(IO &io, CPUType &Cpu) {
 }
 
 void ScalarEnumerationTraits<RegisterId>::enumeration(IO &io, RegisterId &Reg) {
-  auto RegNames = getRegisterNames();
+  auto RegNames = getRegisterNames(CPUType::X64);
   for (const auto &E : RegNames) {
     io.enumCase(Reg, E.Name.str().c_str(), static_cast<RegisterId>(E.Value));
   }
@@ -248,7 +248,7 @@ struct UnknownSymbolRecord : public SymbolRecordBase {
     uint8_t *Buffer = Allocator.Allocate<uint8_t>(TotalLen);
     ::memcpy(Buffer, &Prefix, sizeof(RecordPrefix));
     ::memcpy(Buffer + sizeof(RecordPrefix), Data.data(), Data.size());
-    return CVSymbol(Kind, ArrayRef<uint8_t>(Buffer, TotalLen));
+    return CVSymbol(ArrayRef<uint8_t>(Buffer, TotalLen));
   }
 
   Error fromCodeViewSymbol(CVSymbol CVS) override {
@@ -551,6 +551,12 @@ template <> void SymbolRecordImpl<ThreadLocalDataSym>::map(IO &IO) {
 
 template <> void SymbolRecordImpl<UsingNamespaceSym>::map(IO &IO) {
   IO.mapRequired("Namespace", Symbol.Name);
+}
+
+template <> void SymbolRecordImpl<AnnotationSym>::map(IO &IO) {
+  IO.mapOptional("Offset", Symbol.CodeOffset, 0U);
+  IO.mapOptional("Segment", Symbol.Segment, uint16_t(0));
+  IO.mapRequired("Strings", Symbol.Strings);
 }
 
 } // end namespace detail

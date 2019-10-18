@@ -107,6 +107,12 @@ TEST_F(FormatTestProto, FormatsEnums) {
                "};");
 }
 
+TEST_F(FormatTestProto, EnumAsFieldName) {
+  verifyFormat("message SomeMessage {\n"
+               "  required int32 enum = 1;\n"
+               "}");
+}
+
 TEST_F(FormatTestProto, UnderstandsReturns) {
   verifyFormat("rpc Search(SearchRequest) returns (SearchResponse);");
 }
@@ -185,6 +191,10 @@ TEST_F(FormatTestProto, DoesntWrapFileOptions) {
       "\"some.really.long.package.that.exceeds.the.column.limit\";",
       format("option    java_package   =    "
              "\"some.really.long.package.that.exceeds.the.column.limit\";"));
+}
+
+TEST_F(FormatTestProto, TrailingCommentAfterFileOption) {
+  verifyFormat("option java_package = \"foo.pkg\";  // comment\n");
 }
 
 TEST_F(FormatTestProto, FormatsOptions) {
@@ -385,6 +395,16 @@ TEST_F(FormatTestProto, FormatsOptions) {
                "  headheadheadheadheadhead_id: 1\n"
                "  product_data { product { 1 } }\n"
                "};");
+}
+
+TEST_F(FormatTestProto, DoesntWrapPackageStatements) {
+  verifyFormat(
+      "package"
+      " some.really.long.package.that.exceeds.the.column.limit00000000;");
+}
+
+TEST_F(FormatTestProto, TrailingCommentAfterPackage) {
+  verifyFormat("package foo.pkg;  // comment\n");
 }
 
 TEST_F(FormatTestProto, FormatsService) {

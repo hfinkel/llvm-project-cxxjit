@@ -21,7 +21,7 @@
 #include "clang/Lex/HeaderSearch.h"
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Bitcode/BitstreamReader.h"
+#include "llvm/Bitstream/BitstreamReader.h"
 #include "llvm/DebugInfo/DWARF/DWARFContext.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
@@ -337,8 +337,14 @@ ObjectFilePCHContainerReader::ExtractPCH(llvm::MemoryBufferRef Buffer) const {
       StringRef Name;
       Section.getName(Name);
       if ((!IsCOFF && Name == "__clangast") || (IsCOFF && Name == "clangast")) {
-        Section.getContents(PCH);
-        return PCH;
+        if (Expected<StringRef> E = Section.getContents())
+          return *E;
+        else {
+          handleAllErrors(E.takeError(), [&](const llvm::ErrorInfoBase &EIB) {
+            EIB.log(llvm::errs());
+          });
+          return "";
+        }
       }
     }
   }

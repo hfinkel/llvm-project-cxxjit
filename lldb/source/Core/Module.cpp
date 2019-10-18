@@ -309,6 +309,10 @@ ObjectFile *Module::GetMemoryObjectFile(const lldb::ProcessSP &process_sp,
           // file's architecture since it might differ in vendor/os if some
           // parts were unknown.
           m_arch = m_objfile_sp->GetArchitecture();
+
+          // Augment the arch with the target's information in case
+          // we are unable to extract the os/environment from memory.
+          m_arch.MergeFrom(process_sp->GetTarget().GetArchitecture());
         } else {
           error.SetErrorString("unable to find suitable object file plug-in");
         }
@@ -594,7 +598,7 @@ uint32_t Module::ResolveSymbolContextsForFileSpec(
   return sc_list.GetSize() - initial_count;
 }
 
-size_t Module::FindGlobalVariables(const ConstString &name,
+size_t Module::FindGlobalVariables(ConstString name,
                                    const CompilerDeclContext *parent_decl_ctx,
                                    size_t max_matches,
                                    VariableList &variables) {
@@ -634,7 +638,7 @@ size_t Module::FindCompileUnits(const FileSpec &path, bool append,
   return sc_list.GetSize() - start_size;
 }
 
-Module::LookupInfo::LookupInfo(const ConstString &name,
+Module::LookupInfo::LookupInfo(ConstString name,
                                FunctionNameType name_type_mask,
                                LanguageType language)
     : m_name(name), m_lookup_name(), m_language(language),
@@ -794,7 +798,7 @@ void Module::LookupInfo::Prune(SymbolContextList &sc_list,
   }
 }
 
-size_t Module::FindFunctions(const ConstString &name,
+size_t Module::FindFunctions(ConstString name,
                              const CompilerDeclContext *parent_decl_ctx,
                              FunctionNameType name_type_mask,
                              bool include_symbols, bool include_inlines,
@@ -942,7 +946,7 @@ void Module::FindAddressesForLine(const lldb::TargetSP target_sp,
 }
 
 size_t Module::FindTypes_Impl(
-    const ConstString &name, const CompilerDeclContext *parent_decl_ctx,
+    ConstString name, const CompilerDeclContext *parent_decl_ctx,
     bool append, size_t max_matches,
     llvm::DenseSet<lldb_private::SymbolFile *> &searched_symbol_files,
     TypeMap &types) {
@@ -955,7 +959,7 @@ size_t Module::FindTypes_Impl(
   return 0;
 }
 
-size_t Module::FindTypesInNamespace(const ConstString &type_name,
+size_t Module::FindTypesInNamespace(ConstString type_name,
                                     const CompilerDeclContext *parent_decl_ctx,
                                     size_t max_matches, TypeList &type_list) {
   const bool append = true;
@@ -973,7 +977,7 @@ size_t Module::FindTypesInNamespace(const ConstString &type_name,
 }
 
 lldb::TypeSP Module::FindFirstType(const SymbolContext &sc,
-                                   const ConstString &name, bool exact_match) {
+                                   ConstString name, bool exact_match) {
   TypeList type_list;
   llvm::DenseSet<lldb_private::SymbolFile *> searched_symbol_files;
   const size_t num_matches =
@@ -984,7 +988,7 @@ lldb::TypeSP Module::FindFirstType(const SymbolContext &sc,
 }
 
 size_t Module::FindTypes(
-    const ConstString &name, bool exact_match, size_t max_matches,
+    ConstString name, bool exact_match, size_t max_matches,
     llvm::DenseSet<lldb_private::SymbolFile *> &searched_symbol_files,
     TypeList &types) {
   size_t num_matches = 0;
@@ -1059,7 +1063,7 @@ SymbolVendor *Module::GetSymbolVendor(bool can_create,
 }
 
 void Module::SetFileSpecAndObjectName(const FileSpec &file,
-                                      const ConstString &object_name) {
+                                      ConstString object_name) {
   // Container objects whose paths do not specify a file directly can call this
   // function to correct the file and object names.
   m_file = file;
@@ -1116,7 +1120,7 @@ void Module::ReportError(const char *format, ...) {
     const int format_len = strlen(format);
     if (format_len > 0) {
       const char last_char = format[format_len - 1];
-      if (last_char != '\n' || last_char != '\r')
+      if (last_char != '\n' && last_char != '\r')
         strm.EOL();
     }
     Host::SystemLog(Host::eSystemLogError, "%s", strm.GetData());
@@ -1148,7 +1152,7 @@ void Module::ReportErrorIfModifyDetected(const char *format, ...) {
         const int format_len = strlen(format);
         if (format_len > 0) {
           const char last_char = format[format_len - 1];
-          if (last_char != '\n' || last_char != '\r')
+          if (last_char != '\n' && last_char != '\r')
             strm.EOL();
         }
         strm.PutCString("The debug session should be aborted as the original "
@@ -1174,7 +1178,7 @@ void Module::ReportWarning(const char *format, ...) {
     const int format_len = strlen(format);
     if (format_len > 0) {
       const char last_char = format[format_len - 1];
-      if (last_char != '\n' || last_char != '\r')
+      if (last_char != '\n' && last_char != '\r')
         strm.EOL();
     }
     Host::SystemLog(Host::eSystemLogWarning, "%s", strm.GetData());
@@ -1242,7 +1246,7 @@ TypeList *Module::GetTypeList() {
   return nullptr;
 }
 
-const ConstString &Module::GetObjectName() const { return m_object_name; }
+ConstString Module::GetObjectName() const { return m_object_name; }
 
 ObjectFile *Module::GetObjectFile() {
   if (!m_did_load_objfile.load()) {
@@ -1296,13 +1300,19 @@ void Module::SectionFileAddressesChanged() {
     sym_vendor->SectionFileAddressesChanged();
 }
 
+UnwindTable &Module::GetUnwindTable() {
+  if (!m_unwind_table)
+    m_unwind_table.emplace(*this);
+  return *m_unwind_table;
+}
+
 SectionList *Module::GetUnifiedSectionList() {
   if (!m_sections_up)
     m_sections_up = llvm::make_unique<SectionList>();
   return m_sections_up.get();
 }
 
-const Symbol *Module::FindFirstSymbolWithNameAndType(const ConstString &name,
+const Symbol *Module::FindFirstSymbolWithNameAndType(ConstString name,
                                                      SymbolType symbol_type) {
   static Timer::Category func_cat(LLVM_PRETTY_FUNCTION);
   Timer scoped_timer(
@@ -1335,7 +1345,7 @@ void Module::SymbolIndicesToSymbolContextList(
   }
 }
 
-size_t Module::FindFunctionSymbols(const ConstString &name,
+size_t Module::FindFunctionSymbols(ConstString name,
                                    uint32_t name_type_mask,
                                    SymbolContextList &sc_list) {
   static Timer::Category func_cat(LLVM_PRETTY_FUNCTION);
@@ -1351,7 +1361,7 @@ size_t Module::FindFunctionSymbols(const ConstString &name,
   return 0;
 }
 
-size_t Module::FindSymbolsWithNameAndType(const ConstString &name,
+size_t Module::FindSymbolsWithNameAndType(ConstString name,
                                           SymbolType symbol_type,
                                           SymbolContextList &sc_list) {
   // No need to protect this call using m_mutex all other method calls are
@@ -1442,6 +1452,10 @@ void Module::SetSymbolFileFileSpec(const FileSpec &file) {
         // one
         obj_file->ClearSymtab();
 
+        // Clear the unwind table too, as that may also be affected by the
+        // symbol file information.
+        m_unwind_table.reset();
+
         // The symbol file might be a directory bundle ("/tmp/a.out.dSYM")
         // instead of a full path to the symbol file within the bundle
         // ("/tmp/a.out.dSYM/Contents/Resources/DWARF/a.out"). So we need to
@@ -1531,8 +1545,7 @@ bool Module::LoadScriptingResourceInTarget(Target *target, Status &error,
 
     const uint32_t num_specs = file_specs.GetSize();
     if (num_specs) {
-      ScriptInterpreter *script_interpreter =
-          debugger.GetCommandInterpreter().GetScriptInterpreter();
+      ScriptInterpreter *script_interpreter = debugger.GetScriptInterpreter();
       if (script_interpreter) {
         for (uint32_t i = 0; i < num_specs; ++i) {
           FileSpec scripting_fspec(file_specs.GetFileSpecAtIndex(i));
@@ -1621,7 +1634,7 @@ bool Module::MatchesModuleSpec(const ModuleSpec &module_ref) {
       return false;
   }
 
-  const ConstString &object_name = module_ref.GetObjectName();
+  ConstString object_name = module_ref.GetObjectName();
   if (object_name) {
     if (object_name != GetObjectName())
       return false;

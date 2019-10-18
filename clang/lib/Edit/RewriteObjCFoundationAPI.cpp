@@ -1042,6 +1042,7 @@ static bool rewriteToNumericBoxedExpression(const ObjCMessageExpr *Msg,
     case CK_Dependent:
     case CK_BitCast:
     case CK_LValueBitCast:
+    case CK_LValueToRValueBitCast:
     case CK_BaseToDerived:
     case CK_DerivedToBase:
     case CK_UncheckedDerivedToBase:
@@ -1086,6 +1087,8 @@ static bool rewriteToNumericBoxedExpression(const ObjCMessageExpr *Msg,
 
     case CK_FixedPointCast:
     case CK_FixedPointToBoolean:
+    case CK_FixedPointToIntegral:
+    case CK_IntegralToFixedPoint:
       llvm_unreachable("Fixed point types are disabled for Objective-C");
     }
   }

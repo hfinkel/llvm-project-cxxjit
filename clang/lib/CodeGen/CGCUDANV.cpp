@@ -132,6 +132,8 @@ public:
   llvm::Function *makeModuleCtorFunction() override;
   /// Creates module destructor function
   llvm::Function *makeModuleDtorFunction() override;
+  /// Construct and return the stub name of a kernel.
+  std::string getDeviceStubName(llvm::StringRef Name) const override;
 };
 
 }
@@ -217,9 +219,20 @@ std::string CGNVCUDARuntime::getDeviceSideName(const Decl *D) {
 
 void CGNVCUDARuntime::emitDeviceStub(CodeGenFunction &CGF,
                                      FunctionArgList &Args) {
-  assert(getDeviceSideName(CGF.CurFuncDecl) == CGF.CurFn->getName() ||
-         CGF.CGM.getContext().getTargetInfo().getCXXABI() !=
-             CGF.CGM.getContext().getAuxTargetInfo()->getCXXABI());
+  // Ensure either we have different ABIs between host and device compilations,
+  // says host compilation following MSVC ABI but device compilation follows
+  // Itanium C++ ABI or, if they follow the same ABI, kernel names after
+  // mangling should be the same after name stubbing. The later checking is
+  // very important as the device kernel name being mangled in host-compilation
+  // is used to resolve the device binaries to be executed. Inconsistent naming
+  // result in undefined behavior. Even though we cannot check that naming
+  // directly between host- and device-compilations, the host- and
+  // device-mangling in host compilation could help catching certain ones.
+  assert((CGF.CGM.getContext().getAuxTargetInfo() &&
+          (CGF.CGM.getContext().getAuxTargetInfo()->getCXXABI() !=
+           CGF.CGM.getContext().getTargetInfo().getCXXABI())) ||
+         getDeviceStubName(getDeviceSideName(CGF.CurFuncDecl)) ==
+             CGF.CurFn->getName());
 
   EmittedKernels.push_back({CGF.CurFn, CGF.CurFuncDecl});
   if (CudaFeatureEnabled(CGM.getTarget().getSDKVersion(),
@@ -467,9 +480,13 @@ llvm::Function *CGNVCUDARuntime::makeRegisterGlobalsFn() {
 /// \endcode
 llvm::Function *CGNVCUDARuntime::makeModuleCtorFunction() {
   bool IsHIP = CGM.getLangOpts().HIP;
+  bool IsCUDA = CGM.getLangOpts().CUDA;
   // No need to generate ctors/dtors if there is no GPU binary.
   StringRef CudaGpuBinaryFileName = CGM.getCodeGenOpts().CudaGpuBinaryFileName;
   if (CudaGpuBinaryFileName.empty() && !IsHIP)
+    return nullptr;
+  if ((IsHIP || (IsCUDA && !RelocatableDeviceCode)) && EmittedKernels.empty() &&
+      DeviceVars.empty())
     return nullptr;
 
   // void __{cuda|hip}_register_globals(void* handle);
@@ -779,6 +796,12 @@ llvm::Function *CGNVCUDARuntime::makeModuleDtorFunction() {
   }
   DtorBuilder.CreateRetVoid();
   return ModuleDtorFunc;
+}
+
+std::string CGNVCUDARuntime::getDeviceStubName(llvm::StringRef Name) const {
+  if (!CGM.getLangOpts().HIP)
+    return Name;
+  return (Name + ".stub").str();
 }
 
 CGCUDARuntime *CodeGen::CreateNVCUDARuntime(CodeGenModule &CGM) {

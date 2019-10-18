@@ -1,5 +1,4 @@
 //===-- AppleThreadPlanStepThroughObjCTrampoline.cpp
-//--------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -14,21 +13,20 @@
 #include "lldb/Expression/FunctionCaller.h"
 #include "lldb/Expression/UtilityFunction.h"
 #include "lldb/Target/ExecutionContext.h"
-#include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Thread.h"
 #include "lldb/Target/ThreadPlanRunToAddress.h"
 #include "lldb/Target/ThreadPlanStepOut.h"
 #include "lldb/Utility/Log.h"
 
+#include "Plugins/LanguageRuntime/ObjC/ObjCLanguageRuntime.h"
+
 #include <memory>
 
 using namespace lldb;
 using namespace lldb_private;
 
-//----------------------------------------------------------------------
 // ThreadPlanStepThroughObjCTrampoline constructor
-//----------------------------------------------------------------------
 AppleThreadPlanStepThroughObjCTrampoline::
     AppleThreadPlanStepThroughObjCTrampoline(
         Thread &thread, AppleObjCTrampolineHandler *trampoline_handler,
@@ -39,12 +37,10 @@ AppleThreadPlanStepThroughObjCTrampoline::
                  eVoteNoOpinion),
       m_trampoline_handler(trampoline_handler),
       m_args_addr(LLDB_INVALID_ADDRESS), m_input_values(input_values),
-      m_isa_addr(isa_addr), m_sel_addr(sel_addr), m_impl_function(NULL),
+      m_isa_addr(isa_addr), m_sel_addr(sel_addr), m_impl_function(nullptr),
       m_stop_others(stop_others) {}
 
-//----------------------------------------------------------------------
 // Destructor
-//----------------------------------------------------------------------
 AppleThreadPlanStepThroughObjCTrampoline::
     ~AppleThreadPlanStepThroughObjCTrampoline() {}
 
@@ -176,8 +172,8 @@ bool AppleThreadPlanStepThroughObjCTrampoline::ShouldStop(Event *event_ptr) {
                   target_addr);
 
     ObjCLanguageRuntime *objc_runtime =
-        GetThread().GetProcess()->GetObjCLanguageRuntime();
-    assert(objc_runtime != NULL);
+        ObjCLanguageRuntime::Get(*GetThread().GetProcess());
+    assert(objc_runtime != nullptr);
     objc_runtime->AddToMethodCache(m_isa_addr, m_sel_addr, target_addr);
     if (log)
       log->Printf("Adding {isa-addr=0x%" PRIx64 ", sel-addr=0x%" PRIx64

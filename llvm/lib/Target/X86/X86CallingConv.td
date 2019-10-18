@@ -147,7 +147,8 @@ def CC_#NAME : CallingConv<[
       CCAssignToStack<32, 32>>,
 
     // 512-bit vectors get 64-byte stack slots that are 64-byte aligned.
-    CCIfType<[v16i32, v8i64, v16f32, v8f64], CCAssignToStack<64, 64>>
+    CCIfType<[v64i8, v32i16, v16i32, v8i64, v16f32, v8f64],
+      CCAssignToStack<64, 64>>
 ]>;
 
 def RetCC_#NAME : CallingConv<[
@@ -567,7 +568,7 @@ def CC_X86_64_C : CallingConv<[
            CCAssignToStack<32, 32>>,
 
   // 512-bit vectors get 64-byte stack slots that are 64-byte aligned.
-  CCIfType<[v16i32, v8i64, v16f32, v8f64],
+  CCIfType<[v64i8, v32i16, v16i32, v8i64, v16f32, v8f64],
            CCAssignToStack<64, 64>>
 ]>;
 
@@ -612,7 +613,7 @@ def CC_X86_Win64_C : CallingConv<[
   CCIfType<[v32i8, v16i16, v8i32, v4i64, v8f32, v4f64], CCPassIndirect<i64>>,
 
   // 512 bit vectors are passed by pointer
-  CCIfType<[v16i32, v16f32, v8f64, v8i64], CCPassIndirect<i64>>,
+  CCIfType<[v64i8, v32i16, v16i32, v16f32, v8f64, v8i64], CCPassIndirect<i64>>,
 
   // Long doubles are passed by pointer
   CCIfType<[f80], CCPassIndirect<i64>>,
@@ -985,14 +986,6 @@ def CC_Intel_OCL_BI : CallingConv<[
   CCDelegateTo<CC_X86_32_C>
 ]>;
 
-def CC_X86_32_Intr : CallingConv<[
-  CCAssignToStack<4, 4>
-]>;
-
-def CC_X86_64_Intr : CallingConv<[
-  CCAssignToStack<8, 8>
-]>;
-
 //===----------------------------------------------------------------------===//
 // X86 Root Argument Calling Conventions
 //===----------------------------------------------------------------------===//
@@ -1001,7 +994,7 @@ def CC_X86_64_Intr : CallingConv<[
 def CC_X86_32 : CallingConv<[
   // X86_INTR calling convention is valid in MCU target and should override the
   // MCU calling convention. Thus, this should be checked before isTargetMCU().
-  CCIfCC<"CallingConv::X86_INTR", CCDelegateTo<CC_X86_32_Intr>>,
+  CCIfCC<"CallingConv::X86_INTR", CCCustom<"CC_X86_Intr">>,
   CCIfSubtarget<"isTargetMCU()", CCDelegateTo<CC_X86_32_MCU>>,
   CCIfCC<"CallingConv::X86_FastCall", CCDelegateTo<CC_X86_32_FastCall>>,
   CCIfCC<"CallingConv::X86_VectorCall", CCDelegateTo<CC_X86_Win32_VectorCall>>,
@@ -1029,7 +1022,7 @@ def CC_X86_64 : CallingConv<[
   CCIfCC<"CallingConv::X86_RegCall",
     CCIfSubtarget<"isTargetWin64()", CCDelegateTo<CC_X86_Win64_RegCall>>>,
   CCIfCC<"CallingConv::X86_RegCall", CCDelegateTo<CC_X86_SysV64_RegCall>>,
-  CCIfCC<"CallingConv::X86_INTR", CCDelegateTo<CC_X86_64_Intr>>,
+  CCIfCC<"CallingConv::X86_INTR", CCCustom<"CC_X86_Intr">>,
 
   // Mingw64 and native Win64 use Win64 CC
   CCIfSubtarget<"isTargetWin64()", CCDelegateTo<CC_X86_Win64_C>>,

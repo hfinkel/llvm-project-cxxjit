@@ -84,7 +84,7 @@ define amdgpu_kernel void @v_usubo_i32_novcc(i32 addrspace(1)* %out, i1 addrspac
   %val = extractvalue { i32, i1 } %uadd, 0
   %carry = extractvalue { i32, i1 } %uadd, 1
   store volatile i32 %val, i32 addrspace(1)* %out, align 4
-  call void asm sideeffect "", "~{VCC}"() #0
+  call void asm sideeffect "", "~{vcc}"() #0
   store volatile i1 %carry, i1 addrspace(1)* %carryout
   ret void
 }
@@ -173,6 +173,57 @@ define amdgpu_kernel void @v_usubo_v2i32(<2 x i32> addrspace(1)* %out, <2 x i32>
   store <2 x i32> %val, <2 x i32> addrspace(1)* %out, align 4
   %carry.ext = zext <2 x i1> %carry to <2 x i32>
   store <2 x i32> %carry.ext, <2 x i32> addrspace(1)* %carryout
+  ret void
+}
+
+; FUNC-LABEL: {{^}}s_usubo_clamp_bit:
+; GCN: v_sub_{{i|u|co_u}}32_e32
+; GCN: s_endpgm
+define amdgpu_kernel void @s_usubo_clamp_bit(i32 addrspace(1)* %out, i1 addrspace(1)* %carryout, i32 %a, i32 %b) #0 {
+entry:
+  %usub = call { i32, i1 } @llvm.usub.with.overflow.i32(i32 %a, i32 %b)
+  %val = extractvalue { i32, i1 } %usub, 0
+  %carry = extractvalue { i32, i1 } %usub, 1
+  %c2 = icmp eq i1 %carry, false
+  %cc = icmp eq i32 %a, %b
+  br i1 %cc, label %exit, label %if
+
+if:
+  br label %exit
+
+exit:
+  %cout = phi i1 [false, %entry], [%c2, %if]
+  store i32 %val, i32 addrspace(1)* %out, align 4
+  store i1 %cout, i1 addrspace(1)* %carryout
+  ret void
+}
+
+
+; FUNC-LABEL: {{^}}v_usubo_clamp_bit:
+; GCN: v_sub_{{i|u|co_u}}32_e64
+; GCN: s_endpgm
+define amdgpu_kernel void @v_usubo_clamp_bit(i32 addrspace(1)* %out, i1 addrspace(1)* %carryout, i32 addrspace(1)* %a.ptr, i32 addrspace(1)* %b.ptr) #0 {
+entry:
+  %tid = call i32 @llvm.amdgcn.workitem.id.x()
+  %tid.ext = sext i32 %tid to i64
+  %a.gep = getelementptr inbounds i32, i32 addrspace(1)* %a.ptr
+  %b.gep = getelementptr inbounds i32, i32 addrspace(1)* %b.ptr
+  %a = load i32, i32 addrspace(1)* %a.gep, align 4
+  %b = load i32, i32 addrspace(1)* %b.gep, align 4
+  %usub = call { i32, i1 } @llvm.usub.with.overflow.i32(i32 %a, i32 %b)
+  %val = extractvalue { i32, i1 } %usub, 0
+  %carry = extractvalue { i32, i1 } %usub, 1
+  %c2 = icmp eq i1 %carry, false
+  %cc = icmp eq i32 %a, %b
+  br i1 %cc, label %exit, label %if
+
+if:
+  br label %exit
+
+exit:
+  %cout = phi i1 [false, %entry], [%c2, %if]
+  store i32 %val, i32 addrspace(1)* %out, align 4
+  store i1 %cout, i1 addrspace(1)* %carryout
   ret void
 }
 

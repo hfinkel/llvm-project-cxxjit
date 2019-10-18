@@ -29,6 +29,8 @@ Models core language features and contains general-purpose checkers such as divi
 null pointer dereference, usage of uninitialized values, etc.
 *These checkers must be always switched on as other checker rely on them.*
 
+.. _core-CallAndMessage:
+
 core.CallAndMessage (C, C++, ObjC)
 """"""""""""""""""""""""""""""""""
  Check for logical errors for function calls and Objective-C message expressions (e.g., uninitialized arguments, null function pointers).
@@ -36,12 +38,16 @@ core.CallAndMessage (C, C++, ObjC)
 .. literalinclude:: checkers/callandmessage_example.c
     :language: objc
 
+.. _core-DivideZero:
+
 core.DivideZero (C, C++, ObjC)
 """"""""""""""""""""""""""""""
  Check for division by zero.
 
 .. literalinclude:: checkers/dividezero_example.c
     :language: c
+
+.. _core-NonNullParamChecker:
 
 core.NonNullParamChecker (C, C++, ObjC)
 """""""""""""""""""""""""""""""""""""""
@@ -55,6 +61,8 @@ Check for null pointers passed as arguments to a function whose arguments are re
    if (!p)
      f(p); // warn
  }
+
+.. _core-NullDereference:
 
 core.NullDereference (C, C++, ObjC)
 """""""""""""""""""""""""""""""""""
@@ -99,6 +107,8 @@ Check for dereferences of null pointers.
    obj->x = 1; // warn
  }
 
+.. _core-StackAddressEscape:
+
 core.StackAddressEscape (C)
 """""""""""""""""""""""""""
 Check that addresses to stack memory do not escape the function.
@@ -123,6 +133,8 @@ Check that addresses to stack memory do not escape the function.
  }
 
 
+.. _core-UndefinedBinaryOperatorResult:
+
 core.UndefinedBinaryOperatorResult (C)
 """"""""""""""""""""""""""""""""""""""
 Check for undefined results of binary operators.
@@ -133,6 +145,8 @@ Check for undefined results of binary operators.
    int x;
    int y = x + 1; // warn: left operand is garbage
  }
+
+.. _core-VLASize:
 
 core.VLASize (C)
 """"""""""""""""
@@ -152,6 +166,8 @@ Check for declarations of Variable Length Arrays of undefined or zero size.
    int vla2[x]; // warn: zero size
  }
 
+.. _core-uninitialized-ArraySubscript:
+
 core.uninitialized.ArraySubscript (C)
 """""""""""""""""""""""""""""""""""""
 Check for uninitialized values used as array subscripts.
@@ -163,6 +179,8 @@ Check for uninitialized values used as array subscripts.
    int x = a[i]; // warn: array subscript is undefined
  }
 
+.. _core-uninitialized-Assign:
+
 core.uninitialized.Assign (C)
 """""""""""""""""""""""""""""
 Check for assigning uninitialized values.
@@ -173,6 +191,8 @@ Check for assigning uninitialized values.
    int x;
    x |= 1; // warn: left expression is uninitialized
  }
+
+.. _core-uninitialized-Branch:
 
 core.uninitialized.Branch (C)
 """""""""""""""""""""""""""""
@@ -186,6 +206,8 @@ Check for uninitialized values used as branch conditions.
      return;
  }
 
+.. _core-uninitialized-CapturedBlockVariable:
+
 core.uninitialized.CapturedBlockVariable (C)
 """"""""""""""""""""""""""""""""""""""""""""
 Check for blocks that capture uninitialized values.
@@ -196,6 +218,8 @@ Check for blocks that capture uninitialized values.
    int x;
    ^{ int y = x; }(); // warn
  }
+
+.. _core-uninitialized-UndefReturn:
 
 core.uninitialized.UndefReturn (C)
 """"""""""""""""""""""""""""""""""
@@ -211,14 +235,18 @@ Check for uninitialized values being returned to the caller.
 .. _cplusplus-checkers:
 
 
-cpluslus
-^^^^^^^^
+cplusplus
+^^^^^^^^^
 
 C++ Checkers.
+
+.. _cplusplus-InnerPointer:
 
 cplusplus.InnerPointer
 """"""""""""""""""""""
 Check for inner pointers of C++ containers used after re/deallocation.
+
+.. _cplusplus-NewDelete:
 
 cplusplus.NewDelete (C++)
 """""""""""""""""""""""""
@@ -226,6 +254,8 @@ Check for double-free and use-after-free problems. Traces memory managed by new/
 
 .. literalinclude:: checkers/newdelete_example.cpp
     :language: cpp
+
+.. _cplusplus-NewDeleteLeaks:
 
 cplusplus.NewDeleteLeaks (C++)
 """"""""""""""""""""""""""""""
@@ -238,6 +268,8 @@ Check for memory leaks. Traces memory managed by new/delete.
  } // warn
 
 
+.. _cplusplus-SelfAssignment:
+
 cplusplus.SelfAssignment (C++)
 """"""""""""""""""""""""""""""
 Checks C++ copy and move assignment operators for self assignment.
@@ -248,6 +280,8 @@ deadcode
 ^^^^^^^^
 
 Dead Code Checkers.
+
+.. _deadcode-DeadStores:
 
 deadcode.DeadStores (C)
 """""""""""""""""""""""
@@ -267,6 +301,8 @@ nullability
 
 Objective C checkers that warn for null pointer passing and dereferencing errors.
 
+.. _nullability-NullPassedToNonnull:
+
 nullability.NullPassedToNonnull (ObjC)
 """"""""""""""""""""""""""""""""""""""
 Warns when a null pointer is passed to a pointer which has a _Nonnull type.
@@ -277,6 +313,8 @@ Warns when a null pointer is passed to a pointer which has a _Nonnull type.
    return;
  // Warning: nil passed to a callee that requires a non-null 1st parameter
  NSString *greeting = [@"Hello " stringByAppendingString:name];
+
+.. _nullability-NullReturnedFromNonnull:
 
 nullability.NullReturnedFromNonnull (ObjC)
 """"""""""""""""""""""""""""""""""""""""""
@@ -293,6 +331,8 @@ Warns when a null pointer is returned from a function that has _Nonnull return t
    // to return a non-null value
    return result;
  }
+
+.. _nullability-NullableDereferenced:
 
 nullability.NullableDereferenced (ObjC)
 """""""""""""""""""""""""""""""""""""""
@@ -313,6 +353,8 @@ Warns when a nullable pointer is dereferenced.
    next->data = 7;
  }
 
+.. _nullability-NullablePassedToNonnull:
+
 nullability.NullablePassedToNonnull (ObjC)
 """"""""""""""""""""""""""""""""""""""""""
 Warns when a nullable pointer is passed to a pointer which has a _Nonnull type.
@@ -328,6 +370,8 @@ Warns when a nullable pointer is passed to a pointer which has a _Nonnull type.
    takesNonnull(p); // warn
  }
 
+.. _nullability-NullableReturnedFromNonnull:
+
 nullability.NullableReturnedFromNonnull (ObjC)
 """"""""""""""""""""""""""""""""""""""""""""""
 Warns when a nullable pointer is returned from a function that has _Nonnull return type.
@@ -339,1058 +383,16 @@ optin
 
 Checkers for portability, performance or coding style specific rules.
 
-optin.cplusplus.VirtualCall (C++)
-"""""""""""""""""""""""""""""""""
-Check virtual function calls during construction or destruction.
+.. _optin-cplusplus-UninitializedObject:
 
-.. code-block:: cpp
-
- class A {
- public:
-   A() {
-     f(); // warn
-   }
-   virtual void f();
- };
-
- class A {
- public:
-   ~A() {
-     this->f(); // warn
-   }
-   virtual void f();
- };
-
-optin.mpi.MPI-Checker (C)
-"""""""""""""""""""""""""
-Checks MPI code.
-
-.. code-block:: c
-
- void test() {
-   double buf = 0;
-   MPI_Request sendReq1;
-   MPI_Ireduce(MPI_IN_PLACE, &buf, 1, MPI_DOUBLE, MPI_SUM,
-       0, MPI_COMM_WORLD, &sendReq1);
- } // warn: request 'sendReq1' has no matching wait.
-
- void test() {
-   double buf = 0;
-   MPI_Request sendReq;
-   MPI_Isend(&buf, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, &sendReq);
-   MPI_Irecv(&buf, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, &sendReq); // warn
-   MPI_Isend(&buf, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, &sendReq); // warn
-   MPI_Wait(&sendReq, MPI_STATUS_IGNORE);
- }
-
- void missingNonBlocking() {
-   int rank = 0;
-   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-   MPI_Request sendReq1[10][10][10];
-   MPI_Wait(&sendReq1[1][7][9], MPI_STATUS_IGNORE); // warn
- }
-
-optin.osx.cocoa.localizability.EmptyLocalizationContextChecker (ObjC)
-"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-Check that NSLocalizedString macros include a comment for context.
-
-.. code-block:: objc
-
- - (void)test {
-   NSString *string = NSLocalizedString(@"LocalizedString", nil); // warn
-   NSString *string2 = NSLocalizedString(@"LocalizedString", @" "); // warn
-   NSString *string3 = NSLocalizedStringWithDefaultValue(
-     @"LocalizedString", nil, [[NSBundle alloc] init], nil,@""); // warn
- }
-
-optin.osx.cocoa.localizability.NonLocalizedStringChecker (ObjC)
-"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-Warns about uses of non-localized NSStrings passed to UI methods expecting localized NSStrings.
-
-.. code-block:: objc
-
- NSString *alarmText =
-   NSLocalizedString(@"Enabled", @"Indicates alarm is turned on");
- if (!isEnabled) {
-   alarmText = @"Disabled";
- }
- UILabel *alarmStateLabel = [[UILabel alloc] init];
-
- // Warning: User-facing text should use localized string macro
- [alarmStateLabel setText:alarmText];
-
-optin.performance.GCDAntipattern
-""""""""""""""""""""""""""""""""
-Check for performance anti-patterns when using Grand Central Dispatch.
-
-optin.performance.Padding
-"""""""""""""""""""""""""
-Check for excessively padded structs.
-
-optin.portability.UnixAPI
-"""""""""""""""""""""""""
-Finds implementation-defined behavior in UNIX/Posix functions.
-
-
-.. _security-checkers:
-
-security
-^^^^^^^^
-
-Security related checkers.
-
-security.FloatLoopCounter (C)
-"""""""""""""""""""""""""""""
-Warn on using a floating point value as a loop counter (CERT: FLP30-C, FLP30-CPP).
-
-.. code-block:: c
-
- void test() {
-   for (float x = 0.1f; x <= 1.0f; x += 0.1f) {} // warn
- }
-
-security.insecureAPI.UncheckedReturn (C)
-""""""""""""""""""""""""""""""""""""""""
-Warn on uses of functions whose return values must be always checked.
-
-.. code-block:: c
-
- void test() {
-   setuid(1); // warn
- }
-
-security.insecureAPI.bcmp (C)
-"""""""""""""""""""""""""""""
-Warn on uses of the 'bcmp' function.
-
-.. code-block:: c
-
- void test() {
-   bcmp(ptr0, ptr1, n); // warn
- }
-
-security.insecureAPI.bcopy (C)
-""""""""""""""""""""""""""""""
-Warn on uses of the 'bcopy' function.
-
-.. code-block:: c
-
- void test() {
-   bcopy(src, dst, n); // warn
- }
-
-security.insecureAPI.bzero (C)
-""""""""""""""""""""""""""""""
-Warn on uses of the 'bzero' function.
-
-.. code-block:: c
-
- void test() {
-   bzero(ptr, n); // warn
- }
-
-security.insecureAPI.getpw (C)
-""""""""""""""""""""""""""""""
-Warn on uses of the 'getpw' function.
-
-.. code-block:: c
-
- void test() {
-   char buff[1024];
-   getpw(2, buff); // warn
- }
-
-security.insecureAPI.gets (C)
-"""""""""""""""""""""""""""""
-Warn on uses of the 'gets' function.
-
-.. code-block:: c
-
- void test() {
-   char buff[1024];
-   gets(buff); // warn
- }
-
-security.insecureAPI.mkstemp (C)
-""""""""""""""""""""""""""""""""
-Warn when 'mkstemp' is passed fewer than 6 X's in the format string.
-
-.. code-block:: c
-
- void test() {
-   mkstemp("XX"); // warn
- }
-
-security.insecureAPI.mktemp (C)
-"""""""""""""""""""""""""""""""
-Warn on uses of the ``mktemp`` function.
-
-.. code-block:: c
-
- void test() {
-   char *x = mktemp("/tmp/zxcv"); // warn: insecure, use mkstemp
- }
-
-security.insecureAPI.rand (C)
-"""""""""""""""""""""""""""""
-Warn on uses of inferior random number generating functions (only if arc4random function is available):
-``drand48, erand48, jrand48, lcong48, lrand48, mrand48, nrand48, random, rand_r``.
-
-.. code-block:: c
-
- void test() {
-   random(); // warn
- }
-
-security.insecureAPI.strcpy (C)
-"""""""""""""""""""""""""""""""
-Warn on uses of the ``strcpy`` and ``strcat`` functions.
-
-.. code-block:: c
-
- void test() {
-   char x[4];
-   char *y = "abcd";
-
-   strcpy(x, y); // warn
- }
-
-
-security.insecureAPI.vfork (C)
-""""""""""""""""""""""""""""""
- Warn on uses of the 'vfork' function.
-
-.. code-block:: c
-
- void test() {
-   vfork(); // warn
- }
-
-security.insecureAPI.DeprecatedOrUnsafeBufferHandling (C)
-"""""""""""""""""""""""""""""""""""""""""""""""""""""""""
- Warn on occurrences of unsafe or deprecated buffer handling functions, which now have a secure variant: ``sprintf, vsprintf, scanf, wscanf, fscanf, fwscanf, vscanf, vwscanf, vfscanf, vfwscanf, sscanf, swscanf, vsscanf, vswscanf, swprintf, snprintf, vswprintf, vsnprintf, memcpy, memmove, strncpy, strncat, memset``
-
-.. code-block:: c
-
- void test() {
-   char buf [5];
-   strncpy(buf, "a", 1); // warn
- }
-
-.. _unix-checkers:
-
-unix
-^^^^
-POSIX/Unix checkers.
-
-unix.API (C)
-""""""""""""
-Check calls to various UNIX/Posix functions: ``open, pthread_once, calloc, malloc, realloc, alloca``.
-
-.. literalinclude:: checkers/unix_api_example.c
-    :language: c
-
-unix.Malloc (C)
-"""""""""""""""
-Check for memory leaks, double free, and use-after-free problems. Traces memory managed by malloc()/free().
-
-.. literalinclude:: checkers/unix_malloc_example.c
-    :language: c
-
-unix.MallocSizeof (C)
-"""""""""""""""""""""
-Check for dubious ``malloc`` arguments involving ``sizeof``.
-
-.. code-block:: c
-
- void test() {
-   long *p = malloc(sizeof(short));
-     // warn: result is converted to 'long *', which is
-     // incompatible with operand type 'short'
-   free(p);
- }
-
-unix.MismatchedDeallocator (C, C++)
-"""""""""""""""""""""""""""""""""""
-Check for mismatched deallocators.
-
-.. literalinclude:: checkers/mismatched_deallocator_example.cpp
-    :language: c
-
-unix.Vfork (C)
-""""""""""""""
-Check for proper usage of ``vfork``.
-
-.. code-block:: c
-
- int test(int x) {
-   pid_t pid = vfork(); // warn
-   if (pid != 0)
-     return 0;
-
-   switch (x) {
-   case 0:
-     pid = 1;
-     execl("", "", 0);
-     _exit(1);
-     break;
-   case 1:
-     x = 0; // warn: this assignment is prohibited
-     break;
-   case 2:
-     foo(); // warn: this function call is prohibited
-     break;
-   default:
-     return 0; // warn: return is prohibited
-   }
-
-   while(1);
- }
-
-unix.cstring.BadSizeArg (C)
-"""""""""""""""""""""""""""
-Check the size argument passed into C string functions for common erroneous patterns. Use ``-Wno-strncat-size`` compiler option to mute other ``strncat``-related compiler warnings.
-
-.. code-block:: c
-
- void test() {
-   char dest[3];
-   strncat(dest, """""""""""""""""""""""""*", sizeof(dest));
-     // warn: potential buffer overflow
- }
-
-unix.cstrisng.NullArg (C)
-"""""""""""""""""""""""""
-Check for null pointers being passed as arguments to C string functions:
-``strlen, strnlen, strcpy, strncpy, strcat, strncat, strcmp, strncmp, strcasecmp, strncasecmp``.
-
-.. code-block:: c
-
- int test() {
-   return strlen(0); // warn
- }
-
-.. _osx-checkers:
-
-osx
-^^^
-OS X checkers.
-
-osx.API (C)
-"""""""""""
-Check for proper uses of various Apple APIs.
-
-.. code-block:: objc
-
- void test() {
-   dispatch_once_t pred = 0;
-   dispatch_once(&pred, ^(){}); // warn: dispatch_once uses local
- }
-
-osx.NumberObjectConversion (C, C++, ObjC)
-"""""""""""""""""""""""""""""""""""""""""
-Check for erroneous conversions of objects representing numbers into numbers.
-
-.. code-block:: objc
-
- NSNumber *photoCount = [albumDescriptor objectForKey:@"PhotoCount"];
- // Warning: Comparing a pointer value of type 'NSNumber *'
- // to a scalar integer value
- if (photoCount > 0) {
-   [self displayPhotos];
- }
-
-osx.ObjCProperty (ObjC)
-"""""""""""""""""""""""
-Check for proper uses of Objective-C properties.
-
-.. code-block:: objc
-
- NSNumber *photoCount = [albumDescriptor objectForKey:@"PhotoCount"];
- // Warning: Comparing a pointer value of type 'NSNumber *'
- // to a scalar integer value
- if (photoCount > 0) {
-   [self displayPhotos];
- }
-
-
-osx.SecKeychainAPI (C)
-""""""""""""""""""""""
-Check for proper uses of Secure Keychain APIs.
-
-.. literalinclude:: checkers/seckeychainapi_example.m
-    :language: objc
-
-osx.cocoa.AtSync (ObjC)
-"""""""""""""""""""""""
-Check for nil pointers used as mutexes for @synchronized.
-
-.. code-block:: objc
-
- void test(id x) {
-   if (!x)
-     @synchronized(x) {} // warn: nil value used as mutex
- }
-
- void test() {
-   id y;
-   @synchronized(y) {} // warn: uninitialized value used as mutex
- }
-
-osx.cocoa.AutoreleaseWrite
-""""""""""""""""""""""""""
-Warn about potentially crashing writes to autoreleasing objects from different autoreleasing pools in Objective-C.
-
-osx.cocoa.ClassRelease (ObjC)
-"""""""""""""""""""""""""""""
-Check for sending 'retain', 'release', or 'autorelease' directly to a Class.
-
-.. code-block:: objc
-
- @interface MyClass : NSObject
- @end
-
- void test(void) {
-   [MyClass release]; // warn
- }
-
-osx.cocoa.Dealloc (ObjC)
-""""""""""""""""""""""""
-Warn about Objective-C classes that lack a correct implementation of -dealloc
-
-.. literalinclude:: checkers/dealloc_example.m
-    :language: objc
-
-osx.cocoa.IncompatibleMethodTypes (ObjC)
-""""""""""""""""""""""""""""""""""""""""
-Warn about Objective-C method signatures with type incompatibilities.
-
-.. code-block:: objc
-
- @interface MyClass1 : NSObject
- - (int)foo;
- @end
-
- @implementation MyClass1
- - (int)foo { return 1; }
- @end
-
- @interface MyClass2 : MyClass1
- - (float)foo;
- @end
-
- @implementation MyClass2
- - (float)foo { return 1.0; } // warn
- @end
-
-osx.cocoa.Loops
-"""""""""""""""
-Improved modeling of loops using Cocoa collection types.
-
-osx.cocoa.MissingSuperCall (ObjC)
-"""""""""""""""""""""""""""""""""
-Warn about Objective-C methods that lack a necessary call to super.
-
-.. code-block:: objc
-
- @interface Test : UIViewController
- @end
- @implementation test
- - (void)viewDidLoad {} // warn
- @end
-
-
-osx.cocoa.NSAutoreleasePool (ObjC)
-""""""""""""""""""""""""""""""""""
-Warn for suboptimal uses of NSAutoreleasePool in Objective-C GC mode.
-
-.. code-block:: objc
-
- void test() {
-   NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-   [pool release]; // warn
- }
-
-osx.cocoa.NSError (ObjC)
-""""""""""""""""""""""""
-Check usage of NSError parameters.
-
-.. code-block:: objc
-
- @interface A : NSObject
- - (void)foo:(NSError """""""""""""""""""""""")error;
- @end
-
- @implementation A
- - (void)foo:(NSError """""""""""""""""""""""")error {
-   // warn: method accepting NSError"""""""""""""""""""""""" should have a non-void
-   // return value
- }
- @end
-
- @interface A : NSObject
- - (BOOL)foo:(NSError """""""""""""""""""""""")error;
- @end
-
- @implementation A
- - (BOOL)foo:(NSError """""""""""""""""""""""")error {
-   *error = 0; // warn: potential null dereference
-   return 0;
- }
- @end
-
-osx.cocoa.NilArg (ObjC)
-"""""""""""""""""""""""
-Check for prohibited nil arguments to ObjC method calls.
-
- - caseInsensitiveCompare:
- - compare:
- - compare:options:
- - compare:options:range:
- - compare:options:range:locale:
- - componentsSeparatedByCharactersInSet:
- - initWithFormat:
-
-.. code-block:: objc
-
- NSComparisonResult test(NSString *s) {
-   NSString *aString = nil;
-   return [s caseInsensitiveCompare:aString];
-     // warn: argument to 'NSString' method
-     // 'caseInsensitiveCompare:' cannot be nil
- }
-
-
-osx.cocoa.NonNilReturnValue
-"""""""""""""""""""""""""""
-Models the APIs that are guaranteed to return a non-nil value.
-
-osx.cocoa.ObjCGenerics (ObjC)
-"""""""""""""""""""""""""""""
-Check for type errors when using Objective-C generics.
-
-.. code-block:: objc
-
- NSMutableArray *names = [NSMutableArray array];
- NSMutableArray *birthDates = names;
-
- // Warning: Conversion from value of type 'NSDate *'
- // to incompatible type 'NSString *'
- [birthDates addObject: [NSDate date]];
-
-osx.cocoa.RetainCount (ObjC)
-""""""""""""""""""""""""""""
-Check for leaks and improper reference count management
-
-.. code-block:: objc
-
- void test() {
-   NSString *s = [[NSString alloc] init]; // warn
- }
-
- CFStringRef test(char *bytes) {
-   return CFStringCreateWithCStringNoCopy(
-            0, bytes, NSNEXTSTEPStringEncoding, 0); // warn
- }
-
-
-osx.cocoa.RunLoopAutoreleaseLeak
-""""""""""""""""""""""""""""""""
-Check for leaked memory in autorelease pools that will never be drained.
-
-osx.cocoa.SelfInit (ObjC)
-"""""""""""""""""""""""""
-Check that 'self' is properly initialized inside an initializer method.
-
-.. code-block:: objc
-
- @interface MyObj : NSObject {
-   id x;
- }
- - (id)init;
- @end
-
- @implementation MyObj
- - (id)init {
-   [super init];
-   x = 0; // warn: instance variable used while 'self' is not
-          // initialized
-   return 0;
- }
- @end
-
- @interface MyObj : NSObject
- - (id)init;
- @end
-
- @implementation MyObj
- - (id)init {
-   [super init];
-   return self; // warn: returning uninitialized 'self'
- }
- @end
-
-osx.cocoa.SuperDealloc (ObjC)
-"""""""""""""""""""""""""""""
-Warn about improper use of '[super dealloc]' in Objective-C.
-
-.. code-block:: objc
-
- @interface SuperDeallocThenReleaseIvarClass : NSObject {
-   NSObject *_ivar;
- }
- @end
-
- @implementation SuperDeallocThenReleaseIvarClass
- - (void)dealloc {
-   [super dealloc];
-   [_ivar release]; // warn
- }
- @end
-
-osx.cocoa.UnusedIvars (ObjC)
-""""""""""""""""""""""""""""
-Warn about private ivars that are never used.
-
-.. code-block:: objc
-
- @interface MyObj : NSObject {
- @private
-   id x; // warn
- }
- @end
-
- @implementation MyObj
- @end
-
-osx.cocoa.VariadicMethodTypes (ObjC)
-""""""""""""""""""""""""""""""""""""
-Check for passing non-Objective-C types to variadic collection
-initialization methods that expect only Objective-C types.
-
-.. code-block:: objc
-
- void test() {
-   [NSSet setWithObjects:@"Foo", "Bar", nil];
-     // warn: argument should be an ObjC pointer type, not 'char *'
- }
-
-osx.coreFoundation.CFError (C)
-""""""""""""""""""""""""""""""
-Check usage of CFErrorRef* parameters
-
-.. code-block:: c
-
- void test(CFErrorRef *error) {
-   // warn: function accepting CFErrorRef* should have a
-   // non-void return
- }
-
- int foo(CFErrorRef *error) {
-   *error = 0; // warn: potential null dereference
-   return 0;
- }
-
-osx.coreFoundation.CFNumber (C)
-"""""""""""""""""""""""""""""""
-Check for proper uses of CFNumber APIs.
-
-.. code-block:: c
-
- CFNumberRef test(unsigned char x) {
-   return CFNumberCreate(0, kCFNumberSInt16Type, &x);
-    // warn: 8 bit integer is used to initialize a 16 bit integer
- }
-
-osx.coreFoundation.CFRetainRelease (C)
-""""""""""""""""""""""""""""""""""""""
-Check for null arguments to CFRetain/CFRelease/CFMakeCollectable.
-
-.. code-block:: c
-
- void test(CFTypeRef p) {
-   if (!p)
-     CFRetain(p); // warn
- }
-
- void test(int x, CFTypeRef p) {
-   if (p)
-     return;
-
-   CFRelease(p); // warn
- }
-
-osx.coreFoundation.containers.OutOfBounds (C)
-"""""""""""""""""""""""""""""""""""""""""""""
-Checks for index out-of-bounds when using 'CFArray' API.
-
-.. code-block:: c
-
- void test() {
-   CFArrayRef A = CFArrayCreate(0, 0, 0, &kCFTypeArrayCallBacks);
-   CFArrayGetValueAtIndex(A, 0); // warn
- }
-
-osx.coreFoundation.containers.PointerSizedValues (C)
-""""""""""""""""""""""""""""""""""""""""""""""""""""
-Warns if 'CFArray', 'CFDictionary', 'CFSet' are created with non-pointer-size values.
-
-.. code-block:: c
-
- void test() {
-   int x[] = { 1 };
-   CFArrayRef A = CFArrayCreate(0, (const void """""""""""""""""""""""")x, 1,
-                                &kCFTypeArrayCallBacks); // warn
- }
-
-
-.. _alpha-checkers:
-
-Experimental Checkers
----------------------
-
-*These are checkers with known issues or limitations that keep them from being on by default. They are likely to have false positives. Bug reports and especially patches are welcome.*
-
-alpha.clone
-^^^^^^^^^^^
-
-alpha.clone.CloneChecker (C, C++, ObjC)
-"""""""""""""""""""""""""""""""""""""""
-Reports similar pieces of code.
-
-.. code-block:: c
-
- void log();
-
- int max(int a, int b) { // warn
-   log();
-   if (a > b)
-     return a;
-   return b;
- }
-
- int maxClone(int x, int y) { // similar code here
-   log();
-   if (x > y)
-     return x;
-   return y;
- }
-
-alpha.core.BoolAssignment (ObjC)
-""""""""""""""""""""""""""""""""
-Warn about assigning non-{0,1} values to boolean variables.
-
-.. code-block:: objc
-
- void test() {
-   BOOL b = -1; // warn
- }
-
-alpha.core
-^^^^^^^^^^
-
-alpha.core.CallAndMessageUnInitRefArg (C,C++, ObjC)
-"""""""""""""""""""""""""""""""""""""""""""""""""""
-Check for logical errors for function calls and Objective-C
-message expressions (e.g., uninitialized arguments, null function pointers, and pointer to undefined variables).
-
-.. code-block:: c
-
- void test(void) {
-   int t;
-   int &p = t;
-   int &s = p;
-   int &q = s;
-   foo(q); // warn
- }
-
- void test(void) {
-   int x;
-   foo(&x); // warn
- }
-
-alpha.core.CastSize (C)
-"""""""""""""""""""""""
-Check when casting a malloc'ed type ``T``, whether the size is a multiple of the size of ``T``.
-
-.. code-block:: c
-
- void test() {
-   int *x = (int *) malloc(11); // warn
- }
-
-alpha.core.CastToStruct (C, C++)
-""""""""""""""""""""""""""""""""
-Check for cast from non-struct pointer to struct pointer.
-
-.. code-block:: cpp
-
- // C
- struct s {};
-
- void test(int *p) {
-   struct s *ps = (struct s *) p; // warn
- }
-
- // C++
- class c {};
-
- void test(int *p) {
-   c *pc = (c *) p; // warn
- }
-
-alpha.core.Conversion (C, C++, ObjC)
-""""""""""""""""""""""""""""""""""""
-Loss of sign/precision in implicit conversions.
-
-.. code-block:: c
-
- void test(unsigned U, signed S) {
-   if (S > 10) {
-     if (U < S) {
-     }
-   }
-   if (S < -10) {
-     if (U < S) { // warn (loss of sign)
-     }
-   }
- }
-
- void test() {
-   long long A = 1LL << 60;
-   short X = A; // warn (loss of precision)
- }
-
-alpha.core.DynamicTypeChecker (ObjC)
-""""""""""""""""""""""""""""""""""""
-Check for cases where the dynamic and the static type of an object are unrelated.
-
-
-.. code-block:: objc
-
- id date = [NSDate date];
-
- // Warning: Object has a dynamic type 'NSDate *' which is
- // incompatible with static type 'NSNumber *'"
- NSNumber *number = date;
- [number doubleValue];
-
-alpha.core.FixedAddr (C)
-""""""""""""""""""""""""
-Check for assignment of a fixed address to a pointer.
-
-.. code-block:: c
-
- void test() {
-   int *p;
-   p = (int *) 0x10000; // warn
- }
-
-alpha.core.IdenticalExpr (C, C++)
-"""""""""""""""""""""""""""""""""
-Warn about unintended use of identical expressions in operators.
-
-.. code-block:: cpp
-
- // C
- void test() {
-   int a = 5;
-   int b = a | 4 | a; // warn: identical expr on both sides
- }
-
- // C++
- bool f(void);
-
- void test(bool b) {
-   int i = 10;
-   if (f()) { // warn: true and false branches are identical
-     do {
-       i--;
-     } while (f());
-   } else {
-     do {
-       i--;
-     } while (f());
-   }
- }
-
-alpha.core.PointerArithm (C)
-""""""""""""""""""""""""""""
-Check for pointer arithmetic on locations other than array elements.
-
-.. code-block:: c
-
- void test() {
-   int x;
-   int *p;
-   p = &x + 1; // warn
- }
-
-alpha.core.PointerSub (C)
-"""""""""""""""""""""""""
-Check for pointer subtractions on two pointers pointing to different memory chunks.
-
-.. code-block:: c
-
- void test() {
-   int x, y;
-   int d = &y - &x; // warn
- }
-
-alpha.core.SizeofPtr (C)
-""""""""""""""""""""""""
-Warn about unintended use of ``sizeof()`` on pointer expressions.
-
-.. code-block:: c
-
- struct s {};
-
- int test(struct s *p) {
-   return sizeof(p);
-     // warn: sizeof(ptr) can produce an unexpected result
- }
-
-alpha.core.StackAddressAsyncEscape (C)
-""""""""""""""""""""""""""""""""""""""
-Check that addresses to stack memory do not escape the function that involves dispatch_after or dispatch_async.
-This checker is a part of ``core.StackAddressEscape``, but is temporarily disabled until some false positives are fixed.
-
-.. code-block:: c
-
- dispatch_block_t test_block_inside_block_async_leak() {
-   int x = 123;
-   void (^inner)(void) = ^void(void) {
-     int y = x;
-     ++y;
-   };
-   void (^outer)(void) = ^void(void) {
-     int z = x;
-     ++z;
-     inner();
-   };
-   return outer; // warn: address of stack-allocated block is captured by a
-                 //       returned block
- }
-
-alpha.core.TestAfterDivZero (C)
-"""""""""""""""""""""""""""""""
-Check for division by variable that is later compared against 0.
-Either the comparison is useless or there is division by zero.
-
-.. code-block:: c
-
- void test(int x) {
-   var = 77 / x;
-   if (x == 0) { } // warn
- }
-
-alpha.cplusplus
-^^^^^^^^^^^^^^^
-
-alpha.cplusplus.DeleteWithNonVirtualDtor (C++)
-""""""""""""""""""""""""""""""""""""""""""""""
-Reports destructions of polymorphic objects with a non-virtual destructor in their base class.
-
-.. code-block:: cpp
-
- NonVirtual *create() {
-   NonVirtual *x = new NVDerived(); // note: conversion from derived to base
-                                    //       happened here
-   return x;
- }
-
- void sink(NonVirtual *x) {
-   delete x; // warn: destruction of a polymorphic object with no virtual
-             //       destructor
- }
-
-alpha.cplusplus.EnumCastOutOfRange (C++)
-""""""""""""""""""""""""""""""""""""""""
-Check for integer to enumeration casts that could result in undefined values.
-
-.. code-block:: cpp
-
- enum TestEnum {
-   A = 0
- };
-
- void foo() {
-   TestEnum t = static_cast(-1);
-       // warn: the value provided to the cast expression is not in
-                the valid range of values for the enum
-
-alpha.cplusplus.InvalidatedIterator (C++)
-"""""""""""""""""""""""""""""""""""""""""
-Check for use of invalidated iterators.
-
-.. code-block:: cpp
-
- void bad_copy_assign_operator_list1(std::list &L1,
-                                     const std::list &L2) {
-   auto i0 = L1.cbegin();
-   L1 = L2;
-   *i0; // warn: invalidated iterator accessed
- }
-
-
-alpha.cplusplus.IteratorRange (C++)
-"""""""""""""""""""""""""""""""""""
-Check for iterators used outside their valid ranges.
-
-.. code-block:: cpp
-
- void simple_bad_end(const std::vector &v) {
-   auto i = v.end();
-   *i; // warn: iterator accessed outside of its range
- }
-
-alpha.cplusplus.MismatchedIterator (C++)
-""""""""""""""""""""""""""""""""""""""""
-Check for use of iterators of different containers where iterators of the same container are expected.
-
-.. code-block:: cpp
-
- void bad_insert3(std::vector &v1, std::vector &v2) {
-   v2.insert(v1.cbegin(), v2.cbegin(), v2.cend()); // warn: container accessed
-                                                   //       using foreign
-                                                   //       iterator argument
-   v1.insert(v1.cbegin(), v1.cbegin(), v2.cend()); // warn: iterators of
-                                                   //       different containers
-                                                   //       used where the same
-                                                   //       container is
-                                                   //       expected
-   v1.insert(v1.cbegin(), v2.cbegin(), v1.cend()); // warn: iterators of
-                                                   //       different containers
-                                                   //       used where the same
-                                                   //       container is
-                                                   //       expected
- }
-
-alpha.cplusplus.MisusedMovedObject (C++)
-""""""""""""""""""""""""""""""""""""""""
-Method calls on a moved-from object and copying a moved-from object will be reported.
-
-
-.. code-block:: cpp
-
-  struct A {
-   void foo() {}
- };
-
- void f() {
-   A a;
-   A b = std::move(a); // note: 'a' became 'moved-from' here
-   a.foo();            // warn: method call on a 'moved-from' object 'a'
- }
-
-alpha.cplusplus.UninitializedObject (C++)
+optin.cplusplus.UninitializedObject (C++)
 """""""""""""""""""""""""""""""""""""""""
 
-This checker reports uninitialized fields in objects created after a constructor call.
-It doesn't only find direct uninitialized fields, but rather makes a deep inspection
-of the object, analyzing all of it's fields subfields.
-The checker regards inherited fields as direct fields, so one will
-recieve warnings for uninitialized inherited data members as well.
+This checker reports uninitialized fields in objects created after a constructor
+call. It doesn't only find direct uninitialized fields, but rather makes a deep
+inspection of the object, analyzing all of it's fields subfields.
+The checker regards inherited fields as direct fields, so one will recieve
+warnings for uninitialized inherited data members as well.
 
 .. code-block:: cpp
 
@@ -1468,19 +470,1221 @@ recieve warnings for uninitialized inherited data members as well.
 
 **Options**
 
-This checker has several options which can be set from command line (e.g. ``-analyzer-config alpha.cplusplus.UninitializedObject:Pedantic=true``):
+This checker has several options which can be set from command line (e.g.
+``-analyzer-config optin.cplusplus.UninitializedObject:Pedantic=true``):
 
-* ``Pedantic`` (boolean). If to false, the checker won't emit warnings for objects that don't have at least one initialized field. Defaults to false.
+* ``Pedantic`` (boolean). If to false, the checker won't emit warnings for
+  objects that don't have at least one initialized field. Defaults to false.
 
-* ``NotesAsWarnings``  (boolean). If set to true, the checker will emit a warning for each uninitalized field, as opposed to emitting one warning per constructor call, and listing the uninitialized fields that belongs to it in notes. *Defaults to false.*.
+* ``NotesAsWarnings``  (boolean). If set to true, the checker will emit a
+  warning for each uninitalized field, as opposed to emitting one warning per
+  constructor call, and listing the uninitialized fields that belongs to it in
+  notes. *Defaults to false*.
 
-* ``CheckPointeeInitialization`` (boolean). If set to false, the checker will not analyze the pointee of pointer/reference fields, and will only check whether the object itself is initialized. *Defaults to false.*.
+* ``CheckPointeeInitialization`` (boolean). If set to false, the checker will
+  not analyze the pointee of pointer/reference fields, and will only check
+  whether the object itself is initialized. *Defaults to false*.
 
-* ``IgnoreRecordsWithField`` (string). If supplied, the checker will not analyze  structures that have a field with a name or type name that matches  the given pattern. *Defaults to ""*.  Can be set with ``-analyzer-config alpha.cplusplus.UninitializedObject:IgnoreRecordsWithField="[Tt]ag|[Kk]ind"``.
+* ``IgnoreRecordsWithField`` (string). If supplied, the checker will not analyze
+  structures that have a field with a name or type name that matches  the given
+  pattern. *Defaults to ""*.
 
+.. _optin-cplusplus-VirtualCall:
+
+optin.cplusplus.VirtualCall (C++)
+"""""""""""""""""""""""""""""""""
+Check virtual function calls during construction or destruction.
+
+.. code-block:: cpp
+
+ class A {
+ public:
+   A() {
+     f(); // warn
+   }
+   virtual void f();
+ };
+
+ class A {
+ public:
+   ~A() {
+     this->f(); // warn
+   }
+   virtual void f();
+ };
+
+.. _optin-mpi-MPI-Checker:
+
+optin.mpi.MPI-Checker (C)
+"""""""""""""""""""""""""
+Checks MPI code.
+
+.. code-block:: c
+
+ void test() {
+   double buf = 0;
+   MPI_Request sendReq1;
+   MPI_Ireduce(MPI_IN_PLACE, &buf, 1, MPI_DOUBLE, MPI_SUM,
+       0, MPI_COMM_WORLD, &sendReq1);
+ } // warn: request 'sendReq1' has no matching wait.
+
+ void test() {
+   double buf = 0;
+   MPI_Request sendReq;
+   MPI_Isend(&buf, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, &sendReq);
+   MPI_Irecv(&buf, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, &sendReq); // warn
+   MPI_Isend(&buf, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, &sendReq); // warn
+   MPI_Wait(&sendReq, MPI_STATUS_IGNORE);
+ }
+
+ void missingNonBlocking() {
+   int rank = 0;
+   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+   MPI_Request sendReq1[10][10][10];
+   MPI_Wait(&sendReq1[1][7][9], MPI_STATUS_IGNORE); // warn
+ }
+
+.. _optin-osx-cocoa-localizability-EmptyLocalizationContextChecker:
+
+optin.osx.cocoa.localizability.EmptyLocalizationContextChecker (ObjC)
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+Check that NSLocalizedString macros include a comment for context.
+
+.. code-block:: objc
+
+ - (void)test {
+   NSString *string = NSLocalizedString(@"LocalizedString", nil); // warn
+   NSString *string2 = NSLocalizedString(@"LocalizedString", @" "); // warn
+   NSString *string3 = NSLocalizedStringWithDefaultValue(
+     @"LocalizedString", nil, [[NSBundle alloc] init], nil,@""); // warn
+ }
+
+.. _optin-osx-cocoa-localizability-NonLocalizedStringChecker:
+
+optin.osx.cocoa.localizability.NonLocalizedStringChecker (ObjC)
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+Warns about uses of non-localized NSStrings passed to UI methods expecting localized NSStrings.
+
+.. code-block:: objc
+
+ NSString *alarmText =
+   NSLocalizedString(@"Enabled", @"Indicates alarm is turned on");
+ if (!isEnabled) {
+   alarmText = @"Disabled";
+ }
+ UILabel *alarmStateLabel = [[UILabel alloc] init];
+
+ // Warning: User-facing text should use localized string macro
+ [alarmStateLabel setText:alarmText];
+
+.. _optin-performance-GCDAntipattern:
+
+optin.performance.GCDAntipattern
+""""""""""""""""""""""""""""""""
+Check for performance anti-patterns when using Grand Central Dispatch.
+
+.. _optin-performance-Padding:
+
+optin.performance.Padding
+"""""""""""""""""""""""""
+Check for excessively padded structs.
+
+.. _optin-portability-UnixAPI:
+
+optin.portability.UnixAPI
+"""""""""""""""""""""""""
+Finds implementation-defined behavior in UNIX/Posix functions.
+
+
+.. _security-checkers:
+
+security
+^^^^^^^^
+
+Security related checkers.
+
+.. _security-FloatLoopCounter:
+
+security.FloatLoopCounter (C)
+"""""""""""""""""""""""""""""
+Warn on using a floating point value as a loop counter (CERT: FLP30-C, FLP30-CPP).
+
+.. code-block:: c
+
+ void test() {
+   for (float x = 0.1f; x <= 1.0f; x += 0.1f) {} // warn
+ }
+
+.. _security-insecureAPI-UncheckedReturn:
+
+security.insecureAPI.UncheckedReturn (C)
+""""""""""""""""""""""""""""""""""""""""
+Warn on uses of functions whose return values must be always checked.
+
+.. code-block:: c
+
+ void test() {
+   setuid(1); // warn
+ }
+
+.. _security-insecureAPI-bcmp:
+
+security.insecureAPI.bcmp (C)
+"""""""""""""""""""""""""""""
+Warn on uses of the 'bcmp' function.
+
+.. code-block:: c
+
+ void test() {
+   bcmp(ptr0, ptr1, n); // warn
+ }
+
+.. _security-insecureAPI-bcopy:
+
+security.insecureAPI.bcopy (C)
+""""""""""""""""""""""""""""""
+Warn on uses of the 'bcopy' function.
+
+.. code-block:: c
+
+ void test() {
+   bcopy(src, dst, n); // warn
+ }
+
+.. _security-insecureAPI-bzero:
+
+security.insecureAPI.bzero (C)
+""""""""""""""""""""""""""""""
+Warn on uses of the 'bzero' function.
+
+.. code-block:: c
+
+ void test() {
+   bzero(ptr, n); // warn
+ }
+
+.. _security-insecureAPI-getpw:
+
+security.insecureAPI.getpw (C)
+""""""""""""""""""""""""""""""
+Warn on uses of the 'getpw' function.
+
+.. code-block:: c
+
+ void test() {
+   char buff[1024];
+   getpw(2, buff); // warn
+ }
+
+.. _security-insecureAPI-gets:
+
+security.insecureAPI.gets (C)
+"""""""""""""""""""""""""""""
+Warn on uses of the 'gets' function.
+
+.. code-block:: c
+
+ void test() {
+   char buff[1024];
+   gets(buff); // warn
+ }
+
+.. _security-insecureAPI-mkstemp:
+
+security.insecureAPI.mkstemp (C)
+""""""""""""""""""""""""""""""""
+Warn when 'mkstemp' is passed fewer than 6 X's in the format string.
+
+.. code-block:: c
+
+ void test() {
+   mkstemp("XX"); // warn
+ }
+
+.. _security-insecureAPI-mktemp:
+
+security.insecureAPI.mktemp (C)
+"""""""""""""""""""""""""""""""
+Warn on uses of the ``mktemp`` function.
+
+.. code-block:: c
+
+ void test() {
+   char *x = mktemp("/tmp/zxcv"); // warn: insecure, use mkstemp
+ }
+
+.. _security-insecureAPI-rand:
+
+security.insecureAPI.rand (C)
+"""""""""""""""""""""""""""""
+Warn on uses of inferior random number generating functions (only if arc4random function is available):
+``drand48, erand48, jrand48, lcong48, lrand48, mrand48, nrand48, random, rand_r``.
+
+.. code-block:: c
+
+ void test() {
+   random(); // warn
+ }
+
+.. _security-insecureAPI-strcpy:
+
+security.insecureAPI.strcpy (C)
+"""""""""""""""""""""""""""""""
+Warn on uses of the ``strcpy`` and ``strcat`` functions.
+
+.. code-block:: c
+
+ void test() {
+   char x[4];
+   char *y = "abcd";
+
+   strcpy(x, y); // warn
+ }
+
+
+.. _security-insecureAPI-vfork:
+
+security.insecureAPI.vfork (C)
+""""""""""""""""""""""""""""""
+ Warn on uses of the 'vfork' function.
+
+.. code-block:: c
+
+ void test() {
+   vfork(); // warn
+ }
+
+.. _security-insecureAPI-DeprecatedOrUnsafeBufferHandling:
+
+security.insecureAPI.DeprecatedOrUnsafeBufferHandling (C)
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+ Warn on occurrences of unsafe or deprecated buffer handling functions, which now have a secure variant: ``sprintf, vsprintf, scanf, wscanf, fscanf, fwscanf, vscanf, vwscanf, vfscanf, vfwscanf, sscanf, swscanf, vsscanf, vswscanf, swprintf, snprintf, vswprintf, vsnprintf, memcpy, memmove, strncpy, strncat, memset``
+
+.. code-block:: c
+
+ void test() {
+   char buf [5];
+   strncpy(buf, "a", 1); // warn
+ }
+
+.. _unix-checkers:
+
+unix
+^^^^
+POSIX/Unix checkers.
+
+.. _unix-API:
+
+unix.API (C)
+""""""""""""
+Check calls to various UNIX/Posix functions: ``open, pthread_once, calloc, malloc, realloc, alloca``.
+
+.. literalinclude:: checkers/unix_api_example.c
+    :language: c
+
+.. _unix-Malloc:
+
+unix.Malloc (C)
+"""""""""""""""
+Check for memory leaks, double free, and use-after-free problems. Traces memory managed by malloc()/free().
+
+.. literalinclude:: checkers/unix_malloc_example.c
+    :language: c
+
+.. _unix-MallocSizeof:
+
+unix.MallocSizeof (C)
+"""""""""""""""""""""
+Check for dubious ``malloc`` arguments involving ``sizeof``.
+
+.. code-block:: c
+
+ void test() {
+   long *p = malloc(sizeof(short));
+     // warn: result is converted to 'long *', which is
+     // incompatible with operand type 'short'
+   free(p);
+ }
+
+.. _unix-MismatchedDeallocator:
+
+unix.MismatchedDeallocator (C, C++)
+"""""""""""""""""""""""""""""""""""
+Check for mismatched deallocators.
+
+.. literalinclude:: checkers/mismatched_deallocator_example.cpp
+    :language: c
+
+.. _unix-Vfork:
+
+unix.Vfork (C)
+""""""""""""""
+Check for proper usage of ``vfork``.
+
+.. code-block:: c
+
+ int test(int x) {
+   pid_t pid = vfork(); // warn
+   if (pid != 0)
+     return 0;
+
+   switch (x) {
+   case 0:
+     pid = 1;
+     execl("", "", 0);
+     _exit(1);
+     break;
+   case 1:
+     x = 0; // warn: this assignment is prohibited
+     break;
+   case 2:
+     foo(); // warn: this function call is prohibited
+     break;
+   default:
+     return 0; // warn: return is prohibited
+   }
+
+   while(1);
+ }
+
+.. _unix-cstring-BadSizeArg:
+
+unix.cstring.BadSizeArg (C)
+"""""""""""""""""""""""""""
+Check the size argument passed into C string functions for common erroneous patterns. Use ``-Wno-strncat-size`` compiler option to mute other ``strncat``-related compiler warnings.
+
+.. code-block:: c
+
+ void test() {
+   char dest[3];
+   strncat(dest, """""""""""""""""""""""""*", sizeof(dest));
+     // warn: potential buffer overflow
+ }
+
+.. _unix-cstrisng-NullArg:
+
+unix.cstrisng.NullArg (C)
+"""""""""""""""""""""""""
+Check for null pointers being passed as arguments to C string functions:
+``strlen, strnlen, strcpy, strncpy, strcat, strncat, strcmp, strncmp, strcasecmp, strncasecmp``.
+
+.. code-block:: c
+
+ int test() {
+   return strlen(0); // warn
+ }
+
+.. _osx-checkers:
+
+osx
+^^^
+macOS checkers.
+
+.. _osx-API:
+
+osx.API (C)
+"""""""""""
+Check for proper uses of various Apple APIs.
+
+.. code-block:: objc
+
+ void test() {
+   dispatch_once_t pred = 0;
+   dispatch_once(&pred, ^(){}); // warn: dispatch_once uses local
+ }
+
+.. _osx-NumberObjectConversion:
+
+osx.NumberObjectConversion (C, C++, ObjC)
+"""""""""""""""""""""""""""""""""""""""""
+Check for erroneous conversions of objects representing numbers into numbers.
+
+.. code-block:: objc
+
+ NSNumber *photoCount = [albumDescriptor objectForKey:@"PhotoCount"];
+ // Warning: Comparing a pointer value of type 'NSNumber *'
+ // to a scalar integer value
+ if (photoCount > 0) {
+   [self displayPhotos];
+ }
+
+.. _osx-ObjCProperty:
+
+osx.ObjCProperty (ObjC)
+"""""""""""""""""""""""
+Check for proper uses of Objective-C properties.
+
+.. code-block:: objc
+
+ NSNumber *photoCount = [albumDescriptor objectForKey:@"PhotoCount"];
+ // Warning: Comparing a pointer value of type 'NSNumber *'
+ // to a scalar integer value
+ if (photoCount > 0) {
+   [self displayPhotos];
+ }
+
+
+.. _osx-SecKeychainAPI:
+
+osx.SecKeychainAPI (C)
+""""""""""""""""""""""
+Check for proper uses of Secure Keychain APIs.
+
+.. literalinclude:: checkers/seckeychainapi_example.m
+    :language: objc
+
+.. _osx-cocoa-AtSync:
+
+osx.cocoa.AtSync (ObjC)
+"""""""""""""""""""""""
+Check for nil pointers used as mutexes for @synchronized.
+
+.. code-block:: objc
+
+ void test(id x) {
+   if (!x)
+     @synchronized(x) {} // warn: nil value used as mutex
+ }
+
+ void test() {
+   id y;
+   @synchronized(y) {} // warn: uninitialized value used as mutex
+ }
+
+.. _osx-cocoa-AutoreleaseWrite:
+
+osx.cocoa.AutoreleaseWrite
+""""""""""""""""""""""""""
+Warn about potentially crashing writes to autoreleasing objects from different autoreleasing pools in Objective-C.
+
+.. _osx-cocoa-ClassRelease:
+
+osx.cocoa.ClassRelease (ObjC)
+"""""""""""""""""""""""""""""
+Check for sending 'retain', 'release', or 'autorelease' directly to a Class.
+
+.. code-block:: objc
+
+ @interface MyClass : NSObject
+ @end
+
+ void test(void) {
+   [MyClass release]; // warn
+ }
+
+.. _osx-cocoa-Dealloc:
+
+osx.cocoa.Dealloc (ObjC)
+""""""""""""""""""""""""
+Warn about Objective-C classes that lack a correct implementation of -dealloc
+
+.. literalinclude:: checkers/dealloc_example.m
+    :language: objc
+
+.. _osx-cocoa-IncompatibleMethodTypes:
+
+osx.cocoa.IncompatibleMethodTypes (ObjC)
+""""""""""""""""""""""""""""""""""""""""
+Warn about Objective-C method signatures with type incompatibilities.
+
+.. code-block:: objc
+
+ @interface MyClass1 : NSObject
+ - (int)foo;
+ @end
+
+ @implementation MyClass1
+ - (int)foo { return 1; }
+ @end
+
+ @interface MyClass2 : MyClass1
+ - (float)foo;
+ @end
+
+ @implementation MyClass2
+ - (float)foo { return 1.0; } // warn
+ @end
+
+.. _osx-cocoa-Loops:
+
+osx.cocoa.Loops
+"""""""""""""""
+Improved modeling of loops using Cocoa collection types.
+
+.. _osx-cocoa-MissingSuperCall:
+
+osx.cocoa.MissingSuperCall (ObjC)
+"""""""""""""""""""""""""""""""""
+Warn about Objective-C methods that lack a necessary call to super.
+
+.. code-block:: objc
+
+ @interface Test : UIViewController
+ @end
+ @implementation test
+ - (void)viewDidLoad {} // warn
+ @end
+
+
+.. _osx-cocoa-NSAutoreleasePool:
+
+osx.cocoa.NSAutoreleasePool (ObjC)
+""""""""""""""""""""""""""""""""""
+Warn for suboptimal uses of NSAutoreleasePool in Objective-C GC mode.
+
+.. code-block:: objc
+
+ void test() {
+   NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+   [pool release]; // warn
+ }
+
+.. _osx-cocoa-NSError:
+
+osx.cocoa.NSError (ObjC)
+""""""""""""""""""""""""
+Check usage of NSError parameters.
+
+.. code-block:: objc
+
+ @interface A : NSObject
+ - (void)foo:(NSError """""""""""""""""""""""")error;
+ @end
+
+ @implementation A
+ - (void)foo:(NSError """""""""""""""""""""""")error {
+   // warn: method accepting NSError"""""""""""""""""""""""" should have a non-void
+   // return value
+ }
+ @end
+
+ @interface A : NSObject
+ - (BOOL)foo:(NSError """""""""""""""""""""""")error;
+ @end
+
+ @implementation A
+ - (BOOL)foo:(NSError """""""""""""""""""""""")error {
+   *error = 0; // warn: potential null dereference
+   return 0;
+ }
+ @end
+
+.. _osx-cocoa-NilArg:
+
+osx.cocoa.NilArg (ObjC)
+"""""""""""""""""""""""
+Check for prohibited nil arguments to ObjC method calls.
+
+ - caseInsensitiveCompare:
+ - compare:
+ - compare:options:
+ - compare:options:range:
+ - compare:options:range:locale:
+ - componentsSeparatedByCharactersInSet:
+ - initWithFormat:
+
+.. code-block:: objc
+
+ NSComparisonResult test(NSString *s) {
+   NSString *aString = nil;
+   return [s caseInsensitiveCompare:aString];
+     // warn: argument to 'NSString' method
+     // 'caseInsensitiveCompare:' cannot be nil
+ }
+
+
+.. _osx-cocoa-NonNilReturnValue:
+
+osx.cocoa.NonNilReturnValue
+"""""""""""""""""""""""""""
+Models the APIs that are guaranteed to return a non-nil value.
+
+.. _osx-cocoa-ObjCGenerics:
+
+osx.cocoa.ObjCGenerics (ObjC)
+"""""""""""""""""""""""""""""
+Check for type errors when using Objective-C generics.
+
+.. code-block:: objc
+
+ NSMutableArray *names = [NSMutableArray array];
+ NSMutableArray *birthDates = names;
+
+ // Warning: Conversion from value of type 'NSDate *'
+ // to incompatible type 'NSString *'
+ [birthDates addObject: [NSDate date]];
+
+.. _osx-cocoa-RetainCount:
+
+osx.cocoa.RetainCount (ObjC)
+""""""""""""""""""""""""""""
+Check for leaks and improper reference count management
+
+.. code-block:: objc
+
+ void test() {
+   NSString *s = [[NSString alloc] init]; // warn
+ }
+
+ CFStringRef test(char *bytes) {
+   return CFStringCreateWithCStringNoCopy(
+            0, bytes, NSNEXTSTEPStringEncoding, 0); // warn
+ }
+
+
+.. _osx-cocoa-RunLoopAutoreleaseLeak:
+
+osx.cocoa.RunLoopAutoreleaseLeak
+""""""""""""""""""""""""""""""""
+Check for leaked memory in autorelease pools that will never be drained.
+
+.. _osx-cocoa-SelfInit:
+
+osx.cocoa.SelfInit (ObjC)
+"""""""""""""""""""""""""
+Check that 'self' is properly initialized inside an initializer method.
+
+.. code-block:: objc
+
+ @interface MyObj : NSObject {
+   id x;
+ }
+ - (id)init;
+ @end
+
+ @implementation MyObj
+ - (id)init {
+   [super init];
+   x = 0; // warn: instance variable used while 'self' is not
+          // initialized
+   return 0;
+ }
+ @end
+
+ @interface MyObj : NSObject
+ - (id)init;
+ @end
+
+ @implementation MyObj
+ - (id)init {
+   [super init];
+   return self; // warn: returning uninitialized 'self'
+ }
+ @end
+
+.. _osx-cocoa-SuperDealloc:
+
+osx.cocoa.SuperDealloc (ObjC)
+"""""""""""""""""""""""""""""
+Warn about improper use of '[super dealloc]' in Objective-C.
+
+.. code-block:: objc
+
+ @interface SuperDeallocThenReleaseIvarClass : NSObject {
+   NSObject *_ivar;
+ }
+ @end
+
+ @implementation SuperDeallocThenReleaseIvarClass
+ - (void)dealloc {
+   [super dealloc];
+   [_ivar release]; // warn
+ }
+ @end
+
+.. _osx-cocoa-UnusedIvars:
+
+osx.cocoa.UnusedIvars (ObjC)
+""""""""""""""""""""""""""""
+Warn about private ivars that are never used.
+
+.. code-block:: objc
+
+ @interface MyObj : NSObject {
+ @private
+   id x; // warn
+ }
+ @end
+
+ @implementation MyObj
+ @end
+
+.. _osx-cocoa-VariadicMethodTypes:
+
+osx.cocoa.VariadicMethodTypes (ObjC)
+""""""""""""""""""""""""""""""""""""
+Check for passing non-Objective-C types to variadic collection
+initialization methods that expect only Objective-C types.
+
+.. code-block:: objc
+
+ void test() {
+   [NSSet setWithObjects:@"Foo", "Bar", nil];
+     // warn: argument should be an ObjC pointer type, not 'char *'
+ }
+
+.. _osx-coreFoundation-CFError:
+
+osx.coreFoundation.CFError (C)
+""""""""""""""""""""""""""""""
+Check usage of CFErrorRef* parameters
+
+.. code-block:: c
+
+ void test(CFErrorRef *error) {
+   // warn: function accepting CFErrorRef* should have a
+   // non-void return
+ }
+
+ int foo(CFErrorRef *error) {
+   *error = 0; // warn: potential null dereference
+   return 0;
+ }
+
+.. _osx-coreFoundation-CFNumber:
+
+osx.coreFoundation.CFNumber (C)
+"""""""""""""""""""""""""""""""
+Check for proper uses of CFNumber APIs.
+
+.. code-block:: c
+
+ CFNumberRef test(unsigned char x) {
+   return CFNumberCreate(0, kCFNumberSInt16Type, &x);
+    // warn: 8 bit integer is used to initialize a 16 bit integer
+ }
+
+.. _osx-coreFoundation-CFRetainRelease:
+
+osx.coreFoundation.CFRetainRelease (C)
+""""""""""""""""""""""""""""""""""""""
+Check for null arguments to CFRetain/CFRelease/CFMakeCollectable.
+
+.. code-block:: c
+
+ void test(CFTypeRef p) {
+   if (!p)
+     CFRetain(p); // warn
+ }
+
+ void test(int x, CFTypeRef p) {
+   if (p)
+     return;
+
+   CFRelease(p); // warn
+ }
+
+.. _osx-coreFoundation-containers-OutOfBounds:
+
+osx.coreFoundation.containers.OutOfBounds (C)
+"""""""""""""""""""""""""""""""""""""""""""""
+Checks for index out-of-bounds when using 'CFArray' API.
+
+.. code-block:: c
+
+ void test() {
+   CFArrayRef A = CFArrayCreate(0, 0, 0, &kCFTypeArrayCallBacks);
+   CFArrayGetValueAtIndex(A, 0); // warn
+ }
+
+.. _osx-coreFoundation-containers-PointerSizedValues:
+
+osx.coreFoundation.containers.PointerSizedValues (C)
+""""""""""""""""""""""""""""""""""""""""""""""""""""
+Warns if 'CFArray', 'CFDictionary', 'CFSet' are created with non-pointer-size values.
+
+.. code-block:: c
+
+ void test() {
+   int x[] = { 1 };
+   CFArrayRef A = CFArrayCreate(0, (const void """""""""""""""""""""""")x, 1,
+                                &kCFTypeArrayCallBacks); // warn
+ }
+
+
+.. _alpha-checkers:
+
+Experimental Checkers
+---------------------
+
+*These are checkers with known issues or limitations that keep them from being on by default. They are likely to have false positives. Bug reports and especially patches are welcome.*
+
+alpha.clone
+^^^^^^^^^^^
+
+.. _alpha-clone-CloneChecker:
+
+alpha.clone.CloneChecker (C, C++, ObjC)
+"""""""""""""""""""""""""""""""""""""""
+Reports similar pieces of code.
+
+.. code-block:: c
+
+ void log();
+
+ int max(int a, int b) { // warn
+   log();
+   if (a > b)
+     return a;
+   return b;
+ }
+
+ int maxClone(int x, int y) { // similar code here
+   log();
+   if (x > y)
+     return x;
+   return y;
+ }
+
+.. _alpha-core-BoolAssignment:
+
+alpha.core.BoolAssignment (ObjC)
+""""""""""""""""""""""""""""""""
+Warn about assigning non-{0,1} values to boolean variables.
+
+.. code-block:: objc
+
+ void test() {
+   BOOL b = -1; // warn
+ }
+
+alpha.core
+^^^^^^^^^^
+
+.. _alpha-core-CallAndMessageUnInitRefArg:
+
+alpha.core.CallAndMessageUnInitRefArg (C,C++, ObjC)
+"""""""""""""""""""""""""""""""""""""""""""""""""""
+Check for logical errors for function calls and Objective-C
+message expressions (e.g., uninitialized arguments, null function pointers, and pointer to undefined variables).
+
+.. code-block:: c
+
+ void test(void) {
+   int t;
+   int &p = t;
+   int &s = p;
+   int &q = s;
+   foo(q); // warn
+ }
+
+ void test(void) {
+   int x;
+   foo(&x); // warn
+ }
+
+.. _alpha-core-CastSize:
+
+alpha.core.CastSize (C)
+"""""""""""""""""""""""
+Check when casting a malloc'ed type ``T``, whether the size is a multiple of the size of ``T``.
+
+.. code-block:: c
+
+ void test() {
+   int *x = (int *) malloc(11); // warn
+ }
+
+.. _alpha-core-CastToStruct:
+
+alpha.core.CastToStruct (C, C++)
+""""""""""""""""""""""""""""""""
+Check for cast from non-struct pointer to struct pointer.
+
+.. code-block:: cpp
+
+ // C
+ struct s {};
+
+ void test(int *p) {
+   struct s *ps = (struct s *) p; // warn
+ }
+
+ // C++
+ class c {};
+
+ void test(int *p) {
+   c *pc = (c *) p; // warn
+ }
+
+.. _alpha-core-Conversion:
+
+alpha.core.Conversion (C, C++, ObjC)
+""""""""""""""""""""""""""""""""""""
+Loss of sign/precision in implicit conversions.
+
+.. code-block:: c
+
+ void test(unsigned U, signed S) {
+   if (S > 10) {
+     if (U < S) {
+     }
+   }
+   if (S < -10) {
+     if (U < S) { // warn (loss of sign)
+     }
+   }
+ }
+
+ void test() {
+   long long A = 1LL << 60;
+   short X = A; // warn (loss of precision)
+ }
+
+.. _alpha-core-DynamicTypeChecker:
+
+alpha.core.DynamicTypeChecker (ObjC)
+""""""""""""""""""""""""""""""""""""
+Check for cases where the dynamic and the static type of an object are unrelated.
+
+
+.. code-block:: objc
+
+ id date = [NSDate date];
+
+ // Warning: Object has a dynamic type 'NSDate *' which is
+ // incompatible with static type 'NSNumber *'"
+ NSNumber *number = date;
+ [number doubleValue];
+
+.. _alpha-core-FixedAddr:
+
+alpha.core.FixedAddr (C)
+""""""""""""""""""""""""
+Check for assignment of a fixed address to a pointer.
+
+.. code-block:: c
+
+ void test() {
+   int *p;
+   p = (int *) 0x10000; // warn
+ }
+
+.. _alpha-core-IdenticalExpr:
+
+alpha.core.IdenticalExpr (C, C++)
+"""""""""""""""""""""""""""""""""
+Warn about unintended use of identical expressions in operators.
+
+.. code-block:: cpp
+
+ // C
+ void test() {
+   int a = 5;
+   int b = a | 4 | a; // warn: identical expr on both sides
+ }
+
+ // C++
+ bool f(void);
+
+ void test(bool b) {
+   int i = 10;
+   if (f()) { // warn: true and false branches are identical
+     do {
+       i--;
+     } while (f());
+   } else {
+     do {
+       i--;
+     } while (f());
+   }
+ }
+
+.. _alpha-core-PointerArithm:
+
+alpha.core.PointerArithm (C)
+""""""""""""""""""""""""""""
+Check for pointer arithmetic on locations other than array elements.
+
+.. code-block:: c
+
+ void test() {
+   int x;
+   int *p;
+   p = &x + 1; // warn
+ }
+
+.. _alpha-core-PointerSub:
+
+alpha.core.PointerSub (C)
+"""""""""""""""""""""""""
+Check for pointer subtractions on two pointers pointing to different memory chunks.
+
+.. code-block:: c
+
+ void test() {
+   int x, y;
+   int d = &y - &x; // warn
+ }
+
+.. _alpha-core-SizeofPtr:
+
+alpha.core.SizeofPtr (C)
+""""""""""""""""""""""""
+Warn about unintended use of ``sizeof()`` on pointer expressions.
+
+.. code-block:: c
+
+ struct s {};
+
+ int test(struct s *p) {
+   return sizeof(p);
+     // warn: sizeof(ptr) can produce an unexpected result
+ }
+
+.. _alpha-core-StackAddressAsyncEscape:
+
+alpha.core.StackAddressAsyncEscape (C)
+""""""""""""""""""""""""""""""""""""""
+Check that addresses to stack memory do not escape the function that involves dispatch_after or dispatch_async.
+This checker is a part of ``core.StackAddressEscape``, but is temporarily disabled until some false positives are fixed.
+
+.. code-block:: c
+
+ dispatch_block_t test_block_inside_block_async_leak() {
+   int x = 123;
+   void (^inner)(void) = ^void(void) {
+     int y = x;
+     ++y;
+   };
+   void (^outer)(void) = ^void(void) {
+     int z = x;
+     ++z;
+     inner();
+   };
+   return outer; // warn: address of stack-allocated block is captured by a
+                 //       returned block
+ }
+
+.. _alpha-core-TestAfterDivZero:
+
+alpha.core.TestAfterDivZero (C)
+"""""""""""""""""""""""""""""""
+Check for division by variable that is later compared against 0.
+Either the comparison is useless or there is division by zero.
+
+.. code-block:: c
+
+ void test(int x) {
+   var = 77 / x;
+   if (x == 0) { } // warn
+ }
+
+alpha.cplusplus
+^^^^^^^^^^^^^^^
+
+.. _alpha-cplusplus-DeleteWithNonVirtualDtor:
+
+alpha.cplusplus.DeleteWithNonVirtualDtor (C++)
+""""""""""""""""""""""""""""""""""""""""""""""
+Reports destructions of polymorphic objects with a non-virtual destructor in their base class.
+
+.. code-block:: cpp
+
+ NonVirtual *create() {
+   NonVirtual *x = new NVDerived(); // note: conversion from derived to base
+                                    //       happened here
+   return x;
+ }
+
+ void sink(NonVirtual *x) {
+   delete x; // warn: destruction of a polymorphic object with no virtual
+             //       destructor
+ }
+
+.. _alpha-cplusplus-EnumCastOutOfRange:
+
+alpha.cplusplus.EnumCastOutOfRange (C++)
+""""""""""""""""""""""""""""""""""""""""
+Check for integer to enumeration casts that could result in undefined values.
+
+.. code-block:: cpp
+
+ enum TestEnum {
+   A = 0
+ };
+
+ void foo() {
+   TestEnum t = static_cast(-1);
+       // warn: the value provided to the cast expression is not in
+                the valid range of values for the enum
+
+.. _alpha-cplusplus-InvalidatedIterator:
+
+alpha.cplusplus.InvalidatedIterator (C++)
+"""""""""""""""""""""""""""""""""""""""""
+Check for use of invalidated iterators.
+
+.. code-block:: cpp
+
+ void bad_copy_assign_operator_list1(std::list &L1,
+                                     const std::list &L2) {
+   auto i0 = L1.cbegin();
+   L1 = L2;
+   *i0; // warn: invalidated iterator accessed
+ }
+
+
+.. _alpha-cplusplus-IteratorRange:
+
+alpha.cplusplus.IteratorRange (C++)
+"""""""""""""""""""""""""""""""""""
+Check for iterators used outside their valid ranges.
+
+.. code-block:: cpp
+
+ void simple_bad_end(const std::vector &v) {
+   auto i = v.end();
+   *i; // warn: iterator accessed outside of its range
+ }
+
+.. _alpha-cplusplus-MismatchedIterator:
+
+alpha.cplusplus.MismatchedIterator (C++)
+""""""""""""""""""""""""""""""""""""""""
+Check for use of iterators of different containers where iterators of the same container are expected.
+
+.. code-block:: cpp
+
+ void bad_insert3(std::vector &v1, std::vector &v2) {
+   v2.insert(v1.cbegin(), v2.cbegin(), v2.cend()); // warn: container accessed
+                                                   //       using foreign
+                                                   //       iterator argument
+   v1.insert(v1.cbegin(), v1.cbegin(), v2.cend()); // warn: iterators of
+                                                   //       different containers
+                                                   //       used where the same
+                                                   //       container is
+                                                   //       expected
+   v1.insert(v1.cbegin(), v2.cbegin(), v1.cend()); // warn: iterators of
+                                                   //       different containers
+                                                   //       used where the same
+                                                   //       container is
+                                                   //       expected
+ }
+
+.. _alpha-cplusplus-MisusedMovedObject:
+
+alpha.cplusplus.MisusedMovedObject (C++)
+""""""""""""""""""""""""""""""""""""""""
+Method calls on a moved-from object and copying a moved-from object will be reported.
+
+
+.. code-block:: cpp
+
+  struct A {
+   void foo() {}
+ };
+
+ void f() {
+   A a;
+   A b = std::move(a); // note: 'a' became 'moved-from' here
+   a.foo();            // warn: method call on a 'moved-from' object 'a'
+ }
 
 alpha.deadcode
 ^^^^^^^^^^^^^^
+.. _alpha-deadcode-UnreachableCode:
+
 alpha.deadcode.UnreachableCode (C, C++)
 """""""""""""""""""""""""""""""""""""""
 Check unreachable code.
@@ -1514,6 +1718,8 @@ Check unreachable code.
 alpha.llvm
 ^^^^^^^^^^
 
+.. _alpha-llvm-Conventions:
+
 alpha.llvm.Conventions
 """"""""""""""""""""""
 
@@ -1525,6 +1731,8 @@ Check code for LLVM codebase conventions:
 
 alpha.osx
 ^^^^^^^^^
+
+.. _alpha-osx-cocoa-DirectIvarAssignment:
 
 alpha.osx.cocoa.DirectIvarAssignment (ObjC)
 """""""""""""""""""""""""""""""""""""""""""
@@ -1543,6 +1751,8 @@ Check for direct assignments to instance variables.
    _A = 0; // warn
  }
  @end
+
+.. _alpha-osx-cocoa-DirectIvarAssignmentForAnnotatedFunctions:
 
 alpha.osx.cocoa.DirectIvarAssignmentForAnnotatedFunctions (ObjC)
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -1567,6 +1777,8 @@ the methods annotated with ``objc_no_direct_instance_variable_assignment``.
  }
  @end
 
+
+.. _alpha-osx-cocoa-InstanceVariableInvalidation:
 
 alpha.osx.cocoa.InstanceVariableInvalidation (ObjC)
 """""""""""""""""""""""""""""""""""""""""""""""""""
@@ -1594,6 +1806,8 @@ invalidated in the methods annotated with objc_instance_variable_invalidator.
  @end
  // warn: var needs to be invalidated or set to nil
 
+.. _alpha-osx-cocoa-MissingInvalidationMethod:
+
 alpha.osx.cocoa.MissingInvalidationMethod (ObjC)
 """"""""""""""""""""""""""""""""""""""""""""""""
 Check that the invalidation methods are present in classes that contain invalidatable instance variables.
@@ -1615,6 +1829,8 @@ Check that the invalidation methods are present in classes that contain invalida
 
  @implementation MissingInvalidationMethodDecl
  @end
+
+.. _alpha-osx-cocoa-localizability-PluralMisuseChecker:
 
 alpha.osx.cocoa.localizability.PluralMisuseChecker (ObjC)
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -1640,6 +1856,8 @@ Warns against using one vs. many plural pattern in code when generating localize
 
 alpha.security
 ^^^^^^^^^^^^^^
+.. _alpha-security-ArrayBound:
+
 alpha.security.ArrayBound (C)
 """""""""""""""""""""""""""""
 Warn about buffer overflows (older checker).
@@ -1676,6 +1894,8 @@ Warn about buffer overflows (older checker).
    b[1] = 3; // warn
  }
 
+.. _alpha-security-ArrayBoundV2:
+
 alpha.security.ArrayBoundV2 (C)
 """""""""""""""""""""""""""""""
 Warn about buffer overflows (newer checker).
@@ -1708,6 +1928,8 @@ Warn about buffer overflows (newer checker).
    char c = s[x]; // warn: index is tainted
  }
 
+.. _alpha-security-MallocOverflow:
+
 alpha.security.MallocOverflow (C)
 """""""""""""""""""""""""""""""""
 Check for overflows in the arguments to malloc().
@@ -1717,6 +1939,8 @@ Check for overflows in the arguments to malloc().
  void test(int n) {
    void *p = malloc(n * sizeof(int)); // warn
  }
+
+.. _alpha-security-MmapWriteExec:
 
 alpha.security.MmapWriteExec (C)
 """"""""""""""""""""""""""""""""
@@ -1731,6 +1955,8 @@ Warn on mmap() calls that are both writable and executable.
    //       exploitable memory regions, which could be overwritten with malicious
    //       code
  }
+
+.. _alpha-security-ReturnPtrRange:
 
 alpha.security.ReturnPtrRange (C)
 """""""""""""""""""""""""""""""""
@@ -1749,6 +1975,8 @@ Check for an out-of-bound pointer being returned to callers.
    int x;
    return x; // warn: undefined or garbage returned
  }
+
+.. _alpha-security-taint-TaintPropagation:
 
 alpha.security.taint.TaintPropagation (C, C++)
 """"""""""""""""""""""""""""""""""""""""""""""
@@ -1782,6 +2010,8 @@ A data is tainted when it comes from an unreliable source.
 alpha.unix
 ^^^^^^^^^^^
 
+.. _alpha-unix-BlockInCriticalSection:
+
 alpha.unix.BlockInCriticalSection (C)
 """""""""""""""""""""""""""""""""""""
 Check for calls to blocking functions inside a critical section.
@@ -1798,6 +2028,8 @@ Applies to: ``lock, unlock, sleep, getc, fgets, read, recv, pthread_mutex_lock,`
    m.unlock();
  }
 
+.. _alpha-unix-Chroot:
+
 alpha.unix.Chroot (C)
 """""""""""""""""""""
 Check improper use of chroot.
@@ -1810,6 +2042,8 @@ Check improper use of chroot.
    chroot("/usr/local");
    f(); // warn: no call of chdir("/") immediately after chroot
  }
+
+.. _alpha-unix-PthreadLock:
 
 alpha.unix.PthreadLock (C)
 """"""""""""""""""""""""""
@@ -1849,6 +2083,8 @@ lck_rw_try_lock_exclusive, lck_rw_try_lock_shared, pthread_mutex_unlock, pthread
      // warn: this was not the most recently acquired lock
  }
 
+.. _alpha-unix-SimpleStream:
+
 alpha.unix.SimpleStream (C)
 """""""""""""""""""""""""""
 Check for misuses of stream APIs. Check for misuses of stream APIs: ``fopen, fclose``
@@ -1870,6 +2106,8 @@ Check for misuses of stream APIs. Check for misuses of stream APIs: ``fopen, fcl
 
    fclose(F); // warn: closing a previously closed file stream
  }
+
+.. _alpha-unix-Stream:
 
 alpha.unix.Stream (C)
 """""""""""""""""""""
@@ -1911,6 +2149,8 @@ Check stream handling functions: ``fopen, tmpfile, fclose, fread, fwrite, fseek,
  }
 
 
+.. _alpha-unix-cstring-BufferOverlap:
+
 alpha.unix.cstring.BufferOverlap (C)
 """"""""""""""""""""""""""""""""""""
 Checks for overlap in two buffer arguments. Applies to:  ``memcpy, mempcpy``.
@@ -1922,6 +2162,8 @@ Checks for overlap in two buffer arguments. Applies to:  ``memcpy, mempcpy``.
    memcpy(a + 2, a + 1, 8); // warn
  }
 
+.. _alpha-unix-cstring-NotNullTerminated:
+
 alpha.unix.cstring.NotNullTerminated (C)
 """"""""""""""""""""""""""""""""""""""""
 Check for arguments which are not null-terminated strings; applies to: ``strlen, strnlen, strcpy, strncpy, strcat, strncat``.
@@ -1932,6 +2174,8 @@ Check for arguments which are not null-terminated strings; applies to: ``strlen,
    int y = strlen((char *)&test); // warn
  }
 
+.. _alpha-unix-cstring-OutOfBounds:
+
 alpha.unix.cstring.OutOfBounds (C)
 """"""""""""""""""""""""""""""""""
 Check for out-of-bounds access in string functions; applies to:`` strncopy, strncat``.
@@ -1941,6 +2185,36 @@ Check for out-of-bounds access in string functions; applies to:`` strncopy, strn
 
  void test() {
    int y = strlen((char *)&test); // warn
+ }
+
+.. _alpha-nondeterminism-PointerIteration:
+
+alpha.nondeterminism.PointerIteration (C++)
+"""""""""""""""""""""""""""""""""""""""""""
+Check for non-determinism caused by iterating unordered containers of pointers.
+
+.. code-block:: c
+
+ void test() {
+  int a = 1, b = 2;
+  std::unordered_set<int *> UnorderedPtrSet = {&a, &b};
+
+  for (auto i : UnorderedPtrSet) // warn
+    f(i);
+ }
+
+.. _alpha-nondeterminism-PointerSorting:
+
+alpha.nondeterminism.PointerSorting (C++)
+"""""""""""""""""""""""""""""""""""""""""
+Check for non-determinism caused by sorting of pointers.
+
+.. code-block:: c
+
+ void test() {
+  int a = 1, b = 2;
+  std::vector<int *> V = {&a, &b};
+  std::sort(V.begin(), V.end()); // warn
  }
 
 
@@ -1956,57 +2230,85 @@ debug
 Checkers used for debugging the analyzer.
 :doc:`developer-docs/DebugChecks` page contains a detailed description.
 
+.. _debug-AnalysisOrder:
+
 debug.AnalysisOrder
 """""""""""""""""""
 Print callbacks that are called during analysis in order.
+
+.. _debug-ConfigDumper:
 
 debug.ConfigDumper
 """"""""""""""""""
 Dump config table.
 
+.. _debug-DumpCFG Display:
+
 debug.DumpCFG Display
 """""""""""""""""""""
 Control-Flow Graphs.
+
+.. _debug-DumpCallGraph:
 
 debug.DumpCallGraph
 """""""""""""""""""
 Display Call Graph.
 
+.. _debug-DumpCalls:
+
 debug.DumpCalls
 """""""""""""""
 Print calls as they are traversed by the engine.
+
+.. _debug-DumpDominators:
 
 debug.DumpDominators
 """"""""""""""""""""
 Print the dominance tree for a given CFG.
 
+.. _debug-DumpLiveVars:
+
 debug.DumpLiveVars
 """"""""""""""""""
 Print results of live variable analysis.
+
+.. _debug-DumpTraversal:
 
 debug.DumpTraversal
 """""""""""""""""""
 Print branch conditions as they are traversed by the engine.
 
+.. _debug-ExprInspection:
+
 debug.ExprInspection
 """"""""""""""""""""
 Check the analyzer's understanding of expressions.
+
+.. _debug-Stats:
 
 debug.Stats
 """""""""""
 Emit warnings with analyzer statistics.
 
+.. _debug-TaintTest:
+
 debug.TaintTest
 """""""""""""""
 Mark tainted symbols as such.
+
+.. _debug-ViewCFG:
 
 debug.ViewCFG
 """""""""""""
 View Control-Flow Graphs using GraphViz.
 
+.. _debug-ViewCallGraph:
+
 debug.ViewCallGraph
 """""""""""""""""""
 View Call Graph using GraphViz.
+
+.. _debug-ViewExplodedGraph:
 
 debug.ViewExplodedGraph
 """""""""""""""""""""""

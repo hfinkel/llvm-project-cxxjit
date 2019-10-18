@@ -11,7 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MipsSEInstrInfo.h"
-#include "InstPrinter/MipsInstPrinter.h"
+#include "MCTargetDesc/MipsInstPrinter.h"
 #include "MipsAnalyzeImmediate.h"
 #include "MipsMachineFunction.h"
 #include "MipsTargetMachine.h"
@@ -445,6 +445,9 @@ bool MipsSEInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
     break;
   case Mips::PseudoMTLOHI_DSP:
     expandPseudoMTLoHi(MBB, MI, Mips::MTLO_DSP, Mips::MTHI_DSP, true);
+    break;
+  case Mips::PseudoMTLOHI_MM:
+    expandPseudoMTLoHi(MBB, MI, Mips::MTLO_MM, Mips::MTHI_MM, false);
     break;
   case Mips::PseudoCVT_S_W:
     expandCvtFPInt(MBB, MI, Mips::CVT_S_W, Mips::MTC1, false);

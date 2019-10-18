@@ -70,7 +70,7 @@ void ReleaseMemoryPagesToOS(uptr beg, uptr end) {
 
 bool NoHugePagesInRegion(uptr addr, uptr size) {
 #ifdef MADV_NOHUGEPAGE  // May not be defined on old systems.
-  return madvise((void *)addr, size, MADV_NOHUGEPAGE) == 0;
+  return madvise((char *)addr, size, MADV_NOHUGEPAGE) == 0;
 #else
   return true;
 #endif  // MADV_NOHUGEPAGE
@@ -78,9 +78,9 @@ bool NoHugePagesInRegion(uptr addr, uptr size) {
 
 bool DontDumpShadowMemory(uptr addr, uptr length) {
 #if defined(MADV_DONTDUMP)
-  return madvise((void *)addr, length, MADV_DONTDUMP) == 0;
+  return madvise((char *)addr, length, MADV_DONTDUMP) == 0;
 #elif defined(MADV_NOCORE)
-  return madvise((void *)addr, length, MADV_NOCORE) == 0;
+  return madvise((char *)addr, length, MADV_NOCORE) == 0;
 #else
   return true;
 #endif  // MADV_DONTDUMP
@@ -114,10 +114,6 @@ void DisableCoreDumperIfNecessary() {
 bool StackSizeIsUnlimited() {
   rlim_t stack_size = getlim(RLIMIT_STACK);
   return (stack_size == RLIM_INFINITY);
-}
-
-uptr GetStackSizeLimitInBytes() {
-  return (uptr)getlim(RLIMIT_STACK);
 }
 
 void SetStackSizeLimitInBytes(uptr limit) {

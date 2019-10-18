@@ -26,7 +26,7 @@ class FakeStatCache : public FileSystemStatCache {
 private:
   // Maps a file/directory path to its desired stat result.  Anything
   // not in this map is considered to not exist in the file system.
-  llvm::StringMap<FileData, llvm::BumpPtrAllocator> StatCalls;
+  llvm::StringMap<llvm::vfs::Status, llvm::BumpPtrAllocator> StatCalls;
 
   void InjectFileOrDirectory(const char *Path, ino_t INode, bool IsFile) {
 #ifndef _WIN32
@@ -35,15 +35,14 @@ private:
     Path = NormalizedPath.c_str();
 #endif
 
-    FileData Data;
-    Data.Name = Path;
-    Data.Size = 0;
-    Data.ModTime = 0;
-    Data.UniqueID = llvm::sys::fs::UniqueID(1, INode);
-    Data.IsDirectory = !IsFile;
-    Data.IsNamedPipe = false;
-    Data.InPCH = false;
-    StatCalls[Path] = Data;
+    auto fileType = IsFile ?
+      llvm::sys::fs::file_type::regular_file :
+      llvm::sys::fs::file_type::directory_file;
+    llvm::vfs::Status Status(Path, llvm::sys::fs::UniqueID(1, INode),
+                             /*MTime*/{}, /*User*/0, /*Group*/0,
+                             /*Size*/0, fileType,
+                             llvm::sys::fs::perms::all_all);
+    StatCalls[Path] = Status;
   }
 
 public:
@@ -58,9 +57,10 @@ public:
   }
 
   // Implement FileSystemStatCache::getStat().
-  LookupResult getStat(StringRef Path, FileData &Data, bool isFile,
-                       std::unique_ptr<llvm::vfs::File> *F,
-                       llvm::vfs::FileSystem &FS) override {
+  std::error_code getStat(StringRef Path, llvm::vfs::Status &Status,
+                          bool isFile,
+                          std::unique_ptr<llvm::vfs::File> *F,
+                          llvm::vfs::FileSystem &FS) override {
 #ifndef _WIN32
     SmallString<128> NormalizedPath(Path);
     llvm::sys::path::native(NormalizedPath);
@@ -68,11 +68,11 @@ public:
 #endif
 
     if (StatCalls.count(Path) != 0) {
-      Data = StatCalls[Path];
-      return CacheExists;
+      Status = StatCalls[Path];
+      return std::error_code();
     }
 
-    return CacheMissing;  // This means the file/directory doesn't exist.
+    return std::make_error_code(std::errc::no_such_file_or_directory);
   }
 };
 

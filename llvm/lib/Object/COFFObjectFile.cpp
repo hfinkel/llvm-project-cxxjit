@@ -269,10 +269,9 @@ void COFFObjectFile::moveSectionNext(DataRefImpl &Ref) const {
   Ref.p = reinterpret_cast<uintptr_t>(Sec);
 }
 
-std::error_code COFFObjectFile::getSectionName(DataRefImpl Ref,
-                                               StringRef &Result) const {
+Expected<StringRef> COFFObjectFile::getSectionName(DataRefImpl Ref) const {
   const coff_section *Sec = toSec(Ref);
-  return getSectionName(Sec, Result);
+  return getSectionName(Sec);
 }
 
 uint64_t COFFObjectFile::getSectionAddress(DataRefImpl Ref) const {
@@ -293,13 +292,13 @@ uint64_t COFFObjectFile::getSectionSize(DataRefImpl Ref) const {
   return getSectionSize(toSec(Ref));
 }
 
-std::error_code COFFObjectFile::getSectionContents(DataRefImpl Ref,
-                                                   StringRef &Result) const {
+Expected<ArrayRef<uint8_t>>
+COFFObjectFile::getSectionContents(DataRefImpl Ref) const {
   const coff_section *Sec = toSec(Ref);
   ArrayRef<uint8_t> Res;
-  std::error_code EC = getSectionContents(Sec, Res);
-  Result = StringRef(reinterpret_cast<const char*>(Res.data()), Res.size());
-  return EC;
+  if (Error E = getSectionContents(Sec, Res))
+    return std::move(E);
+  return Res;
 }
 
 uint64_t COFFObjectFile::getSectionAlignment(DataRefImpl Ref) const {
@@ -1074,8 +1073,8 @@ uint32_t COFFObjectFile::getSymbolIndex(COFFSymbolRef Symbol) const {
   return Index;
 }
 
-std::error_code COFFObjectFile::getSectionName(const coff_section *Sec,
-                                               StringRef &Res) const {
+Expected<StringRef>
+COFFObjectFile::getSectionName(const coff_section *Sec) const {
   StringRef Name;
   if (Sec->Name[COFF::NameSize - 1] == 0)
     // Null terminated, let ::strlen figure out the length.
@@ -1089,17 +1088,18 @@ std::error_code COFFObjectFile::getSectionName(const coff_section *Sec,
     uint32_t Offset;
     if (Name.startswith("//")) {
       if (decodeBase64StringEntry(Name.substr(2), Offset))
-        return object_error::parse_failed;
+        return createStringError(object_error::parse_failed,
+                                 "inalid section name");
     } else {
       if (Name.substr(1).getAsInteger(10, Offset))
-        return object_error::parse_failed;
+        return createStringError(object_error::parse_failed,
+                                 "invalid section name");
     }
     if (std::error_code EC = getString(Offset, Name))
-      return EC;
+      return errorCodeToError(EC);
   }
 
-  Res = Name;
-  return std::error_code();
+  return Name;
 }
 
 uint64_t COFFObjectFile::getSectionSize(const coff_section *Sec) const {
@@ -1118,22 +1118,21 @@ uint64_t COFFObjectFile::getSectionSize(const coff_section *Sec) const {
   return Sec->SizeOfRawData;
 }
 
-std::error_code
-COFFObjectFile::getSectionContents(const coff_section *Sec,
-                                   ArrayRef<uint8_t> &Res) const {
+Error COFFObjectFile::getSectionContents(const coff_section *Sec,
+                                         ArrayRef<uint8_t> &Res) const {
   // In COFF, a virtual section won't have any in-file
   // content, so the file pointer to the content will be zero.
   if (Sec->PointerToRawData == 0)
-    return std::error_code();
+    return Error::success();
   // The only thing that we need to verify is that the contents is contained
   // within the file bounds. We don't need to make sure it doesn't cover other
   // data, as there's nothing that says that is not allowed.
   uintptr_t ConStart = uintptr_t(base()) + Sec->PointerToRawData;
   uint32_t SectionSize = getSectionSize(Sec);
   if (checkOffset(Data, ConStart, SectionSize))
-    return object_error::parse_failed;
+    return make_error<BinaryError>();
   Res = makeArrayRef(reinterpret_cast<const uint8_t *>(ConStart), SectionSize);
-  return std::error_code();
+  return Error::success();
 }
 
 const coff_relocation *COFFObjectFile::toRel(DataRefImpl Rel) const {
@@ -1457,7 +1456,7 @@ std::error_code DelayImportDirectoryEntryRef::getName(StringRef &Result) const {
 
 std::error_code DelayImportDirectoryEntryRef::
 getDelayImportTable(const delay_import_directory_table_entry *&Result) const {
-  Result = Table;
+  Result = &Table[Index];
   return std::error_code();
 }
 

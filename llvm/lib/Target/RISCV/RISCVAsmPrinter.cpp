@@ -12,9 +12,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "RISCV.h"
-#include "InstPrinter/RISCVInstPrinter.h"
+#include "MCTargetDesc/RISCVInstPrinter.h"
 #include "MCTargetDesc/RISCVMCExpr.h"
 #include "RISCVTargetMachine.h"
+#include "TargetInfo/RISCVTargetInfo.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -42,11 +43,9 @@ public:
   void EmitInstruction(const MachineInstr *MI) override;
 
   bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
-                       unsigned AsmVariant, const char *ExtraCode,
-                       raw_ostream &OS) override;
+                       const char *ExtraCode, raw_ostream &OS) override;
   bool PrintAsmMemoryOperand(const MachineInstr *MI, unsigned OpNo,
-                             unsigned AsmVariant, const char *ExtraCode,
-                             raw_ostream &OS) override;
+                             const char *ExtraCode, raw_ostream &OS) override;
 
   void EmitToStreamer(MCStreamer &S, const MCInst &Inst);
   bool emitPseudoExpansionLowering(MCStreamer &OutStreamer,
@@ -83,39 +82,50 @@ void RISCVAsmPrinter::EmitInstruction(const MachineInstr *MI) {
 }
 
 bool RISCVAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
-                                      unsigned AsmVariant,
                                       const char *ExtraCode, raw_ostream &OS) {
-  if (AsmVariant != 0)
-    report_fatal_error("There are no defined alternate asm variants");
-
   // First try the generic code, which knows about modifiers like 'c' and 'n'.
-  if (!AsmPrinter::PrintAsmOperand(MI, OpNo, AsmVariant, ExtraCode, OS))
+  if (!AsmPrinter::PrintAsmOperand(MI, OpNo, ExtraCode, OS))
     return false;
 
-  if (!ExtraCode) {
-    const MachineOperand &MO = MI->getOperand(OpNo);
-    switch (MO.getType()) {
-    case MachineOperand::MO_Immediate:
-      OS << MO.getImm();
-      return false;
-    case MachineOperand::MO_Register:
-      OS << RISCVInstPrinter::getRegisterName(MO.getReg());
-      return false;
+  const MachineOperand &MO = MI->getOperand(OpNo);
+  if (ExtraCode && ExtraCode[0]) {
+    if (ExtraCode[1] != 0)
+      return true; // Unknown modifier.
+
+    switch (ExtraCode[0]) {
     default:
+      return true; // Unknown modifier.
+    case 'z':      // Print zero register if zero, regular printing otherwise.
+      if (MO.isImm() && MO.getImm() == 0) {
+        OS << RISCVInstPrinter::getRegisterName(RISCV::X0);
+        return false;
+      }
       break;
+    case 'i': // Literal 'i' if operand is not a register.
+      if (!MO.isReg())
+        OS << 'i';
+      return false;
     }
+  }
+
+  switch (MO.getType()) {
+  case MachineOperand::MO_Immediate:
+    OS << MO.getImm();
+    return false;
+  case MachineOperand::MO_Register:
+    OS << RISCVInstPrinter::getRegisterName(MO.getReg());
+    return false;
+  default:
+    break;
   }
 
   return true;
 }
 
 bool RISCVAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
-                                            unsigned OpNo, unsigned AsmVariant,
+                                            unsigned OpNo,
                                             const char *ExtraCode,
                                             raw_ostream &OS) {
-  if (AsmVariant != 0)
-    report_fatal_error("There are no defined alternate asm variants");
-
   if (!ExtraCode) {
     const MachineOperand &MO = MI->getOperand(OpNo);
     // For now, we only support register memory operands in registers and
@@ -127,7 +137,7 @@ bool RISCVAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
     return false;
   }
 
-  return AsmPrinter::PrintAsmMemoryOperand(MI, OpNo, AsmVariant, ExtraCode, OS);
+  return AsmPrinter::PrintAsmMemoryOperand(MI, OpNo, ExtraCode, OS);
 }
 
 // Force static initialization.

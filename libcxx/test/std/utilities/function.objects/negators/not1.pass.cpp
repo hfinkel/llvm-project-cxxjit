@@ -10,8 +10,12 @@
 
 // not1
 
+#define _LIBCPP_DISABLE_DEPRECATION_WARNINGS
+
 #include <functional>
 #include <cassert>
+
+#include "test_macros.h"
 
 int main(int, char**)
 {

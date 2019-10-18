@@ -25,7 +25,6 @@
 #include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
 #include "lldb/Target/Platform.h"
-#include "lldb/Target/Process.h"
 #include "lldb/Target/UnixSignals.h"
 #include "lldb/Utility/JSON.h"
 #include "lldb/Utility/Log.h"
@@ -40,9 +39,7 @@ using namespace lldb;
 using namespace lldb_private;
 using namespace lldb_private::process_gdb_remote;
 
-//----------------------------------------------------------------------
 // GDBRemoteCommunicationServerPlatform constructor
-//----------------------------------------------------------------------
 GDBRemoteCommunicationServerPlatform::GDBRemoteCommunicationServerPlatform(
     const Socket::SocketProtocol socket_protocol, const char *socket_scheme)
     : GDBRemoteCommunicationServerCommon("gdb-remote.server",
@@ -86,9 +83,7 @@ GDBRemoteCommunicationServerPlatform::GDBRemoteCommunicationServerPlatform(
                         });
 }
 
-//----------------------------------------------------------------------
 // Destructor
-//----------------------------------------------------------------------
 GDBRemoteCommunicationServerPlatform::~GDBRemoteCommunicationServerPlatform() {}
 
 Status GDBRemoteCommunicationServerPlatform::LaunchGDBServer(
@@ -120,25 +115,24 @@ Status GDBRemoteCommunicationServerPlatform::LaunchGDBServer(
                 this, std::placeholders::_1),
       false);
 
-  llvm::StringRef platform_scheme;
-  llvm::StringRef platform_ip;
-  int platform_port;
-  llvm::StringRef platform_path;
-  std::string platform_uri = GetConnection()->GetURI();
-  bool ok = UriParser::Parse(platform_uri, platform_scheme, platform_ip,
-                             platform_port, platform_path);
-  UNUSED_IF_ASSERT_DISABLED(ok);
-  assert(ok);
-
   std::ostringstream url;
 // debugserver does not accept the URL scheme prefix.
 #if !defined(__APPLE__)
   url << m_socket_scheme << "://";
 #endif
   uint16_t *port_ptr = &port;
-  if (m_socket_protocol == Socket::ProtocolTcp)
+  if (m_socket_protocol == Socket::ProtocolTcp) {
+    llvm::StringRef platform_scheme;
+    llvm::StringRef platform_ip;
+    int platform_port;
+    llvm::StringRef platform_path;
+    std::string platform_uri = GetConnection()->GetURI();
+    bool ok = UriParser::Parse(platform_uri, platform_scheme, platform_ip,
+                               platform_port, platform_path);
+    UNUSED_IF_ASSERT_DISABLED(ok);
+    assert(ok);
     url << platform_ip.str() << ":" << port;
-  else {
+  } else {
     socket_name = GetDomainSocketPath("gdbserver").GetPath();
     url << socket_name;
     port_ptr = nullptr;
@@ -398,7 +392,7 @@ GDBRemoteCommunicationServerPlatform::Handle_jSignalsInfo(
     StringExtractorGDBRemote &packet) {
   StructuredData::Array signal_array;
 
-  const auto &signals = Host::GetUnixSignals();
+  lldb::UnixSignalsSP signals = UnixSignals::CreateForHost();
   for (auto signo = signals->GetFirstSignalNumber();
        signo != LLDB_INVALID_SIGNAL_NUMBER;
        signo = signals->GetNextSignalNumber(signo)) {

@@ -63,10 +63,17 @@ public:
     return 0;
   }
 
+  virtual unsigned getAVOperandEncoding(const MCInst &MI, unsigned OpNo,
+                                        SmallVectorImpl<MCFixup> &Fixups,
+                                        const MCSubtargetInfo &STI) const {
+    return 0;
+  }
+
 protected:
-  uint64_t computeAvailableFeatures(const FeatureBitset &FB) const;
-  void verifyInstructionPredicates(const MCInst &MI,
-                                   uint64_t AvailableFeatures) const;
+  FeatureBitset computeAvailableFeatures(const FeatureBitset &FB) const;
+  void
+  verifyInstructionPredicates(const MCInst &MI,
+                              const FeatureBitset &AvailableFeatures) const;
 };
 
 } // End namespace llvm

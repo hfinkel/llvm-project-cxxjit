@@ -21,7 +21,7 @@
 #include <cstdlib>
 #include <cassert>
 
-#include <iostream>
+#include "test_macros.h"
 
 std::recursive_timed_mutex m;
 

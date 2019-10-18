@@ -521,9 +521,11 @@ private:
 //                                AtomicCmpXchgInst Class
 //===----------------------------------------------------------------------===//
 
-/// an instruction that atomically checks whether a
+/// An instruction that atomically checks whether a
 /// specified value is in a memory location, and, if it is, stores a new value
-/// there.  Returns the value that was loaded.
+/// there. The value returned by this instruction is a pair containing the
+/// original value as first element, and an i1 indicating success (true) or
+/// failure (false) as second element.
 ///
 class AtomicCmpXchgInst : public Instruction {
   void Init(Value *Ptr, Value *Cmp, Value *NewVal,
@@ -1134,71 +1136,6 @@ GetElementPtrInst::GetElementPtrInst(Type *PointeeType, Value *Ptr,
 DEFINE_TRANSPARENT_OPERAND_ACCESSORS(GetElementPtrInst, Value)
 
 //===----------------------------------------------------------------------===//
-//                                UnaryOperator Class
-//===----------------------------------------------------------------------===//
-
-/// a unary instruction 
-class UnaryOperator : public UnaryInstruction {
-  void AssertOK();
-
-protected:
-  UnaryOperator(UnaryOps iType, Value *S, Type *Ty,
-                const Twine &Name, Instruction *InsertBefore);
-  UnaryOperator(UnaryOps iType, Value *S, Type *Ty,
-                const Twine &Name, BasicBlock *InsertAtEnd);
-
-  // Note: Instruction needs to be a friend here to call cloneImpl.
-  friend class Instruction;
-
-  UnaryOperator *cloneImpl() const;
-
-public:
-
-  /// Construct a unary instruction, given the opcode and an operand.
-  /// Optionally (if InstBefore is specified) insert the instruction
-  /// into a BasicBlock right before the specified instruction.  The specified
-  /// Instruction is allowed to be a dereferenced end iterator.
-  ///
-  static UnaryOperator *Create(UnaryOps Op, Value *S,
-                               const Twine &Name = Twine(),
-                               Instruction *InsertBefore = nullptr);
-
-  /// Construct a unary instruction, given the opcode and an operand.
-  /// Also automatically insert this instruction to the end of the
-  /// BasicBlock specified.
-  ///
-  static UnaryOperator *Create(UnaryOps Op, Value *S,
-                               const Twine &Name,
-                               BasicBlock *InsertAtEnd);
-
-  /// These methods just forward to Create, and are useful when you
-  /// statically know what type of instruction you're going to create.  These
-  /// helpers just save some typing.
-#define HANDLE_UNARY_INST(N, OPC, CLASS) \
-  static UnaryInstruction *Create##OPC(Value *V, \
-                                       const Twine &Name = "") {\
-    return Create(Instruction::OPC, V, Name);\
-  }
-#include "llvm/IR/Instruction.def"
-#define HANDLE_UNARY_INST(N, OPC, CLASS) \
-  static UnaryInstruction *Create##OPC(Value *V, \
-                                       const Twine &Name, BasicBlock *BB) {\
-    return Create(Instruction::OPC, V, Name, BB);\
-  }
-#include "llvm/IR/Instruction.def"
-#define HANDLE_UNARY_INST(N, OPC, CLASS) \
-  static UnaryInstruction *Create##OPC(Value *V, \
-                                       const Twine &Name, Instruction *I) {\
-    return Create(Instruction::OPC, V, Name, I);\
-  }
-#include "llvm/IR/Instruction.def"
-
-  UnaryOps getOpcode() const {
-    return static_cast<UnaryOps>(Instruction::getOpcode());
-  }
-};
-
-//===----------------------------------------------------------------------===//
 //                               ICmpInst Class
 //===----------------------------------------------------------------------===//
 
@@ -1730,6 +1667,9 @@ public:
     return isa<Instruction>(V) && classof(cast<Instruction>(V));
   }
 
+  /// Updates profile metadata by scaling it by \p S / \p T.
+  void updateProfWeight(uint64_t S, uint64_t T);
+
 private:
   // Shadow Instruction::setInstructionSubclassData with a private forwarding
   // method so that subclasses cannot accidentally use it.
@@ -2042,6 +1982,10 @@ public:
   void *operator new(size_t s) {
     return User::operator new(s, 3);
   }
+
+  /// Swap the first 2 operands and adjust the mask to preserve the semantics
+  /// of the instruction.
+  void commute();
 
   /// Return true if a shufflevector instruction can be
   /// formed with the specified operands.
@@ -2731,6 +2675,14 @@ public:
     block_begin()[i] = BB;
   }
 
+  /// Replace every incoming basic block \p Old to basic block \p New.
+  void replaceIncomingBlockWith(const BasicBlock *Old, BasicBlock *New) {
+    assert(New && Old && "PHI node got a null basic block!");
+    for (unsigned Op = 0, NumOps = getNumOperands(); Op != NumOps; ++Op)
+      if (getIncomingBlock(Op) == Old)
+        setIncomingBlock(Op, New);
+  }
+
   /// Add an incoming value to the end of the PHI list
   ///
   void addIncoming(Value *V, BasicBlock *BB) {
@@ -2772,6 +2724,19 @@ public:
     int Idx = getBasicBlockIndex(BB);
     assert(Idx >= 0 && "Invalid basic block argument!");
     return getIncomingValue(Idx);
+  }
+
+  /// Set every incoming value(s) for block \p BB to \p V.
+  void setIncomingValueForBlock(const BasicBlock *BB, Value *V) {
+    assert(BB && "PHI node got a null basic block!");
+    bool Found = false;
+    for (unsigned Op = 0, NumOps = getNumOperands(); Op != NumOps; ++Op)
+      if (getIncomingBlock(Op) == BB) {
+        Found = true;
+        setIncomingValue(Op, V);
+      }
+    (void)Found;
+    assert(Found && "Invalid basic block argument to set!");
   }
 
   /// If the specified PHI node always merges together the
@@ -3485,6 +3450,60 @@ public:
   }
 };
 
+/// A wrapper class to simplify modification of SwitchInst cases along with
+/// their prof branch_weights metadata.
+class SwitchInstProfUpdateWrapper {
+  SwitchInst &SI;
+  Optional<SmallVector<uint32_t, 8> > Weights = None;
+
+  // Sticky invalid state is needed to safely ignore operations with prof data
+  // in cases where SwitchInstProfUpdateWrapper is created from SwitchInst
+  // with inconsistent prof data. TODO: once we fix all prof data
+  // inconsistencies we can turn invalid state to assertions.
+  enum {
+    Invalid,
+    Initialized,
+    Changed
+  } State = Invalid;
+
+protected:
+  static MDNode *getProfBranchWeightsMD(const SwitchInst &SI);
+
+  MDNode *buildProfBranchWeightsMD();
+
+  void init();
+
+public:
+  using CaseWeightOpt = Optional<uint32_t>;
+  SwitchInst *operator->() { return &SI; }
+  SwitchInst &operator*() { return SI; }
+  operator SwitchInst *() { return &SI; }
+
+  SwitchInstProfUpdateWrapper(SwitchInst &SI) : SI(SI) { init(); }
+
+  ~SwitchInstProfUpdateWrapper() {
+    if (State == Changed)
+      SI.setMetadata(LLVMContext::MD_prof, buildProfBranchWeightsMD());
+  }
+
+  /// Delegate the call to the underlying SwitchInst::removeCase() and remove
+  /// correspondent branch weight.
+  SwitchInst::CaseIt removeCase(SwitchInst::CaseIt I);
+
+  /// Delegate the call to the underlying SwitchInst::addCase() and set the
+  /// specified branch weight for the added case.
+  void addCase(ConstantInt *OnVal, BasicBlock *Dest, CaseWeightOpt W);
+
+  /// Delegate the call to the underlying SwitchInst::eraseFromParent() and mark
+  /// this object to not touch the underlying SwitchInst in destructor.
+  SymbolTableList<Instruction>::iterator eraseFromParent();
+
+  void setSuccessorWeight(unsigned idx, CaseWeightOpt W);
+  CaseWeightOpt getSuccessorWeight(unsigned idx);
+
+  static CaseWeightOpt getSuccessorWeight(const SwitchInst &SI, unsigned idx);
+};
+
 template <>
 struct OperandTraits<SwitchInst> : public HungoffOperandTraits<2> {
 };
@@ -3919,6 +3938,9 @@ class CallBrInst : public CallBase {
             ArrayRef<BasicBlock *> IndirectDests, ArrayRef<Value *> Args,
             ArrayRef<OperandBundleDef> Bundles, const Twine &NameStr);
 
+  /// Should the Indirect Destinations change, scan + update the Arg list.
+  void updateArgBlockAddresses(unsigned i, BasicBlock *B);
+
   /// Compute the number of operands to allocate.
   static int ComputeNumOperands(int NumArgs, int NumIndirectDests,
                                 int NumBundleInputs = 0) {
@@ -4056,7 +4078,7 @@ public:
     return cast<BasicBlock>(*(&Op<-1>() - getNumIndirectDests() - 1));
   }
   BasicBlock *getIndirectDest(unsigned i) const {
-    return cast<BasicBlock>(*(&Op<-1>() - getNumIndirectDests() + i));
+    return cast_or_null<BasicBlock>(*(&Op<-1>() - getNumIndirectDests() + i));
   }
   SmallVector<BasicBlock *, 16> getIndirectDests() const {
     SmallVector<BasicBlock *, 16> IndirectDests;
@@ -4068,6 +4090,7 @@ public:
     *(&Op<-1>() - getNumIndirectDests() - 1) = reinterpret_cast<Value *>(B);
   }
   void setIndirectDest(unsigned i, BasicBlock *B) {
+    updateArgBlockAddresses(i, B);
     *(&Op<-1>() - getNumIndirectDests() + i) = reinterpret_cast<Value *>(B);
   }
 
@@ -4077,11 +4100,10 @@ public:
     return i == 0 ? getDefaultDest() : getIndirectDest(i - 1);
   }
 
-  void setSuccessor(unsigned idx, BasicBlock *NewSucc) {
-    assert(idx < getNumIndirectDests() + 1 &&
+  void setSuccessor(unsigned i, BasicBlock *NewSucc) {
+    assert(i < getNumIndirectDests() + 1 &&
            "Successor # out of range for callbr!");
-    *(&Op<-1>() - getNumIndirectDests() -1 + idx) =
-        reinterpret_cast<Value *>(NewSucc);
+    return i == 0 ? setDefaultDest(NewSucc) : setIndirectDest(i - 1, NewSucc);
   }
 
   unsigned getNumSuccessors() const { return getNumIndirectDests() + 1; }

@@ -36,7 +36,7 @@
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Bitcode/BitstreamWriter.h"
+#include "llvm/Bitstream/BitstreamWriter.h"
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -74,8 +74,8 @@ class IdentifierResolver;
 class LangOptions;
 class MacroDefinitionRecord;
 class MacroInfo;
-class MemoryBufferCache;
 class Module;
+class InMemoryModuleCache;
 class ModuleFileExtension;
 class ModuleFileExtensionWriter;
 class NamedDecl;
@@ -132,7 +132,7 @@ private:
   const SmallVectorImpl<char> &Buffer;
 
   /// The PCM manager which manages memory buffers for pcm files.
-  MemoryBufferCache &PCMCache;
+  InMemoryModuleCache &ModuleCache;
 
   /// The ASTContext we're writing.
   ASTContext *Context = nullptr;
@@ -546,7 +546,7 @@ public:
   /// Create a new precompiled header writer that outputs to
   /// the given bitstream.
   ASTWriter(llvm::BitstreamWriter &Stream, SmallVectorImpl<char> &Buffer,
-            MemoryBufferCache &PCMCache,
+            InMemoryModuleCache &ModuleCache,
             ArrayRef<std::shared_ptr<ModuleFileExtension>> Extensions,
             bool IncludeTimestamps = true,
             bool TreatAllFilesAsTransient = false);
@@ -575,7 +575,8 @@ public:
   /// the module but currently is merely a random 32-bit number.
   ASTFileSignature WriteAST(Sema &SemaRef, const std::string &OutputFile,
                             Module *WritingModule, StringRef isysroot,
-                            bool hasErrors = false);
+                            bool hasErrors = false,
+                            bool ShouldCacheASTInMemory = false);
 
   /// Emit a token.
   void AddToken(const Token &Tok, RecordDataImpl &Record);
@@ -742,6 +743,7 @@ private:
   void DeclarationMarkedOpenMPThreadPrivate(const Decl *D) override;
   void DeclarationMarkedOpenMPDeclareTarget(const Decl *D,
                                             const Attr *Attr) override;
+  void DeclarationMarkedOpenMPAllocate(const Decl *D, const Attr *A) override;
   void RedefinedHiddenDefinition(const NamedDecl *D, Module *M) override;
   void AddedAttributeToRecord(const Attr *Attr,
                               const RecordDecl *Record) override;
@@ -866,6 +868,9 @@ public:
   /// Emit a floating-point value.
   void AddAPFloat(const llvm::APFloat &Value);
 
+  /// Emit an APvalue.
+  void AddAPValue(const APValue &Value);
+
   /// Emit a reference to an identifier.
   void AddIdentifierRef(const IdentifierInfo *II) {
     return Writer->AddIdentifierRef(II, *Record);
@@ -978,6 +983,7 @@ class PCHGenerator : public SemaConsumer {
   llvm::BitstreamWriter Stream;
   ASTWriter Writer;
   bool AllowASTWithErrors;
+  bool ShouldCacheASTInMemory;
 
 protected:
   ASTWriter &getWriter() { return Writer; }
@@ -985,10 +991,12 @@ protected:
   SmallVectorImpl<char> &getPCH() const { return Buffer->Data; }
 
 public:
-  PCHGenerator(const Preprocessor &PP, StringRef OutputFile, StringRef isysroot,
+  PCHGenerator(const Preprocessor &PP, InMemoryModuleCache &ModuleCache,
+               StringRef OutputFile, StringRef isysroot,
                std::shared_ptr<PCHBuffer> Buffer,
                ArrayRef<std::shared_ptr<ModuleFileExtension>> Extensions,
-               bool AllowASTWithErrors = false, bool IncludeTimestamps = true);
+               bool AllowASTWithErrors = false, bool IncludeTimestamps = true,
+               bool ShouldCacheASTInMemory = false);
   ~PCHGenerator() override;
 
   void InitializeSema(Sema &S) override { SemaPtr = &S; }
@@ -1004,7 +1012,6 @@ class OMPClauseWriter : public OMPClauseVisitor<OMPClauseWriter> {
 public:
   OMPClauseWriter(ASTRecordWriter &Record) : Record(Record) {}
 #define OPENMP_CLAUSE(Name, Class) void Visit##Class(Class *S);
-  OPENMP_CLAUSE(flush, OMPFlushClause)
 #include "clang/Basic/OpenMPKinds.def"
   void writeClause(OMPClause *C);
   void VisitOMPClauseWithPreInit(OMPClauseWithPreInit *C);

@@ -28,6 +28,8 @@ struct SIProgramInfo {
     uint32_t DX10Clamp = 0;
     uint32_t DebugMode = 0;
     uint32_t IEEEMode = 0;
+    uint32_t WgpMode = 0; // GFX10+
+    uint32_t MemOrdered = 0; // GFX10+
     uint64_t ScratchSize = 0;
 
     uint64_t ComputePGMRSrc1 = 0;
@@ -48,18 +50,6 @@ struct SIProgramInfo {
 
     // Number of VGPRs that meets number of waves per execution unit request.
     uint32_t NumVGPRsForWavesPerEU = 0;
-
-    // Fixed SGPR number used to hold wave scratch offset for entire kernel
-    // execution, or std::numeric_limits<uint16_t>::max() if the register is not
-    // used or not known.
-    uint16_t DebuggerWavefrontPrivateSegmentOffsetSGPR =
-        std::numeric_limits<uint16_t>::max();
-
-    // Fixed SGPR number of the first 4 SGPRs used to hold scratch V# for entire
-    // kernel execution, or std::numeric_limits<uint16_t>::max() if the register
-    // is not used or not known.
-    uint16_t DebuggerPrivateSegmentBufferSGPR =
-        std::numeric_limits<uint16_t>::max();
 
     // Whether there is recursion, dynamic allocas, indirect calls or some other
     // reason there may be statically unknown stack usage.

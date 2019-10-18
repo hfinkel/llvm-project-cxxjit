@@ -82,7 +82,7 @@ public:
   /// Get the register for the operand index.
   /// The operand at the index should be a register (asserted by
   /// MachineOperand).
-  unsigned getReg(unsigned Idx) { return MI->getOperand(Idx).getReg(); }
+  Register getReg(unsigned Idx) const { return MI->getOperand(Idx).getReg(); }
 
   /// Add a new virtual register operand.
   const MachineInstrBuilder &addReg(unsigned RegNo, unsigned flags = 0,
@@ -287,6 +287,9 @@ public:
       case MachineOperand::MO_GlobalAddress:
         return addGlobalAddress(Disp.getGlobal(), Disp.getOffset() + off,
                                 TargetFlags);
+      case MachineOperand::MO_BlockAddress:
+        return addBlockAddress(Disp.getBlockAddress(), Disp.getOffset() + off,
+                               TargetFlags);
     }
   }
 

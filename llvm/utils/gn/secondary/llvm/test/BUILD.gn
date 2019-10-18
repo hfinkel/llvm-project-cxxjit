@@ -65,6 +65,8 @@ write_lit_config("lit_site_cfg") {
     "TARGETS_TO_BUILD=$llvm_targets_to_build_string",
     "TARGET_TRIPLE=$llvm_target_triple",
 
+    "LLVM_LIBCXX_USED=0",
+
     # No bindings are implemented in the GN build.
     "LLVM_BINDINGS=",
 
@@ -75,10 +77,13 @@ write_lit_config("lit_site_cfg") {
     "HAVE_OCAML_OUNIT=0",
     "OCAMLFIND=OCAMLFIND-NOTFOUND",
     "OCAMLFLAGS=",
+    "LLVM_BUILD_EXAMPLES=0",
   ]
 
   if (host_cpu == "x64") {
     extra_values += [ "HOST_ARCH=x86_64" ]
+  } else if (host_cpu == "ppc64") {
+    extra_values += [ "HOST_ARCH=powerpc64le" ]
   } else {
     assert(false, "unimplemented host_cpu " + host_cpu)
   }
@@ -87,6 +92,12 @@ write_lit_config("lit_site_cfg") {
     extra_values += [ "EXEEXT=.exe" ]
   } else {
     extra_values += [ "EXEEXT=" ]
+  }
+
+  if (host_os == "win") {
+    extra_values += [ "LLVM_ENABLE_PLUGINS=0" ]
+  } else {
+    extra_values += [ "LLVM_ENABLE_PLUGINS=1" ]
   }
 
   if (host_os == "mac") {
@@ -205,7 +216,9 @@ group("test") {
     "//llvm/tools/llvm-exegesis",
     "//llvm/tools/llvm-extract",
     "//llvm/tools/llvm-isel-fuzzer",
+    "//llvm/tools/llvm-jitlink",
     "//llvm/tools/llvm-link",
+    "//llvm/tools/llvm-lipo",
     "//llvm/tools/llvm-lto",
     "//llvm/tools/llvm-lto2",
     "//llvm/tools/llvm-mc",
@@ -225,7 +238,7 @@ group("test") {
     "//llvm/tools/llvm-size",
     "//llvm/tools/llvm-split",
     "//llvm/tools/llvm-strings",
-    "//llvm/tools/llvm-symbolizer",
+    "//llvm/tools/llvm-symbolizer:symlinks",
     "//llvm/tools/llvm-undname",
     "//llvm/tools/llvm-xray",
     "//llvm/tools/lto",

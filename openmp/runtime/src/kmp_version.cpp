@@ -49,9 +49,9 @@
 #define KMP_COMPILER "Intel(R) C++ Compiler 17.0"
 #elif __INTEL_COMPILER == 1800
 #define KMP_COMPILER "Intel(R) C++ Compiler 18.0"
-#elif __INTEL_COMPILER == 9998
-#define KMP_COMPILER "Intel(R) C++ Compiler mainline"
-#elif __INTEL_COMPILER == 9999
+#elif __INTEL_COMPILER == 1900
+#define KMP_COMPILER "Intel(R) C++ Compiler 19.0"
+#elif __INTEL_COMPILER >= 9900
 #define KMP_COMPILER "Intel(R) C++ Compiler mainline"
 #endif
 #elif KMP_COMPILER_CLANG
@@ -88,16 +88,7 @@
 int const __kmp_version_major = KMP_VERSION_MAJOR;
 int const __kmp_version_minor = KMP_VERSION_MINOR;
 int const __kmp_version_build = KMP_VERSION_BUILD;
-int const __kmp_openmp_version =
-#if OMP_50_ENABLED
-    201611;
-#elif OMP_45_ENABLED
-    201511;
-#elif OMP_40_ENABLED
-    201307;
-#else
-    201107;
-#endif
+int const __kmp_openmp_version = 201611;
 
 /* Do NOT change the format of this string!  Intel(R) Thread Profiler checks for
    a specific format some changes in the recognition routine there need to be

@@ -35,7 +35,7 @@ static void OnStackUnwind(const SignalContext &sig,
   // corresponding code in the sanitizer_common and we use this callback to
   // print it.
   static_cast<const ScarinessScoreBase *>(callback_context)->Print();
-  GetStackTrace(stack, kStackTraceMax, sig.pc, sig.bp, sig.context, fast);
+  stack->Unwind(sig.pc, sig.bp, sig.context, fast);
 }
 
 void ErrorDeadlySignal::Print() {
@@ -169,6 +169,19 @@ void ErrorCallocOverflow::Print() {
   Printf("%s", d.Error());
   Report(
       "ERROR: AddressSanitizer: calloc parameters overflow: count * size "
+      "(%zd * %zd) cannot be represented in type size_t (thread %s)\n",
+      count, size, AsanThreadIdAndName(tid).c_str());
+  Printf("%s", d.Default());
+  stack->Print();
+  PrintHintAllocatorCannotReturnNull();
+  ReportErrorSummary(scariness.GetDescription(), stack);
+}
+
+void ErrorReallocArrayOverflow::Print() {
+  Decorator d;
+  Printf("%s", d.Error());
+  Report(
+      "ERROR: AddressSanitizer: reallocarray parameters overflow: count * size "
       "(%zd * %zd) cannot be represented in type size_t (thread %s)\n",
       count, size, AsanThreadIdAndName(tid).c_str());
   Printf("%s", d.Default());

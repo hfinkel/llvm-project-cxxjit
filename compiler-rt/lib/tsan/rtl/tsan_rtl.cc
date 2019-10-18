@@ -149,6 +149,7 @@ static void BackgroundThread(void *arg) {
   // We don't use ScopedIgnoreInterceptors, because we want ignores to be
   // enabled even when the thread function exits (e.g. during pthread thread
   // shutdown code).
+  cur_thread_init();
   cur_thread()->ignore_interceptors++;
   const u64 kMs2Ns = 1000 * 1000;
 
@@ -328,11 +329,8 @@ static void CheckShadowMapping() {
 #if !SANITIZER_GO
 static void OnStackUnwind(const SignalContext &sig, const void *,
                           BufferedStackTrace *stack) {
-  uptr top = 0;
-  uptr bottom = 0;
-  bool fast = common_flags()->fast_unwind_on_fatal;
-  if (fast) GetThreadStackTopAndBottom(false, &top, &bottom);
-  stack->Unwind(kStackTraceMax, sig.pc, sig.bp, sig.context, top, bottom, fast);
+  stack->Unwind(sig.pc, sig.bp, sig.context,
+                common_flags()->fast_unwind_on_fatal);
 }
 
 static void TsanOnDeadlySignal(int signo, void *siginfo, void *context) {
@@ -353,10 +351,11 @@ void Initialize(ThreadState *thr) {
   SetCheckFailedCallback(TsanCheckFailed);
 
   ctx = new(ctx_placeholder) Context;
-  const char *options = GetEnv(SANITIZER_GO ? "GORACE" : "TSAN_OPTIONS");
+  const char *env_name = SANITIZER_GO ? "GORACE" : "TSAN_OPTIONS";
+  const char *options = GetEnv(env_name);
   CacheBinaryName();
   CheckASLR();
-  InitializeFlags(&ctx->flags, options);
+  InitializeFlags(&ctx->flags, options, env_name);
   AvoidCVE_2016_2143();
   __sanitizer::InitializePlatformEarly();
   __tsan::InitializePlatformEarly();

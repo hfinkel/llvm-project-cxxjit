@@ -36,10 +36,6 @@ using namespace llvm;
 STATISTIC(NumBCLR, "Number of early conditional returns");
 STATISTIC(NumBLR,  "Number of early returns");
 
-namespace llvm {
-  void initializePPCEarlyReturnPass(PassRegistry&);
-}
-
 namespace {
   // PPCEarlyReturn pass - For simple functions without epilogue code, move
   // returns up, and create conditional returns, to avoid unnecessary
@@ -183,11 +179,11 @@ public:
       // nothing to do.
       if (MF.size() < 2)
         return Changed;
-
-      for (MachineFunction::iterator I = MF.begin(); I != MF.end();) {
+      
+      // We can't use a range-based for loop due to clobbering the iterator.
+      for (MachineFunction::iterator I = MF.begin(), E = MF.end(); I != E;) {
         MachineBasicBlock &B = *I++;
-        if (processBlock(B))
-          Changed = true;
+        Changed |= processBlock(B);
       }
 
       return Changed;
