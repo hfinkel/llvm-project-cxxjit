@@ -1624,6 +1624,36 @@ struct CompilerData {
                             Linker::Flags::OverrideFromSrc))
       fatal();
 
+    // Aliases are not allowed to point to functions with available_externally linkage.
+    // We solve this by replacing these aliases with the definition of the aliasee.
+    // Candidates are identified first, then erased in a second step to avoid invalidating the iterator.
+    auto& LinkedMod = *Consumer->getModule();
+    SmallPtrSet<GlobalAlias*, 4> ToReplace;
+    for (auto& Alias : LinkedMod.aliases()) {
+      // Aliases may point to other aliases but we only need to alter the lowest level one
+      // Only function declarations are relevant
+      auto Aliasee = dyn_cast<Function>(Alias.getAliasee());
+      if (!Aliasee || !Aliasee->isDeclarationForLinker()) {
+        continue;
+      }
+      assert(Aliasee->hasAvailableExternallyLinkage() && "Broken module: alias points to declaration");
+      ToReplace.insert(&Alias);
+    }
+
+    for (auto* Alias : ToReplace) {
+      auto Aliasee = cast<Function>(Alias->getAliasee());
+
+      llvm::ValueToValueMapTy VMap;
+      Function* AliasReplacement = llvm::CloneFunction(Aliasee, VMap);
+
+      AliasReplacement->setLinkage(Alias->getLinkage());
+      Alias->replaceAllUsesWith(AliasReplacement);
+
+      SmallString<32> AliasName = Alias->getName();
+      Alias->eraseFromParent();
+      AliasReplacement->setName(AliasName);
+    }
+
     // Optimize the merged module, containing both the newly generated IR as well as
     // previously emitted code marked available_externally.
     Consumer->EmitOptimized();
