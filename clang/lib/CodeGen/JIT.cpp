@@ -502,10 +502,6 @@ public:
         fatal();
     }
 
-    EmitBackendOutput(Diags, HeaderSearchOpts, CodeGenOpts, TargetOpts,
-                      LangOpts, C.getTargetInfo().getDataLayout(),
-                      getModule(), Action,
-                      llvm::make_unique<llvm::buffer_ostream>(*AsmOutStream));
   }
 
   void HandleTagDeclDefinition(TagDecl *D) override {
@@ -526,6 +522,13 @@ public:
 
   void HandleVTable(CXXRecordDecl *RD) override {
     Gen->HandleVTable(RD);
+  }
+
+  void EmitOptimized() {
+    EmitBackendOutput(Diags, HeaderSearchOpts, CodeGenOpts, TargetOpts,
+                      LangOpts, Context->getTargetInfo().getDataLayout(),
+                      getModule(), Action,
+                      llvm::make_unique<llvm::buffer_ostream>(*AsmOutStream));
   }
 };
 
@@ -1400,6 +1403,7 @@ struct CompilerData {
 
     if (DevCD) {
       DevCD->Consumer->HandleTranslationUnit(*DevCD->Ctx);
+      DevCD->Consumer->EmitOptimized();
 
       // We have now created the PTX output, but what we really need as a
       // fatbin that the CUDA runtime will recognize.
@@ -1521,6 +1525,7 @@ struct CompilerData {
       DevCD->DevAsm.clear();
     }
 
+    // Finalize translation unit. No optimization yet.
     Consumer->HandleTranslationUnit(*Ctx);
 
     // First, mark everything we've newly generated with external linkage. When
@@ -1553,9 +1558,6 @@ struct CompilerData {
         GO->setComdat(nullptr);
     }
 
-    std::unique_ptr<llvm::Module> ToRunMod =
-      llvm::CloneModule(*Consumer->getModule());
-
     // Here we link our previous cache of definitions, etc. into this module.
     // This includes all of our previously-generated functions (marked as
     // available externally). We prefer our previously-generated versions to
@@ -1567,7 +1569,7 @@ struct CompilerData {
     // number), and these from previously-generated code will conflict with the
     // names chosen for string literals in this module.
 
-    for (auto &GV : ToRunMod->global_values()) {
+    for (auto &GV : Consumer->getModule()->global_values()) {
       if (!IsLocalUnnamedConst(GV) && !GV.getName().startswith("__cuda_"))
         continue;
 
@@ -1591,7 +1593,7 @@ struct CompilerData {
     // the base part of the module (as they specifically initialize variables,
     // etc. that we just generated).
 
-    for (auto &F : ToRunMod->functions()) {
+    for (auto &F : Consumer->getModule()->functions()) {
       // FIXME: This likely covers the set of TU-local init/deinit functions
       // that can't be shared with the base module. There should be a better
       // way to do this (e.g., we could record all functions that
@@ -1618,9 +1620,46 @@ struct CompilerData {
       F.setName(UniqueName);
     }
 
-    if (Linker::linkModules(*ToRunMod, llvm::CloneModule(*RunningMod),
+    if (Linker::linkModules(*Consumer->getModule(), llvm::CloneModule(*RunningMod),
                             Linker::Flags::OverrideFromSrc))
       fatal();
+
+    // Aliases are not allowed to point to functions with available_externally linkage.
+    // We solve this by replacing these aliases with the definition of the aliasee.
+    // Candidates are identified first, then erased in a second step to avoid invalidating the iterator.
+    auto& LinkedMod = *Consumer->getModule();
+    SmallPtrSet<GlobalAlias*, 4> ToReplace;
+    for (auto& Alias : LinkedMod.aliases()) {
+      // Aliases may point to other aliases but we only need to alter the lowest level one
+      // Only function declarations are relevant
+      auto Aliasee = dyn_cast<Function>(Alias.getAliasee());
+      if (!Aliasee || !Aliasee->isDeclarationForLinker()) {
+        continue;
+      }
+      assert(Aliasee->hasAvailableExternallyLinkage() && "Broken module: alias points to declaration");
+      ToReplace.insert(&Alias);
+    }
+
+    for (auto* Alias : ToReplace) {
+      auto Aliasee = cast<Function>(Alias->getAliasee());
+
+      llvm::ValueToValueMapTy VMap;
+      Function* AliasReplacement = llvm::CloneFunction(Aliasee, VMap);
+
+      AliasReplacement->setLinkage(Alias->getLinkage());
+      Alias->replaceAllUsesWith(AliasReplacement);
+
+      SmallString<32> AliasName = Alias->getName();
+      Alias->eraseFromParent();
+      AliasReplacement->setName(AliasName);
+    }
+
+    // Optimize the merged module, containing both the newly generated IR as well as
+    // previously emitted code marked available_externally.
+    Consumer->EmitOptimized();
+
+    std::unique_ptr<llvm::Module> ToRunMod =
+        llvm::CloneModule(*Consumer->getModule());
 
     CJ->addModule(std::move(ToRunMod));
 
@@ -1644,8 +1683,9 @@ struct CompilerData {
           GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
       }
 
+    // OverrideFromSrc is needed here too, otherwise globals marked available_externally are not considered.
     if (Linker::linkModules(*RunningMod, Consumer->takeModule(),
-                            Linker::Flags::None))
+                            Linker::Flags::OverrideFromSrc))
       fatal();
 
     Consumer->Initialize(*Ctx);
