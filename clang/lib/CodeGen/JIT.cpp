@@ -758,7 +758,7 @@ struct CompilerData {
     BackendAction BA = Backend_EmitNothing;
     std::unique_ptr<raw_pwrite_stream> OS(new llvm::raw_null_ostream);
 
-    if (ForDev) {
+    if (IsForDev) {
        BA = Backend_EmitAssembly;
        OS.reset(new raw_svector_ostream(DevAsm));
     }
