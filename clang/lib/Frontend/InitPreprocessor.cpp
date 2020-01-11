@@ -1172,6 +1172,11 @@ void clang::InitializePreprocessor(
     AddImplicitInclude(Builder, Path);
   }
 
+  // If we're compiling with C++ JIT enabled, include the header with the
+  // builtin types.
+  if (PP.getLangOpts().isJITEnabled())
+    Builder.append("#include <__clang_jit_types.h>");
+
   // Instruct the preprocessor to skip the preamble.
   PP.setSkipMainFilePreamble(InitOpts.PrecompiledPreambleBytes.first,
                              InitOpts.PrecompiledPreambleBytes.second);
