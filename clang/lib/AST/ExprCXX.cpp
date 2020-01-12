@@ -1692,7 +1692,7 @@ DynamicFunctionTemplateInstantiationExpr::
                                            SourceLocation RParenLoc,
                                            SourceRange AngleBrackets) :
   Expr(DynamicFunctionTemplateInstantiationExprClass, T,
-       VK_LValue,
+       VK_RValue,
        OK_Ordinary,
        T->isDependentType(), T->isDependentType(),
        T->isInstantiationDependentType(),

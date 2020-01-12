@@ -3018,6 +3018,8 @@ def err_dynamic_instantiation_of_overloaded_function : Error<
 def err_dynamic_instantiation_with_spec_type_mismatch : Error<
   "specialization of dynamically-instantiated function template has type '%0' "
   ", which is different from the type of the base template: '%1'">;
+def err_jit_required : Error<
+  "dynamic function-template instantiation not enabled; use -fjit to enable">;
 
 // Availability attribute
 def warn_availability_unknown_platform : Warning<

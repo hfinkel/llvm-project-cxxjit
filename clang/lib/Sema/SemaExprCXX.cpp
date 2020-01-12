@@ -7998,7 +7998,7 @@ Sema::BuildDynamicFunctionTemplateInstantiation(
   if (Name.getAsOverloadedTemplate()) {
     Diag(Loc, diag::err_dynamic_instantiation_of_overloaded_function);
     NoteAllFoundTemplates(Name);
-    return ExprResult();
+    return ExprError();
   }
 
   // A function template can be specialized, but each specializaton must share
@@ -8011,12 +8011,12 @@ Sema::BuildDynamicFunctionTemplateInstantiation(
         SFD->getType() << FnTy;
       Diag(SFD->getLocation(), diag::note_template_declared_here) << 0 <<
         SFD->getDeclName();
-      return ExprResult();
+      return ExprError();
     }
 
   QualType T = BuildDynamicFunctionTemplateInstantiationTmpl(FnTy, Loc);
   if (T.isNull())
-    return ExprResult();
+    return ExprError();
 
   return DynamicFunctionTemplateInstantiationExpr::Create(
     Context, T, Loc, QualifierLoc, Name, Args, LParenLoc, RParenLoc,
@@ -8033,6 +8033,11 @@ Sema::ActOnDynamicFunctionTemplateInstantiation(
         SourceLocation RParenLoc,
         SourceLocation LAngleBracketLoc,
         SourceLocation RAngleBracketLoc) {
+  if (!getLangOpts().isJITEnabled()) {
+    Diag(Loc, diag::err_jit_required);
+    return ExprError();
+  }
+
   return BuildDynamicFunctionTemplateInstantiation(
     Loc, SS.getWithLocInContext(Context), Template.get(),
     Args, LParenLoc, RParenLoc,
