@@ -1842,6 +1842,26 @@ void ASTStmtWriter::VisitTypoExpr(TypoExpr *E) {
 }
 
 //===----------------------------------------------------------------------===//
+// Clang JIT Expressions and Statements.
+//===----------------------------------------------------------------------===//
+
+void
+ASTStmtWriter::VisitDynamicFunctionTemplateInstantiationExpr(
+  DynamicFunctionTemplateInstantiationExpr *E) {
+  VisitExpr(E);
+  Record.push_back(E->arg_size());
+  for (auto ArgI = E->arg_begin(), ArgE = E->arg_end(); ArgI != ArgE; ++ArgI)
+    Record.AddStmt(*ArgI);
+  Record.AddTemplateName(E->getTemplateName());
+  Record.AddNestedNameSpecifierLoc(E->getQualifierLoc());
+  Record.AddSourceRange(E->getAngleBrackets());
+  Record.AddSourceLocation(E->getLParenLoc());
+  Record.AddSourceLocation(E->getRParenLoc());
+  Record.AddSourceLocation(E->getOperatorLoc());
+  Code = serialization::EXPR_DYNAMIC_FUNCTION_TEMPLATE_INSTANTIATION;
+}
+
+//===----------------------------------------------------------------------===//
 // CUDA Expressions and Statements.
 //===----------------------------------------------------------------------===//
 

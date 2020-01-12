@@ -4750,6 +4750,138 @@ public:
   }
 };
 
+/// Represents the Clang JIT
+/// __clang_dynamic_function_template_instantiation<F>(v...) expression.
+class DynamicFunctionTemplateInstantiationExpr final
+    : public Expr,
+      private llvm::TrailingObjects<DynamicFunctionTemplateInstantiationExpr,
+                                    Expr *> {
+  friend class ASTStmtReader;
+  friend class CastExpr;
+  friend class TrailingObjects;
+
+  NestedNameSpecifierLoc QualifierLoc;
+  void *Name;
+
+  // The location of the op
+  SourceLocation Loc;
+
+  // The location of the left parenthesis
+  SourceLocation LParenLoc;
+
+  // The location of the right parenthesis
+  SourceLocation RParenLoc;
+
+  // Range for '<' '>'
+  SourceRange AngleBrackets;
+
+  DynamicFunctionTemplateInstantiationExpr(QualType T,
+                                           SourceLocation Loc,
+                                           NestedNameSpecifierLoc QualifierLoc,
+                                           TemplateName Name,
+                                           ArrayRef<Expr *> Args,
+                                           SourceLocation LParenLoc,
+                                           SourceLocation RParenLoc,
+                                           SourceRange AngleBrackets);
+
+  DynamicFunctionTemplateInstantiationExpr(EmptyShell Empty, unsigned NumArgs)
+      : Expr(DynamicFunctionTemplateInstantiationExprClass, Empty) {
+    DynamicFunctionTemplateInstantiationExprBits.NumArgs = NumArgs;
+  }
+
+public:
+
+  static DynamicFunctionTemplateInstantiationExpr *Create(const ASTContext &Context,
+                                                          QualType T,
+                                                          SourceLocation Loc,
+                                                          NestedNameSpecifierLoc QualifierLoc,
+                                                          TemplateName Name,
+                                                          ArrayRef<Expr *> Args,
+                                                          SourceLocation LParenLoc,
+                                                          SourceLocation RParenLoc,
+                                                          SourceRange AngleBrackets);
+
+  static DynamicFunctionTemplateInstantiationExpr *CreateEmpty(const ASTContext &Context,
+                                                               unsigned NumArgs);
+
+  /// Retrieve the location of the keyword.
+  SourceLocation getOperatorLoc() const { return Loc; }
+  void setOperatorLoc(SourceLocation L) { Loc = L; }
+
+  /// Retrieve the location of the opening parenthesis.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+  void setLParenLoc(SourceLocation L) { LParenLoc = L; }
+
+  /// Retrieve the location of the closing parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+  void setRParenLoc(SourceLocation L) { RParenLoc = L; }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY { return Loc; }
+  SourceLocation getEndLoc() const LLVM_READONLY { return RParenLoc; }
+  SourceRange getAngleBrackets() const LLVM_READONLY { return AngleBrackets; }
+  void setAngleBrackets(SourceRange R) { AngleBrackets = R; }
+
+  NestedNameSpecifierLoc getQualifierLoc() const { return QualifierLoc; }
+  void setQualifierLoc(NestedNameSpecifierLoc QL) { QualifierLoc = QL; }
+
+  TemplateName
+  getTemplateName() const { return TemplateName::getFromVoidPointer(Name); }
+
+  void setTemplateName(TemplateName N) { Name = N.getAsVoidPointer(); }
+
+  FunctionDecl *
+  getTemplateFunctionDecl() const;
+
+  /// Retrieve the number of arguments.
+  unsigned arg_size() const {
+    return DynamicFunctionTemplateInstantiationExprBits.NumArgs;
+  }
+
+  using arg_iterator = Expr **;
+  using arg_range = llvm::iterator_range<arg_iterator>;
+
+  arg_iterator arg_begin() { return getTrailingObjects<Expr *>(); }
+  arg_iterator arg_end() { return arg_begin() + arg_size(); }
+  arg_range arguments() { return arg_range(arg_begin(), arg_end()); }
+
+  using const_arg_iterator = const Expr* const *;
+  using const_arg_range = llvm::iterator_range<const_arg_iterator>;
+
+  const_arg_iterator arg_begin() const { return getTrailingObjects<Expr *>(); }
+  const_arg_iterator arg_end() const { return arg_begin() + arg_size(); }
+  const_arg_range arguments() const {
+    return const_arg_range(arg_begin(), arg_end());
+  }
+
+  Expr *getArg(unsigned I) {
+    assert(I < arg_size() && "Argument index out-of-range");
+    return arg_begin()[I];
+  }
+
+  const Expr *getArg(unsigned I) const {
+    assert(I < arg_size() && "Argument index out-of-range");
+    return arg_begin()[I];
+  }
+
+  void setArg(unsigned I, Expr *E) {
+    assert(I < arg_size() && "Argument index out-of-range");
+    arg_begin()[I] = E;
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == DynamicFunctionTemplateInstantiationExprClass;
+  }
+
+  // Iterators
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
 } // namespace clang
 
 #endif // LLVM_CLANG_AST_EXPRCXX_H

@@ -161,6 +161,8 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
   isConstantEvaluatedOverride = false;
 
   NextJITFuncId = 0;
+  ClangJITNamespaceCache = nullptr;
+  DynamicFunctionTemplateInstantiationCache = nullptr;
 
   LoadedExternalKnownNamespaces = false;
   for (unsigned I = 0; I != NSAPI::NumNSNumberLiteralMethods; ++I)

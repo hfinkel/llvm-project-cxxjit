@@ -3547,3 +3547,78 @@ ExprResult Parser::ParseBuiltinBitCast() {
   return Actions.ActOnBuiltinBitCastExpr(KWLoc, DeclaratorInfo, Operand,
                                          T.getCloseLocation());
 }
+
+/// Parse a __clang_dynamic_function_template_instantiation
+///           '<' type-id '>' '(' expression, ...  ')'
+ExprResult Parser::ParseDynamicFunctionTemplateInstantiation() {
+  tok::TokenKind Kind = Tok.getKind();
+
+  SourceLocation OpLoc = ConsumeToken();
+  SourceLocation LAngleBracketLoc = Tok.getLocation();
+
+  // Check for "<::" which is parsed as "[:".  If found, fix token stream,
+  // diagnose error, suggest fix, and recover parsing.
+  if (Tok.is(tok::l_square) && Tok.getLength() == 2) {
+    Token Next = NextToken();
+    if (Next.is(tok::colon) && areTokensAdjacent(Tok, Next))
+      FixDigraph(*this, PP, Tok, Next, Kind, /*AtDigraph*/true);
+  }
+
+  if (ExpectAndConsume(tok::less))
+    return ExprError();
+
+  DiagnoseAndSkipCXX11Attributes();
+
+  CXXScopeSpec SS; // nested-name-specifier, if present
+  ParseOptionalCXXScopeSpecifier(SS, nullptr,
+                                 /*EnteringContext=*/false);
+
+  if (Tok.isNot(tok::identifier)) {
+    Diag(Tok.getLocation(), diag::err_expected) << tok::identifier;
+    return ExprError();
+  }
+
+  TemplateTy Template;
+  UnqualifiedId Name;
+  Name.setIdentifier(Tok.getIdentifierInfo(), Tok.getLocation());
+  ConsumeToken(); // the identifier
+
+  bool MemberOfUnknownSpecialization;
+  TemplateNameKind TNK = Actions.isTemplateName(
+      getCurScope(), SS,
+      /*hasTemplateKeyword=*/false, Name,
+      /*ObjectType=*/nullptr,
+      /*EnteringContext=*/false, Template, MemberOfUnknownSpecialization);
+  if (TNK != TNK_Function_template) {
+    Diag(Tok.getLocation(), diag::err_not_a_function_template) <<
+      Name.Identifier->getName();
+    Actions.NoteAllFoundTemplates(Template.get());
+    return ExprError();
+  }
+
+  SourceLocation RAngleBracketLoc = Tok.getLocation();
+
+  if (ExpectAndConsume(tok::greater))
+    return ExprError(Diag(LAngleBracketLoc, diag::note_matching) << tok::less);
+
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+
+  if (T.expectAndConsume())
+    return ExprError();
+
+  ExprVector Exprs;
+  CommaLocsTy Commas;
+  if (ParseExpressionList(Exprs, Commas))
+    return ExprError();
+
+  // Match the ')'.
+  T.consumeClose();
+
+  return Actions.ActOnDynamicFunctionTemplateInstantiation(
+                   OpLoc, SS, Template, Exprs,
+                   LAngleBracketLoc,
+                   RAngleBracketLoc,
+                   T.getOpenLocation(),
+                   T.getCloseLocation());
+}
+

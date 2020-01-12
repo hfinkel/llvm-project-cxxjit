@@ -370,6 +370,9 @@ CXX11_KEYWORD(nullptr               , 0)
 CXX11_KEYWORD(static_assert         , KEYMSCOMPAT)
 CXX11_KEYWORD(thread_local          , 0)
 
+// Clang JIT support
+CXX11_KEYWORD(__clang_dynamic_function_template_instantiation, 0)
+
 // C++2a / concepts TS keywords
 CONCEPTS_KEYWORD(concept)
 CONCEPTS_KEYWORD(requires)

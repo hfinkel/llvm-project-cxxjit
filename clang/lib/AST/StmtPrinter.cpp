@@ -2219,6 +2219,30 @@ void StmtPrinter::VisitCXXFoldExpr(CXXFoldExpr *E) {
   OS << ")";
 }
 
+// Clang JIT
+
+void StmtPrinter::VisitDynamicFunctionTemplateInstantiationExpr(
+  DynamicFunctionTemplateInstantiationExpr *E) {
+  OS << "__clang_dynamic_function_template_instantiation<";
+
+  if (NestedNameSpecifier *Qualifier
+        = E->getQualifierLoc().getNestedNameSpecifier())
+    Qualifier->print(OS, Policy);
+
+  E->getTemplateName().print(OS, Policy);
+
+  OS << ">(";
+
+  for (auto Arg = E->arg_begin(), ArgEnd = E->arg_end();
+       Arg != ArgEnd; ++Arg) {
+    if (Arg != E->arg_begin())
+      OS << ", ";
+    PrintExpr(*Arg);
+  }
+
+  OS << ")";
+}
+
 // C++ Coroutines TS
 
 void StmtPrinter::VisitCoroutineBodyStmt(CoroutineBodyStmt *S) {

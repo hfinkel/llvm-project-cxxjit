@@ -905,6 +905,12 @@ public:
   /// The MSVC "_GUID" struct, which is defined in MSVC header files.
   RecordDecl *MSVCGuidDecl;
 
+  /// The "__clang_jit" namespace.
+  NamespaceDecl *ClangJITNamespaceCache;
+
+  /// The "__clang::jit::dynamic_function_template_instantiation" template.
+  ClassTemplateDecl *DynamicFunctionTemplateInstantiationCache;
+
   /// Caches identifiers/selectors for NSFoundation APIs.
   std::unique_ptr<NSAPI> NSAPIObj;
 
@@ -8655,6 +8661,30 @@ public:
   void CheckObjCMethodOverrides(ObjCMethodDecl *ObjCMethod,
                                 ObjCInterfaceDecl *CurrentClass,
                                 ResultTypeCompatibilityKind RTC);
+
+  // Clang JIT extension...
+
+  QualType BuildDynamicFunctionTemplateInstantiationTmpl(
+             QualType FnType, SourceLocation Loc);
+
+  ExprResult BuildDynamicFunctionTemplateInstantiation(
+               SourceLocation Loc,
+               NestedNameSpecifierLoc QualifierLoc,
+               TemplateName Name,
+               ArrayRef<Expr *> Args,
+               SourceLocation LParenLoc,
+               SourceLocation RParenLoc,
+               SourceRange AngleBrackets);
+
+  ExprResult ActOnDynamicFunctionTemplateInstantiation(
+               SourceLocation Loc,
+               const CXXScopeSpec &SS,
+               TemplateTy Template,
+               ArrayRef<Expr *> Args,
+               SourceLocation LParenLoc,
+               SourceLocation RParenLoc,
+               SourceLocation LAngleBracketLoc,
+               SourceLocation RAngleBracketLoc);
 
   enum PragmaOptionsAlignKind {
     POAK_Native,  // #pragma options align=native

@@ -17,6 +17,7 @@
 #include "clang/AST/DeclAccessPair.h"
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/LambdaCapture.h"
@@ -1672,3 +1673,70 @@ CUDAKernelCallExpr *CUDAKernelCallExpr::CreateEmpty(const ASTContext &Ctx,
                            alignof(CUDAKernelCallExpr));
   return new (Mem) CUDAKernelCallExpr(NumArgs, Empty);
 }
+
+FunctionDecl *
+DynamicFunctionTemplateInstantiationExpr::
+  getTemplateFunctionDecl() const {
+  auto *FTD =
+    cast<FunctionTemplateDecl>(getTemplateName().getAsTemplateDecl());
+  return FTD->getTemplatedDecl();
+}
+
+DynamicFunctionTemplateInstantiationExpr::
+  DynamicFunctionTemplateInstantiationExpr(QualType T,
+                                           SourceLocation Loc,
+                                           NestedNameSpecifierLoc QualifierLoc,
+                                           TemplateName Name,
+                                           ArrayRef<Expr *> Args,
+                                           SourceLocation LParenLoc,
+                                           SourceLocation RParenLoc,
+                                           SourceRange AngleBrackets) :
+  Expr(DynamicFunctionTemplateInstantiationExprClass, T,
+       VK_LValue,
+       OK_Ordinary,
+       T->isDependentType(), T->isDependentType(),
+       T->isInstantiationDependentType(),
+       T->containsUnexpandedParameterPack()),
+  QualifierLoc(QualifierLoc),
+  Name(Name.getAsVoidPointer()), Loc(Loc), LParenLoc(LParenLoc),
+  RParenLoc(RParenLoc), AngleBrackets(AngleBrackets) {
+  DynamicFunctionTemplateInstantiationExprBits.NumArgs = Args.size();
+  auto **StoredArgs = getTrailingObjects<Expr *>();
+  for (unsigned I = 0; I != Args.size(); ++I) {
+    if (Args[I]->getType()->isDependentType())
+      setValueDependent(true);
+    if (Args[I]->getType()->isInstantiationDependentType())
+      setInstantiationDependent(true);
+    if (Args[I]->getType()->containsUnexpandedParameterPack())
+      setContainsUnexpandedParameterPack(true);
+
+    StoredArgs[I] = Args[I];
+  }
+}
+
+DynamicFunctionTemplateInstantiationExpr *
+DynamicFunctionTemplateInstantiationExpr::Create(const ASTContext &Context,
+                                                 QualType T,
+                                                 SourceLocation Loc,
+                                                 NestedNameSpecifierLoc QualifierLoc,
+                                                 TemplateName Name,
+                                                 ArrayRef<Expr *> Args,
+                                                 SourceLocation LParenLoc,
+                                                 SourceLocation RParenLoc,
+                                                 SourceRange AngleBrackets) {
+  void *Mem = Context.Allocate(totalSizeToAlloc<Expr *>(Args.size()));
+  return new (Mem) DynamicFunctionTemplateInstantiationExpr(T, Loc,
+                                                            QualifierLoc,
+                                                            Name, Args,
+                                                            LParenLoc,
+                                                            RParenLoc,
+                                                            AngleBrackets);
+}
+
+DynamicFunctionTemplateInstantiationExpr *
+DynamicFunctionTemplateInstantiationExpr::CreateEmpty(const ASTContext &Context,
+                                                      unsigned NumArgs) {
+  void *Mem = Context.Allocate(totalSizeToAlloc<Expr *>(NumArgs));
+  return new (Mem) DynamicFunctionTemplateInstantiationExpr(EmptyShell(), NumArgs);
+}
+

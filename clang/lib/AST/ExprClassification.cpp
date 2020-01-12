@@ -418,6 +418,9 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
            "Only 1-element init lists can be glvalues.");
     return ClassifyInternal(Ctx, cast<InitListExpr>(E)->getInit(0));
 
+  case Expr::DynamicFunctionTemplateInstantiationExprClass:
+    return Cl::CL_PRValue;
+
   case Expr::CoawaitExprClass:
   case Expr::CoyieldExprClass:
     return ClassifyInternal(Ctx, cast<CoroutineSuspendExpr>(E)->getResumeExpr());

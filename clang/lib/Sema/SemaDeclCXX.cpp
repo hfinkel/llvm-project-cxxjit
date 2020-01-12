@@ -8903,6 +8903,7 @@ Decl *Sema::ActOnStartNamespaceDef(
   bool IsInline = InlineLoc.isValid();
   bool IsInvalid = false;
   bool IsStd = false;
+  bool IsClangJIT = false;
   bool AddToKnown = false;
   Scope *DeclRegionScope = NamespcScope->getParent();
 
@@ -8945,6 +8946,10 @@ Decl *Sema::ActOnStartNamespaceDef(
       PrevNS = getStdNamespace();
       IsStd = true;
       AddToKnown = !IsInline;
+    } else if (II->isStr("__clang_jit") &&
+               CurContext->getRedeclContext()->isTranslationUnit()) {
+      IsClangJIT = true;
+      AddToKnown = !IsInline;
     } else {
       // We've seen this namespace for the first time.
       AddToKnown = !IsInline;
@@ -8980,6 +8985,9 @@ Decl *Sema::ActOnStartNamespaceDef(
 
   if (IsStd)
     StdNamespace = Namespc;
+  else if (IsClangJIT)
+    ClangJITNamespaceCache = Namespc;
+
   if (AddToKnown)
     KnownNamespaces[Namespc] = false;
 

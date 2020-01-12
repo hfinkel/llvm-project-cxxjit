@@ -1236,6 +1236,10 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     Res = ParseCXXThis();
     break;
 
+  case tok::kw___clang_dynamic_function_template_instantiation:
+    Res = ParseDynamicFunctionTemplateInstantiation();
+    break;
+
   case tok::annot_typename:
     if (isStartOfObjCClassMessageMissingOpenBracket()) {
       ParsedType Type = getTypeAnnotation(Tok);

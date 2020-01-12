@@ -1887,6 +1887,8 @@ private:
 
   ExprResult ParseBlockLiteralExpression();  // ^{...}
 
+  ExprResult ParseDynamicFunctionTemplateInstantiation();
+
   //===--------------------------------------------------------------------===//
   // Objective-C Expressions
   ExprResult ParseObjCAtExpression(SourceLocation AtLocation);

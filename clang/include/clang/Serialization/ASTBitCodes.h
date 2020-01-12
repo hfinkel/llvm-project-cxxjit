@@ -1929,6 +1929,9 @@ namespace serialization {
       STMT_SEH_FINALLY,           // SEHFinallyStmt
       STMT_SEH_TRY,               // SEHTryStmt
 
+      // Clang JIT
+      EXPR_DYNAMIC_FUNCTION_TEMPLATE_INSTANTIATION,
+
       // OpenMP directives
       STMT_OMP_PARALLEL_DIRECTIVE,
       STMT_OMP_SIMD_DIRECTIVE,

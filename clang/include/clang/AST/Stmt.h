@@ -923,6 +923,16 @@ protected:
 
   //===--- Clang Extensions bitfields classes ---===//
 
+  class DynamicFunctionTemplateInstantiationExprBitfields {
+    friend class ASTStmtReader;
+    friend class DynamicFunctionTemplateInstantiationExpr;
+
+    unsigned : NumExprBits;
+
+    /// The number of arguments used to construct the template.
+    unsigned NumArgs;
+  };
+
   class OpaqueValueExprBitfields {
     friend class ASTStmtReader;
     friend class OpaqueValueExpr;
@@ -1006,6 +1016,8 @@ protected:
     ObjCIndirectCopyRestoreExprBitfields ObjCIndirectCopyRestoreExprBits;
 
     // Clang Extensions
+    DynamicFunctionTemplateInstantiationExprBitfields
+      DynamicFunctionTemplateInstantiationExprBits;
     OpaqueValueExprBitfields OpaqueValueExprBits;
   };
 

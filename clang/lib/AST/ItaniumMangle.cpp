@@ -3633,6 +3633,7 @@ recurse:
   case Expr::SourceLocExprClass:
   case Expr::FixedPointLiteralClass:
   case Expr::BuiltinBitCastExprClass:
+  case Expr::DynamicFunctionTemplateInstantiationExprClass:
   {
     if (!NullOut) {
       // As bad as this diagnostic is, it's better than crashing.

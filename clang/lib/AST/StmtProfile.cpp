@@ -1862,6 +1862,15 @@ void StmtProfiler::VisitCXXFoldExpr(const CXXFoldExpr *S) {
   ID.AddInteger(S->getOperator());
 }
 
+void StmtProfiler::VisitDynamicFunctionTemplateInstantiationExpr(
+  const DynamicFunctionTemplateInstantiationExpr *S) {
+  VisitNestedNameSpecifier(S->getQualifierLoc().getNestedNameSpecifier());
+  VisitTemplateName(S->getTemplateName());
+  ID.AddInteger(S->arg_size());
+  for (auto *E : S->arguments())
+    VisitExpr(E);
+}
+
 void StmtProfiler::VisitCoroutineBodyStmt(const CoroutineBodyStmt *S) {
   VisitStmt(S);
 }

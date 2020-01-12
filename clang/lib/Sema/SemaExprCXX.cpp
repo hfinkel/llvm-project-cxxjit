@@ -7937,3 +7937,105 @@ Sema::CheckMicrosoftIfExistsSymbol(Scope *S, SourceLocation KeywordLoc,
 
   return CheckMicrosoftIfExistsSymbol(S, SS, TargetNameInfo);
 }
+
+static ClassTemplateDecl *
+LookupDynamicFunctionTemplateInstantiationTmpl(Sema &S,
+                                               SourceLocation Loc) {
+  // Note: This should always be available because the header included
+  // automatically.
+  if (!S.ClangJITNamespaceCache)
+    return nullptr;
+
+  LookupResult Result(S, &S.PP.getIdentifierTable()
+                              .get("dynamic_function_template_instantiation"),
+                      Loc, Sema::LookupOrdinaryName);
+  if (!S.LookupQualifiedName(Result, S.ClangJITNamespaceCache))
+    return nullptr;
+
+  return Result.getAsSingle<ClassTemplateDecl>();
+}
+
+QualType
+Sema::BuildDynamicFunctionTemplateInstantiationTmpl(
+        QualType FnType, SourceLocation Loc) {
+  if (!DynamicFunctionTemplateInstantiationCache) {
+    DynamicFunctionTemplateInstantiationCache =
+      LookupDynamicFunctionTemplateInstantiationTmpl(*this, Loc);
+    if (!DynamicFunctionTemplateInstantiationCache)
+      return QualType();
+  }
+
+  TemplateArgumentListInfo Args(Loc, Loc);
+  Args.addArgument(TemplateArgumentLoc(TemplateArgument(FnType),
+                                       Context.getTrivialTypeSourceInfo(FnType,
+                                                                        Loc)));
+  return Context.getCanonicalType(
+           CheckTemplateIdType(TemplateName(
+                                 DynamicFunctionTemplateInstantiationCache),
+                               Loc, Args));
+}
+
+ExprResult
+Sema::BuildDynamicFunctionTemplateInstantiation(
+        SourceLocation Loc,
+        NestedNameSpecifierLoc QualifierLoc,
+        TemplateName Name,
+        ArrayRef<Expr *> Args,
+        SourceLocation LParenLoc,
+        SourceLocation RParenLoc,
+        SourceRange AngleBrackets) {
+  // We need to form the type of the expression, which will be
+  // dynamic_function_template_instantiation<FnTy> where FnTy is the function
+  // type of the underlying template.
+
+  auto *FTD = cast<FunctionTemplateDecl>(Name.getAsTemplateDecl());
+  QualType FnTy = FTD->getTemplatedDecl()->getType();
+ 
+  // We cannot dynamically instantiate a function template that is overloaded.
+  // We need to form the type of the function pointer before the call arguments
+  // are known.
+ 
+  if (Name.getAsOverloadedTemplate()) {
+    Diag(Loc, diag::err_dynamic_instantiation_of_overloaded_function);
+    NoteAllFoundTemplates(Name);
+    return ExprResult();
+  }
+
+  // A function template can be specialized, but each specializaton must share
+  // its function type with the base template.
+
+  for (const FunctionDecl *SFD : FTD->specializations())
+    if (Context.getCanonicalType(SFD->getType()) !=
+        Context.getCanonicalType(FnTy)) {
+      Diag(Loc, diag::err_dynamic_instantiation_with_spec_type_mismatch) <<
+        SFD->getType() << FnTy;
+      Diag(SFD->getLocation(), diag::note_template_declared_here) << 0 <<
+        SFD->getDeclName();
+      return ExprResult();
+    }
+
+  QualType T = BuildDynamicFunctionTemplateInstantiationTmpl(FnTy, Loc);
+  if (T.isNull())
+    return ExprResult();
+
+  return DynamicFunctionTemplateInstantiationExpr::Create(
+    Context, T, Loc, QualifierLoc, Name, Args, LParenLoc, RParenLoc,
+    AngleBrackets);
+}
+
+ExprResult
+Sema::ActOnDynamicFunctionTemplateInstantiation(
+        SourceLocation Loc,
+        const CXXScopeSpec &SS,
+        TemplateTy Template,
+        ArrayRef<Expr *> Args,
+        SourceLocation LParenLoc,
+        SourceLocation RParenLoc,
+        SourceLocation LAngleBracketLoc,
+        SourceLocation RAngleBracketLoc) {
+  return BuildDynamicFunctionTemplateInstantiation(
+    Loc, SS.getWithLocInContext(Context), Template.get(),
+    Args, LParenLoc, RParenLoc,
+    SourceRange(LAngleBracketLoc, RAngleBracketLoc));
+}
+

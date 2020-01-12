@@ -3012,6 +3012,13 @@ def err_template_arg_is_jit_func : Error<
   "cannot use just-in-time compiled function-template instantiation %0 as "
   "a template parameter to a non-just-in-time-compiled type">;
 
+// For Clang JIT
+def err_dynamic_instantiation_of_overloaded_function : Error<
+  "cannot dynamically instantiate an overloaded function template">;
+def err_dynamic_instantiation_with_spec_type_mismatch : Error<
+  "specialization of dynamically-instantiated function template has type '%0' "
+  ", which is different from the type of the base template: '%1'">;
+
 // Availability attribute
 def warn_availability_unknown_platform : Warning<
   "unknown platform %0 in availability macro">, InGroup<Availability>;

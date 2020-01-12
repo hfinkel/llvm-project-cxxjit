@@ -1255,6 +1255,13 @@ CanThrowResult Sema::canThrow(const Expr *E) {
       return CT_Dependent;
     return canThrow(cast<GenericSelectionExpr>(E)->getResultExpr());
 
+  case Expr::DynamicFunctionTemplateInstantiationExprClass: {
+    auto *DFTIE = cast<DynamicFunctionTemplateInstantiationExpr>(E);
+    return mergeCanThrow(canCalleeThrow(*this, E,
+                                        DFTIE->getTemplateFunctionDecl()),
+                         canSubExprsThrow(*this, E));
+  }
+
     // Some expressions are always dependent.
   case Expr::CXXDependentScopeMemberExprClass:
   case Expr::CXXUnresolvedConstructExprClass:

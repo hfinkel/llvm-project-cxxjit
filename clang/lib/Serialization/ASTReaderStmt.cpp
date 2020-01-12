@@ -492,6 +492,23 @@ void ASTStmtReader::VisitDependentCoawaitExpr(DependentCoawaitExpr *E) {
     SubExpr = Record.readSubStmt();
 }
 
+void
+ASTStmtReader::VisitDynamicFunctionTemplateInstantiationExpr(
+  DynamicFunctionTemplateInstantiationExpr *E) {
+  VisitExpr(E);
+  assert(Record.peekInt() == E->arg_size() &&
+         "Read wrong record during creation ?");
+  Record.skipInts(1);
+  for (unsigned I = 0, N = E->arg_size(); I != N; ++I)
+    E->setArg(I, Record.readSubExpr());
+  E->setTemplateName(Record.readTemplateName());
+  E->setQualifierLoc(Record.readNestedNameSpecifierLoc());
+  E->setAngleBrackets(ReadSourceRange());
+  E->setLParenLoc(ReadSourceLocation());
+  E->setRParenLoc(ReadSourceLocation());
+  E->setOperatorLoc(ReadSourceLocation());
+}
+
 void ASTStmtReader::VisitCapturedStmt(CapturedStmt *S) {
   VisitStmt(S);
   Record.skipInts(1);
@@ -3451,6 +3468,11 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
 
     case EXPR_DEPENDENT_COAWAIT:
       S = new (Context) DependentCoawaitExpr(Empty);
+      break;
+
+    case EXPR_DYNAMIC_FUNCTION_TEMPLATE_INSTANTIATION:
+      S = DynamicFunctionTemplateInstantiationExpr::CreateEmpty(Context,
+                              /*NumArgs=*/Record[ASTStmtReader::NumExprFields]);
       break;
     }
 

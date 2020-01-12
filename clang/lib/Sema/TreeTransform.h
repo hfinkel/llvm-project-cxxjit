@@ -1411,6 +1411,22 @@ public:
                                     Constraints, Clobbers, Exprs, EndLoc);
   }
 
+  /// Build a new "__clang_dynamic_function_template_instantiation" expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildDynamicFunctionTemplateInstantiationExpr(
+               SourceLocation Loc,
+               NestedNameSpecifierLoc QualifierLoc,
+               TemplateName Name,
+               ArrayRef<Expr *> Args,
+               SourceLocation LParenLoc,
+               SourceLocation RParenLoc,
+               SourceRange AngleBrackets) {
+    return getSema().BuildDynamicFunctionTemplateInstantiation(
+      Loc, QualifierLoc, Name, Args, LParenLoc, RParenLoc, AngleBrackets);
+  }
+
   /// Build a new co_return statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
@@ -7165,6 +7181,46 @@ TreeTransform<Derived>::TransformMSAsmStmt(MSAsmStmt *S) {
                                        S->getNumOutputs(), S->getNumInputs(),
                                        S->getAllConstraints(), S->getClobbers(),
                                        TransformedExprs, S->getEndLoc());
+}
+
+// Clang JIT
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformDynamicFunctionTemplateInstantiationExpr(
+                          DynamicFunctionTemplateInstantiationExpr *E) {
+  NestedNameSpecifierLoc QualifierLoc = E->getQualifierLoc();
+  if (QualifierLoc) {
+    QualifierLoc = getDerived().TransformNestedNameSpecifierLoc(QualifierLoc);
+    if (!QualifierLoc)
+      return true;
+  }
+
+  CXXScopeSpec SS;
+  SS.Adopt(QualifierLoc);
+  TemplateName Name =
+    getDerived().TransformTemplateName(SS, E->getTemplateName(),
+                                       QualifierLoc.getBeginLoc());
+
+  if (Name.isNull())
+    return ExprError();
+
+  bool ArgumentChanged = false;
+  SmallVector<Expr*, 8> Args;
+  Args.reserve(E->arg_size());
+  if (getDerived().TransformExprs(E->arg_begin(), E->arg_size(), true, Args,
+                                  &ArgumentChanged))
+    return ExprError();
+
+  if (!getDerived().AlwaysRebuild() &&
+      Name.getAsVoidPointer() == E->getTemplateName().getAsVoidPointer() &&
+      QualifierLoc == E->getQualifierLoc() &&
+      !ArgumentChanged)
+    return E;
+
+  return getDerived().RebuildDynamicFunctionTemplateInstantiationExpr(
+      E->getOperatorLoc(), QualifierLoc, Name, Args, E->getLParenLoc(),
+      E->getRParenLoc(), E->getAngleBrackets());
 }
 
 // C++ Coroutines TS
