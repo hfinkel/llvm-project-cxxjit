@@ -145,12 +145,11 @@ namespace clang {
 
     bool shouldVisitTemplateInstantiations() const { return true; }
 
-    bool VisitFunctionDecl(const FunctionDecl *D) {
-      if (D->hasAttr<JITFuncAttr>()) {
-        if (D->getTemplateSpecializationKind() != TSK_ExplicitSpecialization)
-          NameCollector(*this)
-            .TraverseFunctionDecl(const_cast<FunctionDecl *>(D));
-      }
+    bool VisitDynamicFunctionTemplateInstantiationExpr(
+      const DynamicFunctionTemplateInstantiationExpr *E) {
+      NameCollector(*this)
+        .TraverseFunctionDecl(const_cast<FunctionDecl *>(
+           E->getTemplateFunctionDecl()));
 
       return true;
     }
