@@ -2329,15 +2329,13 @@ CodeGenFunction::EmitDynamicFunctionTemplateInstantiationExpr(
      VoidPtrTy, Int32Ty,
      Int8PtrTy, Int32Ty, VoidPtrTy};
 
-  // This function is marked as readonly to allow the optimizer to remove it if
-  // its result is unused (and otherwise combine redundant calls).
-  llvm::AttributeList ReadOnlyAttr = llvm::AttributeList::get(
+  llvm::AttributeList OnlyAttr = llvm::AttributeList::get(
       getLLVMContext(), llvm::AttributeList::FunctionIndex,
-      llvm::Attribute::ReadOnly);
+      llvm::Attribute::ArgMemOnly);
 
   auto *FnTy =
       llvm::FunctionType::get(VoidTy, TypeParams, /*isVarArg*/ false);
-  auto RTLFn = CGM.CreateRuntimeFunction(FnTy, "__clang_jit_i", ReadOnlyAttr);
+  auto RTLFn = CGM.CreateRuntimeFunction(FnTy, "__clang_jit_i", OnlyAttr);
 
   llvm::Value *Args[] = {
       llvm::Constant::getNullValue(Int8PtrTy),
@@ -2414,15 +2412,13 @@ CodeGenFunction::EmitDynamicTemplateArgumentDescriptorExpr(
      VoidPtrTy, Int32Ty,
      Int32Ty, VoidPtrTy};
 
-  // This function is marked as readonly to allow the optimizer to remove it if
-  // its result is unused (and otherwise combine redundant calls).
-  llvm::AttributeList ReadOnlyAttr = llvm::AttributeList::get(
+  llvm::AttributeList OnlyAttr = llvm::AttributeList::get(
       getLLVMContext(), llvm::AttributeList::FunctionIndex,
-      llvm::Attribute::ReadOnly);
+      llvm::Attribute::ArgMemOnly);
 
   auto *FnTy =
       llvm::FunctionType::get(VoidTy, TypeParams, /*isVarArg*/ false);
-  auto RTLFn = CGM.CreateRuntimeFunction(FnTy, "__clang_jit_dd", ReadOnlyAttr);
+  auto RTLFn = CGM.CreateRuntimeFunction(FnTy, "__clang_jit_dd", OnlyAttr);
 
   llvm::Value *Args[] = {
       llvm::Constant::getNullValue(Int8PtrTy),

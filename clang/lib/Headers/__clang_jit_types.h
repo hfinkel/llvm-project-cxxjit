@@ -128,7 +128,7 @@ struct dynamic_function_template_instantiation :
   template <typename... Args>
   typename std::result_of<Fn&(Args...)>::type
   operator () (Args&&... args) {
-    return reinterpret_cast<Fn&>(p)(std::forward<Args>(args)...);
+    return reinterpret_cast<Fn*>(p)(std::forward<Args>(args)...);
   }
 };
 
