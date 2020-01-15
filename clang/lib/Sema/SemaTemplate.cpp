@@ -4481,8 +4481,7 @@ TemplateNameKind Sema::ActOnDependentTemplateName(Scope *S,
 
 bool Sema::CheckTemplateTypeArgument(TemplateTypeParmDecl *Param,
                                      TemplateArgumentLoc &AL,
-                          SmallVectorImpl<TemplateArgument> &Converted,
-                          bool IsForJIT) {
+                          SmallVectorImpl<TemplateArgument> &Converted) {
   const TemplateArgument &Arg = AL.getArgument();
   QualType ArgType;
   TypeSourceInfo *TSI = nullptr;
@@ -4506,79 +4505,6 @@ bool Sema::CheckTemplateTypeArgument(TemplateTypeParmDecl *Param,
     return true;
   }
   case TemplateArgument::Expression: {
-    // If this is a JIT-enabled template, this might be a string which will
-    // provide the type at runtime.
-    if (IsForJIT) {
-      const QualType &ConstCharPtrTy =
-        Context.getPointerType(Context.CharTy.withConst());
-      SourceLocation Loc = AL.getSourceRange().getBegin();
-
-      auto TryConstCharConversion = [&](Expr *ArgE) {
-        ImplicitConversionSequence ICS =
-            TryImplicitConversion(ArgE, ConstCharPtrTy,
-                                  /*SuppressUserConversions=*/false,
-                                  /*AllowExplicit=*/false,
-                                  /*InOverloadResolution=*/false,
-                                  /*CStyle=*/false,
-                                  /*AllowObjCWritebackConversion=*/false);
-
-        if (ICS.isFailure())
-          return false;
-
-        ExprResult E = PerformImplicitConversion(ArgE, ConstCharPtrTy,
-                                                 ICS, AA_Assigning);
-        ArgType = BuildJITFromStringType(E.get(), Loc);
-        TSI = Context.getTrivialTypeSourceInfo(ArgType, Loc);
-
-        return true;
-      };
-
-      if (TryConstCharConversion(Arg.getAsExpr()))
-        break;
-
-      // Next, check if this is an object with a c_str() member, and if so,
-      // call it to get the string.
-      auto GetFromCStr = [&]() {
-        DeclarationNameInfo CStrNameInfo(
-          &PP.getIdentifierTable().get("c_str"), Loc);
-        LookupResult CStrMemberLookup(*this, CStrNameInfo,
-                                      Sema::LookupMemberName);
-
-        Expr *StrObj = Arg.getAsExpr();
-        QualType StrObjType = StrObj->getType();
-
-        CXXRecordDecl *RD = StrObjType->getAsCXXRecordDecl();
-        if (!RD)
-          return false;
-
-        LookupQualifiedName(CStrMemberLookup, RD);
-        if (CStrMemberLookup.isAmbiguous() || CStrMemberLookup.empty())
-          return false;
-
-        ExprResult MemberRef =
-          BuildMemberReferenceExpr(StrObj, StrObjType, Loc,
-                                   /*IsPtr=*/false, CXXScopeSpec(),
-                                   /*TemplateKWLoc=*/SourceLocation(),
-                                   /*FirstQualifierInScope=*/nullptr,
-                                   CStrMemberLookup,
-                                   /*TemplateArgs=*/nullptr,
-                                   /*Scope=*/nullptr);
-        if (MemberRef.isInvalid())
-          return false;
-
-        ExprResult CallE =
-          ActOnCallExpr(/*Scope=*/nullptr, MemberRef.get(), Loc, None, Loc,
-                        nullptr);
-        if (CallE.isInvalid())
-          return false;
-
-        return TryConstCharConversion(CallE.get());
-      };
-
-      if (GetFromCStr())
-        break;
-    }
-
     // We have a template type parameter but the template argument is an
     // expression; see if maybe it is missing the "typename" keyword.
     CXXScopeSpec SS;
@@ -4972,14 +4898,9 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
                                  unsigned ArgumentPackIndex,
                             SmallVectorImpl<TemplateArgument> &Converted,
                                  CheckTemplateArgumentKind CTAK) {
-  bool IsForJIT = false;
-  if (getLangOpts().isJITEnabled())
-    if (auto *FT = dyn_cast<FunctionTemplateDecl>(Template))
-      IsForJIT = FT->getTemplatedDecl()->hasAttr<JITFuncAttr>();
-
   // Check template type parameters.
   if (TemplateTypeParmDecl *TTP = dyn_cast<TemplateTypeParmDecl>(Param))
-    return CheckTemplateTypeArgument(TTP, Arg, Converted, IsForJIT);
+    return CheckTemplateTypeArgument(TTP, Arg, Converted);
 
   // Check non-type template parameters.
   if (NonTypeTemplateParmDecl *NTTP =dyn_cast<NonTypeTemplateParmDecl>(Param)) {
@@ -5001,17 +4922,6 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
                                  SourceRange(TemplateLoc, RAngleLoc));
       if (Inst.isInvalid())
         return true;
-
-      // If we're compiling a JIT template, and we have an array with a
-      // dependent size, decay it to a pointer (to allow providing a pointer,
-      // even in the case where the array size might be some other argument to
-      // this template, and in this case, the user will need to provide the
-      // size explicitly).
-      if (IsForJIT && NTTPType.getNonReferenceType()->isDependentSizedArrayType()) {
-        NTTPType = Context.getDecayedType(NTTPType.getNonReferenceType());
-        if (isa<DecayedType>(NTTPType))
-          NTTPType = cast<DecayedType>(NTTPType)->getDecayedType();
-      }
 
       TemplateArgumentList TemplateArgs(TemplateArgumentList::OnStack,
                                         Converted);
@@ -5047,10 +4957,9 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
     case TemplateArgument::Expression: {
       TemplateArgument Result;
       unsigned CurSFINAEErrors = NumSFINAEErrors;
-
       ExprResult Res =
         CheckTemplateArgument(NTTP, NTTPType, Arg.getArgument().getAsExpr(),
-                              Result, CTAK, IsForJIT);
+                              Result, CTAK);
       if (Res.isInvalid())
         return true;
       // If the current template argument causes an error, give up now.
@@ -5771,11 +5680,6 @@ bool UnnamedLocalNoLinkageFinder::VisitPipeType(const PipeType* T) {
   return false;
 }
 
-bool UnnamedLocalNoLinkageFinder::VisitJITFromStringType(
-                                                   const JITFromStringType* T) {
-  return false;
-}
-
 bool UnnamedLocalNoLinkageFinder::VisitTagDecl(const TagDecl *Tag) {
   if (Tag->getDeclContext()->isFunctionOrMethod()) {
     S.Diag(SR.getBegin(),
@@ -6200,16 +6104,6 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
   }
 
   if (Func) {
-    // We cannot use a function type that will not be known until runtime as
-    // part of a compile-time type.
-    if (S.getLangOpts().isJITEnabled() &&
-        Func->hasAttr<JITFuncInstantiationAttr>()) {
-      S.Diag(AddrOpLoc, diag::err_template_arg_is_jit_func)
-        << ParamType;
-      S.Diag(Param->getLocation(), diag::note_template_param_here);
-      return true;
-    }
-
     // If the template parameter has pointer type, the function decays.
     if (ParamType->isPointerType() && !AddressTaken)
       ArgType = S.Context.getPointerType(Func->getType());
@@ -6444,8 +6338,7 @@ static bool CheckTemplateArgumentPointerToMember(Sema &S,
 ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
                                        QualType ParamType, Expr *Arg,
                                        TemplateArgument &Converted,
-                                       CheckTemplateArgumentKind CTAK,
-                                       bool IsForJIT) {
+                                       CheckTemplateArgumentKind CTAK) {
   SourceLocation StartLoc = Arg->getBeginLoc();
 
   // If the parameter type somehow involves auto, deduce the type now.
@@ -6544,32 +6437,12 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
     return E;
   }
 
-  // If we're going to JIT this function template, then this expression might
-  // be anything.
-  // Note: We can't handle dynamic member-pointer types because, at runtime,
-  // can we figure out which member it is (without ABI-specific logic in the
-  // runtime library)?
-  if (IsForJIT && !ParamType->isMemberPointerType()) {
-    SmallVector<PartialDiagnosticAt, 8> Notes;
-    Expr::EvalResult Eval;
-    Eval.Diag = &Notes;
-    if (!Arg->
-          EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, Context) ||
-        !Notes.empty()) {
-      Converted = TemplateArgument(Arg);
-      return Arg;
-    }
-  }
-
   // The initialization of the parameter from the argument is
   // a constant-evaluated context.
   EnterExpressionEvaluationContext ConstantEvaluated(
       *this, Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
-  // If we're inside the JIT engine, always use the more relaxed C++17 rules
-  // even in earlier language modes (this make it easier to figure out later
-  // which non-integer parameters need runtime specialization).
-  if (getLangOpts().CPlusPlus17 || getLangOpts().isInJIT()) {
+  if (getLangOpts().CPlusPlus17) {
     // C++17 [temp.arg.nontype]p1:
     //   A template-argument for a non-type template parameter shall be
     //   a converted constant expression of the type of the template-parameter.
@@ -6657,18 +6530,6 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
              "null reference should not be a constant expression");
       assert((!VD || !ParamType->isNullPtrType()) &&
              "non-null value of type nullptr_t?");
-
-      if (auto *Func = dyn_cast_or_null<FunctionDecl>(VD)) {
-        // We cannot use a function type that will not be known until runtime as
-        // part of a compile-time type.
-        if (getLangOpts().isJITEnabled() &&
-            Func->hasAttr<JITFuncInstantiationAttr>()) {
-          Diag(Arg->getBeginLoc(), diag::err_template_arg_is_jit_func)
-            << ParamType;
-          Diag(Param->getLocation(), diag::note_template_param_here);
-          return ExprError(); 
-        }
-      }
 
       Converted = VD ? TemplateArgument(VD, CanonParamType)
                      : TemplateArgument(CanonParamType, /*isNullPtr*/true);

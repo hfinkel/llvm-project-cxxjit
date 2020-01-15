@@ -4312,11 +4312,6 @@ JITFuncAttr *Sema::mergeJITFuncAttr(Decl *D, SourceRange Range,
   if (D->hasAttr<JITFuncAttr>())
     return nullptr;
 
-  if (!getLangOpts().isJITEnabled()) {
-    Diag(Range.getBegin(), diag::warn_jit_attribute_ignored);
-    return nullptr;
-  }
-
   return ::new (Context) JITFuncAttr(Range, Context,
                                      AttrSpellingListIndex);
 }

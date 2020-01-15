@@ -47,25 +47,21 @@ IdentifierInfo *Parser::getSEHExceptKeyword() {
   return Ident__except;
 }
 
-Parser::Parser(Preprocessor &pp, Sema &actions, bool skipFunctionBodies,
-               bool isParsingTypesForJIT)
+Parser::Parser(Preprocessor &pp, Sema &actions, bool skipFunctionBodies)
   : PP(pp), Actions(actions), Diags(PP.getDiagnostics()),
     GreaterThanIsOperator(true), ColonIsSacred(false),
     InMessageExpression(false), TemplateParameterDepth(0),
     ParsingInObjCContainer(false) {
   SkipFunctionBodies = pp.isCodeCompletionEnabled() || skipFunctionBodies;
-  IsParsingTypesForJIT = isParsingTypesForJIT;
   Tok.startToken();
   Tok.setKind(tok::eof);
   Actions.CurScope = nullptr;
   NumCachedScopes = 0;
   CurParsedObjCImpl = nullptr;
 
-  if (!IsParsingTypesForJIT) {
-    // Add #pragma handlers. These are removed and destroyed in the
-    // destructor.
-    initializePragmaHandlers();
-  }
+  // Add #pragma handlers. These are removed and destroyed in the
+  // destructor.
+  initializePragmaHandlers();
 
   CommentSemaHandler.reset(new ActionCommentHandler(actions));
   PP.addCommentHandler(CommentSemaHandler.get());
@@ -418,26 +414,22 @@ Parser::ParseScopeFlags::~ParseScopeFlags() {
 //===----------------------------------------------------------------------===//
 
 Parser::~Parser() {
-  if (!IsParsingTypesForJIT) {
-    // If we still have scopes active, delete the scope tree.
-    delete getCurScope();
-    Actions.CurScope = nullptr;
-  }
+  // If we still have scopes active, delete the scope tree.
+  delete getCurScope();
+  Actions.CurScope = nullptr;
 
   // Free the scope cache.
   for (unsigned i = 0, e = NumCachedScopes; i != e; ++i)
     delete ScopeCache[i];
 
-  if (!IsParsingTypesForJIT)
-    resetPragmaHandlers();
+  resetPragmaHandlers();
 
   PP.removeCommentHandler(CommentSemaHandler.get());
 
   PP.clearCodeCompletionHandler();
 
-  if (IsParsingTypesForJIT ||
-      (getLangOpts().DelayedTemplateParsing &&
-      !PP.isIncrementalProcessingEnabled() && !TemplateIds.empty())) {
+  if (getLangOpts().DelayedTemplateParsing &&
+      !PP.isIncrementalProcessingEnabled() && !TemplateIds.empty()) {
     // If an ASTConsumer parsed delay-parsed templates in their
     // HandleTranslationUnit() method, TemplateIds created there were not
     // guarded by a DestroyTemplateIdAnnotationsRAIIObj object in
@@ -535,8 +527,7 @@ void Parser::Initialize() {
     Ident_module = PP.getIdentifierInfo("module");
   }
 
-  if (!IsParsingTypesForJIT)
-    Actions.Initialize();
+  Actions.Initialize();
 
   // Prime the lexer look-ahead.
   ConsumeToken();

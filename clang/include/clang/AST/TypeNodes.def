@@ -111,7 +111,6 @@ TYPE(ObjCInterface, ObjCObjectType)
 TYPE(ObjCObjectPointer, Type)
 TYPE(Pipe, Type)
 TYPE(Atomic, Type)
-TYPE(JITFromString, Type)
 
 #ifdef LAST_TYPE
 LAST_TYPE(Atomic)

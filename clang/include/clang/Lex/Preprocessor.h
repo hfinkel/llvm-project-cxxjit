@@ -893,9 +893,6 @@ public:
   /// Cleanup after model file parsing
   void FinalizeForModelFile();
 
-  /// Reset the state of the preprocessor for JIT runtime type parsing.
-  void ResetForJITTypes();
-
   /// Retrieve the preprocessor options used to initialize this
   /// preprocessor.
   PreprocessorOptions &getPreprocessorOpts() const { return *PPOpts; }

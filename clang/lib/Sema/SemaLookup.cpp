@@ -2751,7 +2751,6 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result, QualType Ty) {
 #define NON_CANONICAL_UNLESS_DEPENDENT_TYPE(Class, Base) case Type::Class:
 #define ABSTRACT_TYPE(Class, Base)
 #include "clang/AST/TypeNodes.def"
-    case Type::JITFromString:
       // T is canonical.  We can also ignore dependent types because
       // we don't need to do ADL at the definition point, but if we
       // wanted to implement template export (or if we find some other

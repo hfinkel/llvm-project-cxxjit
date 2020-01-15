@@ -524,8 +524,6 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
   case Type::Auto:
   case Type::DeducedTemplateSpecialization:
     llvm_unreachable("Unexpected undeduced type!");
-  case Type::JITFromString:
-    llvm_unreachable("Unexpected JIT from-string type!");
   case Type::Complex: {
     llvm::Type *EltTy = ConvertType(cast<ComplexType>(Ty)->getElementType());
     ResultType = llvm::StructType::get(EltTy, EltTy);

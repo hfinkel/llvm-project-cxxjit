@@ -1709,11 +1709,6 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
     FunctionDecl *SpecFunc
       = FunctionTemplate->findSpecialization(Innermost, InsertPos);
 
-    // If we're in the JIT, then ignore the placeholder (it won't have a body).
-    if (SpecFunc && SemaRef.getLangOpts().isInJIT() &&
-        SpecFunc->hasAttr<JITFuncInstantiationAttr>())
-      SpecFunc = nullptr;
-
     // If we already have a function template specialization, return it.
     if (SpecFunc)
       return SpecFunc;
@@ -1997,11 +1992,6 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
       PrincipalDecl->isInIdentifierNamespace(Decl::IDNS_Ordinary))
     PrincipalDecl->setNonMemberOperator();
 
-  if (SemaRef.getLangOpts().isJITEnabled() &&
-      FunctionTemplate && Function->hasAttr<JITFuncAttr>())
-    Function->addAttr(JITFuncInstantiationAttr::CreateImplicit(SemaRef.Context,
-                                                               SemaRef.NextJITFuncId++));
-
   assert(!D->isDefaulted() && "only methods should be defaulted");
   return Function;
 }
@@ -2020,11 +2010,6 @@ Decl *TemplateDeclInstantiator::VisitCXXMethodDecl(
     void *InsertPos = nullptr;
     FunctionDecl *SpecFunc
       = FunctionTemplate->findSpecialization(Innermost, InsertPos);
-
-    // If we're in the JIT, then ignore the placeholder (it won't have a body).
-    if (SpecFunc && SemaRef.getLangOpts().isInJIT() &&
-        SpecFunc->hasAttr<JITFuncInstantiationAttr>())
-      SpecFunc = nullptr;
 
     // If we already have a function template specialization, return it.
     if (SpecFunc)
@@ -2281,11 +2266,6 @@ Decl *TemplateDeclInstantiator::VisitCXXMethodDecl(
     SemaRef.SetDeclDefaulted(Method, Method->getLocation());
   if (D->isDeletedAsWritten())
     SemaRef.SetDeclDeleted(Method, Method->getLocation());
-
-  if (SemaRef.getLangOpts().isJITEnabled() &&
-      FunctionTemplate && Method->hasAttr<JITFuncAttr>())
-    Method->addAttr(JITFuncInstantiationAttr::CreateImplicit(SemaRef.Context,
-                                                             SemaRef.NextJITFuncId++));
 
   // If this is an explicit specialization, mark the implicitly-instantiated
   // template specialization as being an explicit specialization too.
@@ -4299,12 +4279,7 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
       return;
 
     StmtResult Body;
-    if (getLangOpts().isJITEnabled() && PatternDecl->hasAttr<JITFuncAttr>()) {
-      assert(Function->hasAttr<JITFuncInstantiationAttr>() &&
-             "No instantiation id for a template we should skip for JIT!");
-      ActOnSkippedFunctionBody(Function);
-      Body = nullptr;
-    } else if (PatternDecl->hasSkippedBody()) {
+    if (PatternDecl->hasSkippedBody()) {
       ActOnSkippedFunctionBody(Function);
       Body = nullptr;
     } else {

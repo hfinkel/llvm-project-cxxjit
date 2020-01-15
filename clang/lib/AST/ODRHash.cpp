@@ -962,15 +962,6 @@ public:
     VisitType(T);
   }
 
-  void VisitJITFromStringType(const JITFromStringType *T) {
-    AddStmt(T->getUnderlyingExpr());
-    VisitType(T);
-  }
-
-  void VisitDependentJITFromStringType(const DependentJITFromStringType *T) {
-    VisitJITFromStringType(T);
-  }
-
   void VisitPointerType(const PointerType *T) {
     AddQualType(T->getPointeeType());
     VisitType(T);

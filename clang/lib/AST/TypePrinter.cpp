@@ -260,7 +260,6 @@ bool TypePrinter::canPrefixQualifiers(const Type *T,
     case Type::PackExpansion:
     case Type::SubstTemplateTypeParm:
     case Type::MacroQualified:
-    case Type::JITFromString:
       CanPrefixQualifiers = false;
       break;
 
@@ -1105,18 +1104,6 @@ void TypePrinter::printPipeBefore(const PipeType *T, raw_ostream &OS) {
 }
 
 void TypePrinter::printPipeAfter(const PipeType *T, raw_ostream &OS) {}
-
-void TypePrinter::printJITFromStringBefore(const JITFromStringType *T,
-                                           raw_ostream &OS) {
-  OS << "<JITFromString>(";
-  if (T->getUnderlyingExpr())
-    T->getUnderlyingExpr()->printPretty(OS, nullptr, Policy);
-  OS << ')';
-  spaceBeforePlaceHolder(OS);
-}
-
-void TypePrinter::printJITFromStringAfter(const JITFromStringType *T,
-                                          raw_ostream &OS) {}
 
 /// Appends the given scope to the end of a string.
 void TypePrinter::AppendScope(DeclContext *DC, raw_ostream &OS) {

@@ -1560,8 +1560,6 @@ public:
   QualType BuildWritePipeType(QualType T,
                          SourceLocation Loc);
 
-  QualType BuildJITFromStringType(Expr *E, SourceLocation Loc);
-
   TypeSourceInfo *GetTypeForDeclarator(Declarator &D, Scope *S);
   TypeSourceInfo *GetTypeForDeclaratorCast(Declarator &D, QualType FromTy);
 
@@ -6763,16 +6761,14 @@ public:
 
   bool CheckTemplateTypeArgument(TemplateTypeParmDecl *Param,
                                  TemplateArgumentLoc &Arg,
-                           SmallVectorImpl<TemplateArgument> &Converted,
-                           bool IsForJIT = false);
+                           SmallVectorImpl<TemplateArgument> &Converted);
 
   bool CheckTemplateArgument(TemplateTypeParmDecl *Param,
                              TypeSourceInfo *Arg);
   ExprResult CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
                                    QualType InstantiatedParamType, Expr *Arg,
                                    TemplateArgument &Converted,
-                               CheckTemplateArgumentKind CTAK = CTAK_Specified,
-                               bool IsForJIT = false);
+                               CheckTemplateArgumentKind CTAK = CTAK_Specified);
   bool CheckTemplateTemplateArgument(TemplateParameterList *Params,
                                      TemplateArgumentLoc &Arg);
 

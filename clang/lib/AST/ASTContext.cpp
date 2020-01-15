@@ -1750,7 +1750,6 @@ TypeInfo ASTContext::getTypeInfoImpl(const Type *T) const {
   assert(!T->isDependentType() && "should not see dependent types here");      \
   return getTypeInfo(cast<Class##Type>(T)->desugar().getTypePtr());
 #include "clang/AST/TypeNodes.def"
-  case Type::JITFromString:
     llvm_unreachable("Should not see dependent types");
 
   case Type::FunctionNoProto:
@@ -3174,7 +3173,6 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::Auto:
   case Type::DeducedTemplateSpecialization:
   case Type::PackExpansion:
-  case Type::JITFromString:
     llvm_unreachable("type should never be variably-modified");
 
   // These types can be variably-modified but should never need to
@@ -3843,31 +3841,6 @@ QualType ASTContext::getReadPipeType(QualType T) const {
 
 QualType ASTContext::getWritePipeType(QualType T) const {
   return getPipeType(T, false);
-}
-
-QualType ASTContext::getJITFromStringType(Expr *e) const {
-  JITFromStringType *dt;
-
-  if (e->isInstantiationDependent()) {
-    llvm::FoldingSetNodeID ID;
-    DependentJITFromStringType::Profile(ID, *this, e);
-
-    void *InsertPos = nullptr;
-    DependentJITFromStringType *Canon
-      = DependentJITFromStringTypes.FindNodeOrInsertPos(ID, InsertPos);
-    if (!Canon) {
-      // Build a new, canonical decltype(expr) type.
-      Canon = new (*this, TypeAlignment) DependentJITFromStringType(*this, e);
-      DependentJITFromStringTypes.InsertNode(Canon, InsertPos);
-    }
-    dt = new (*this, TypeAlignment)
-        JITFromStringType(e, QualType((JITFromStringType *)Canon, 0));
-  } else {
-    dt = new (*this, TypeAlignment)
-        JITFromStringType(e);
-  }
-  Types.push_back(dt);
-  return QualType(dt, 0);
 }
 
 #ifndef NDEBUG
@@ -7061,7 +7034,6 @@ void ASTContext::getObjCEncodingForTypeImpl(QualType T, std::string &S,
 #define NON_CANONICAL_UNLESS_DEPENDENT_TYPE(KIND, BASE) \
   case Type::KIND:
 #include "clang/AST/TypeNodes.def"
-  case Type::JITFromString:
     llvm_unreachable("@encode for dependent type!");
   }
   llvm_unreachable("bad type kind!");
@@ -8870,7 +8842,6 @@ QualType ASTContext::mergeTypes(QualType LHS, QualType RHS,
   case Type::LValueReference:
   case Type::RValueReference:
   case Type::MemberPointer:
-  case Type::JITFromString:
     llvm_unreachable("C++ should never be in mergeTypes");
 
   case Type::ObjCInterface:

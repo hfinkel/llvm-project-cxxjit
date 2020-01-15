@@ -24,7 +24,6 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclObjC.h"
-#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/NSAPI.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/CodeGenOptions.h"
@@ -2393,182 +2392,6 @@ static LValue EmitGlobalVarDeclLValue(CodeGenFunction &CGF,
   return LV;
 }
 
-llvm::Value *CodeGenFunction::EmitJITStubCall(const FunctionDecl *FD) {
-  assert(getLangOpts().isJITEnabled() && FD->hasAttr<JITFuncAttr>() &&
-         "Emitting a JIT stub for a non-JIT method?");
-
-  assert(FD->hasAttr<JITFuncInstantiationAttr>() &&
-         "A JIT method does not have an instantiation id?");
-  int Cnt = FD->getAttr<JITFuncInstantiationAttr>()->getId();
-
-  SmallString<128> InstKey;
-  llvm::raw_svector_ostream IKOut(InstKey);
-  auto &MC = CGM.getCXXABI().getMangleContext();
-
-  // Start by mangling the template itself; this will get the template name and
-  // the types of any non-type arguments.
-  MC.mangleName(FD->getTemplateInstantiationPattern(), IKOut);
-
-  SmallVector<llvm::Value *, 8> TypeStrings;
-  SmallVector<TemplateArgument, 8> RDTArgs;
-
-  auto &C = getContext();
-  RecordDecl *RD =
-    C.buildImplicitRecord(llvm::Twine("__clang_jit_args_")
-                            .concat(llvm::Twine(Cnt))
-                            .concat(llvm::Twine("_t"))
-                            .str());
-  RD->startDefinition();
-
-  auto DefaultTAMangle = [&](const TemplateArgument &TA, unsigned TAIdx) {
-    auto *ND =
-      FD->getPrimaryTemplate()->getTemplateParameters()->getParam(TAIdx);
-    MC.mangleTemplateArgument(FD->getPrimaryTemplate(), TA, ND, IKOut);
-  };
-
-  auto *FTSI = FD->getTemplateSpecializationInfo();
-  unsigned TAIdx = UINT_MAX;
-  for (auto &TA : FTSI->TemplateArguments->asArray()) {
-    ++TAIdx;
-
-    auto HandleTA = [&](const TemplateArgument &TA) {
-      IKOut << "#";
-
-      if (TA.getKind() == TemplateArgument::Type) {
-        if (auto *JFST = TA.getAsType()->getAs<JITFromStringType>()) {
-          TypeStrings.push_back(EmitScalarExpr(
-                                  JFST->getUnderlyingExpr()));
-          IKOut << "?";
-        } else {
-          DefaultTAMangle(TA, TAIdx);
-        }
-
-        return;
-      }
-
-      if (TA.getKind() != TemplateArgument::Expression) {
-        DefaultTAMangle(TA, TAIdx);
-        return;
-      }
-
-      // Using C++17 rules, this check should be sufficient.
-      SmallVector<PartialDiagnosticAt, 8> Notes;
-      Expr::EvalResult Eval;
-      Eval.Diag = &Notes;
-      if (TA.getAsExpr()->
-            EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, C) &&
-          Notes.empty()) {
-        DefaultTAMangle(TA, TAIdx);
-        return;
-      }
-
-      QualType FieldTy = TA.getNonTypeTemplateArgumentType();
-      auto *Field = FieldDecl::Create(
-          C, RD, SourceLocation(), SourceLocation(), /*Id=*/nullptr,
-          FieldTy, C.getTrivialTypeSourceInfo(FieldTy, SourceLocation()),
-          /*BW=*/nullptr, /*Mutable=*/false, /*InitStyle=*/ICIS_NoInit);
-      Field->setAccess(AS_public);
-      RD->addDecl(Field);
-
-      RDTArgs.push_back(TA);
-      IKOut << "?";
-    };
-
-    if (TA.getKind() == TemplateArgument::Pack) {
-      for (auto &PTA : TA.getPackAsArray())
-        HandleTA(PTA);
-      continue;
-    }
-
-    HandleTA(TA);
-  }
-
-  RD->completeDefinition();
-  RD->addAttr(PackedAttr::CreateImplicit(C));
-
-  QualType RDTy = C.getRecordType(RD);
-  Address AI = CreateMemTemp(RDTy, "__clang_jit_args");
-  LValue Base = MakeAddrLValue(AI, RDTy);
-  auto Fields = cast<RecordDecl>(RDTy->getAsTagDecl())->field_begin();
-
-  for (auto &TA : RDTArgs) {
-    assert(TA.getKind() == TemplateArgument::Expression &&
-           "Only expressions template arguments handled here");
-
-    LValue FieldLV = EmitLValueForField(Base, *Fields++);
-    RValue RV = RValue::get(EmitScalarExpr(TA.getAsExpr(),
-                                               /*Ignore*/ false));
-    EmitStoreThroughLValue(RV, FieldLV);
-  }
-
-  auto *TypeStrsArrayType =
-    llvm::ArrayType::get(Int8PtrTy, TypeStrings.size());
-  Address STAI = CreateDefaultAlignTempAlloca(TypeStrsArrayType,
-                                                  "__clang_jit_type_args");
-
-  for (unsigned i = 0, e = TypeStrings.size(); i != e; ++i)
-    Builder.CreateStore(TypeStrings[i],
-      Builder.CreateConstArrayGEP(STAI, i, "tsidx"));
-
-  // Emit call to:
-  // void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
-  //                   const void *ASTBuffer, size_t ASTBufferSize,
-  //                   const void *IRBuffer, size_t IRBufferSize,
-  //                   const void **LocalPtrs, unsigned LocalPtrsCnt,
-  //                   const void **LocalDbgPtrs, unsigned LocalDbgPtrsCnt,
-  //                   const void *NTTPValues, unsigned NTTPValuesSize,
-  //                   const char **TypeStrings, unsigned TypeStringsCnt,
-  //                   const char *InstKey, unsigned Idx)
-  llvm::Type *TypeParams[] =
-    {Int8PtrTy, Int32Ty,
-     VoidPtrTy, SizeTy,
-     VoidPtrTy, SizeTy,
-     VoidPtrPtrTy, Int32Ty,
-     VoidPtrPtrTy, Int32Ty,
-     VoidPtrTy, Int32Ty,
-     VoidPtrTy, Int32Ty,
-     Int8PtrPtrTy, Int32Ty,
-     Int8PtrTy, Int32Ty};
-  auto *RetFTy = getTypes().GetFunctionType(GlobalDecl(FD));
-
-  // This function is marked as readonly to allow the optimizer to remove it if
-  // its result is unused (and otherwise combine redundant calls).
-  llvm::AttributeList ReadOnlyAttr = llvm::AttributeList::get(
-      getLLVMContext(), llvm::AttributeList::FunctionIndex,
-      llvm::Attribute::ReadOnly);
-
-  auto *FnTy =
-      llvm::FunctionType::get(RetFTy->getPointerTo(), TypeParams,
-                              /*isVarArg*/ false);
-  auto RTLFn = CGM.CreateRuntimeFunction(FnTy, "__clang_jit_i", ReadOnlyAttr);
-
-  // TODO: If either the values or type strings are empty, don't emit a
-  // zero-length alloca, but instead, pass a null pointer.
-
-  llvm::Value *Args[] = {
-      llvm::Constant::getNullValue(Int8PtrTy),
-      llvm::Constant::getNullValue(Int32Ty),
-      llvm::Constant::getNullValue(VoidPtrTy),
-      llvm::Constant::getNullValue(SizeTy),
-      llvm::Constant::getNullValue(VoidPtrTy),
-      llvm::Constant::getNullValue(SizeTy),
-      llvm::Constant::getNullValue(VoidPtrPtrTy),
-      llvm::Constant::getNullValue(Int32Ty),
-      llvm::Constant::getNullValue(VoidPtrPtrTy),
-      llvm::Constant::getNullValue(Int32Ty),
-      llvm::Constant::getNullValue(VoidPtrTy),
-      llvm::Constant::getNullValue(Int32Ty),
-      Builder.CreatePointerCast(AI.getPointer(), VoidPtrTy),
-      Builder.getInt32(RDTArgs.empty() ? 0 : C.getTypeSizeInChars(RDTy).getQuantity()),
-      Builder.CreatePointerCast(STAI.getPointer(), Int8PtrPtrTy),
-      Builder.getInt32(TypeStrings.size()),
-      Builder.CreateGlobalStringPtr(InstKey, ".cj.key.str"),
-      Builder.getInt32(Cnt)
-  };
-
-  return EmitRuntimeCall(RTLFn, Args);
-}
-
 static llvm::Constant *EmitFunctionDeclPointer(CodeGenModule &CGM,
                                                const FunctionDecl *FD) {
   if (FD->hasAttr<WeakRefAttr>()) {
@@ -2595,14 +2418,7 @@ static llvm::Constant *EmitFunctionDeclPointer(CodeGenModule &CGM,
 
 static LValue EmitFunctionDeclLValue(CodeGenFunction &CGF,
                                      const Expr *E, const FunctionDecl *FD) {
-  llvm::Value *V;
-
-  if (CGF.getLangOpts().isJITEnabled() &&
-      FD->hasAttr<JITFuncInstantiationAttr>())
-    V = CGF.EmitJITStubCall(FD);
-  else
-    V = EmitFunctionDeclPointer(CGF.CGM, FD);
-
+  llvm::Value *V = EmitFunctionDeclPointer(CGF.CGM, FD);
   CharUnits Alignment = CGF.getContext().getDeclAlign(FD);
   return CGF.MakeAddrLValue(V, E->getType(), Alignment,
                             AlignmentSource::Decl);
@@ -4706,13 +4522,6 @@ RValue CodeGenFunction::EmitSimpleCallExpr(const CallExpr *E,
 static CGCallee EmitDirectCallee(CodeGenFunction &CGF, const FunctionDecl *FD) {
   if (auto builtinID = FD->getBuiltinID()) {
     return CGCallee::forBuiltin(builtinID, FD);
-  }
-
-  if (CGF.getLangOpts().isJITEnabled() &&
-      FD->hasAttr<JITFuncInstantiationAttr>()) {
-    llvm::Value *calleePtr = CGF.EmitJITStubCall(FD);
-    CGCallee callee(CGCalleeInfo(), calleePtr);
-    return callee;
   }
 
   llvm::Constant *calleePtr = EmitFunctionDeclPointer(CGF.CGM, FD);

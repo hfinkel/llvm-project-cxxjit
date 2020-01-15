@@ -8980,7 +8980,6 @@ Decl *Sema::ActOnStartNamespaceDef(
 
   if (IsStd)
     StdNamespace = Namespc;
-
   if (AddToKnown)
     KnownNamespaces[Namespc] = false;
 

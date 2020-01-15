@@ -2313,13 +2313,6 @@ public:
   QualType getInnerType() const { return this->getTypePtr()->getElementType(); }
 };
 
-class JITFromStringTypeLoc : public InheritingConcreteTypeLoc<TypeSpecTypeLoc,
-                                                              JITFromStringTypeLoc,
-                                                              JITFromStringType> {
-public:
-  Expr *getUnderlyingExpr() const { return getTypePtr()->getUnderlyingExpr(); }
-};
-
 template <typename T>
 inline T TypeLoc::getAsAdjusted() const {
   TypeLoc Cur = *this;

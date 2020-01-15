@@ -3205,21 +3205,6 @@ DependentUnaryTransformType::DependentUnaryTransformType(const ASTContext &C,
                                                          UTTKind UKind)
      : UnaryTransformType(BaseType, C.DependentTy, UKind, QualType()) {}
 
-JITFromStringType::JITFromStringType(Expr *E, QualType can)
-    : Type(JITFromString, can, E->isInstantiationDependent(),
-           E->isInstantiationDependent(),
-           /*VariablyModified=*/false,
-           /*ContainsUnexpandedParameterPack*/false),
-      E(E) {}
-
-DependentJITFromStringType::DependentJITFromStringType(const ASTContext &Context, Expr *E)
-    : JITFromStringType(E), Context(Context) {}
-
-void DependentJITFromStringType::Profile(llvm::FoldingSetNodeID &ID,
-                                    const ASTContext &Context, Expr *E) {
-  E->Profile(ID, Context, true);
-}
-
 TagType::TagType(TypeClass TC, const TagDecl *D, QualType can)
     : Type(TC, can, D->isDependentType(),
            /*InstantiationDependent=*/D->isDependentType(),
@@ -3588,10 +3573,6 @@ static CachedProperties computeCachedProperties(const Type *T) {
     // here in error recovery.
     return CachedProperties(ExternalLinkage, false);
 
-  // JIT from-string types act like dependent types.
-  case Type::JITFromString:
-    return CachedProperties(ExternalLinkage, false);
-
   case Type::Builtin:
     // C++ [basic.link]p8:
     //   A type is said to have linkage if and only if:
@@ -3694,9 +3675,6 @@ LinkageInfo LinkageComputer::computeTypeLinkageInfo(const Type *T) {
 
   case Type::Auto:
   case Type::DeducedTemplateSpecialization:
-    return LinkageInfo::external();
-
-  case Type::JITFromString:
     return LinkageInfo::external();
 
   case Type::Record:
@@ -3895,7 +3873,6 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::ObjCInterface:
   case Type::Atomic:
   case Type::Pipe:
-  case Type::JITFromString:
     return false;
   }
   llvm_unreachable("bad type kind!");
