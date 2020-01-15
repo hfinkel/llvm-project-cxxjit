@@ -3280,7 +3280,7 @@ def ObjCExternallyRetained : InheritableAttr {
 }
 
 def JITFunc : InheritableAttr {
-  let Spellings = [Clang<"jit">];
+  let Spellings = [Clang<"for_dynamic_instantiation">];
   let Subjects = SubjectList<[FunctionTmpl]>;
   let Documentation = [JITFuncDocs];
 }

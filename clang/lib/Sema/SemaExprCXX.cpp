@@ -7994,6 +7994,11 @@ Sema::BuildDynamicFunctionTemplateInstantiation(
 
   auto *FTD = cast<FunctionTemplateDecl>(Name.getAsTemplateDecl());
   QualType FnTy = FTD->getTemplatedDecl()->getType();
+
+  if (!FTD->getTemplatedDecl()->hasAttr<JITFuncAttr>()) {
+    Diag(Loc, diag::warn_jit_no_attr);
+    NoteAllFoundTemplates(Name);
+  }
  
   // We cannot dynamically instantiate a function template that is overloaded.
   // We need to form the type of the function pointer before the call arguments

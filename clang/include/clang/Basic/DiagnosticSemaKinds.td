@@ -3014,6 +3014,11 @@ def err_dynamic_instantiation_with_spec_type_mismatch : Error<
 def err_jit_required : Error<
   "dynamic function-template instantiation not enabled; use -fjit to enable">;
 
+def warn_jit_no_attr : Warning<
+  "dynamic instantiation of function template without the "
+  "[[clang::for_dynamic_instantiation]] attribute">,
+  InGroup<DiagGroup<"jit-without-attribute">>;
+
 // Availability attribute
 def warn_availability_unknown_platform : Warning<
   "unknown platform %0 in availability macro">, InGroup<Availability>;
