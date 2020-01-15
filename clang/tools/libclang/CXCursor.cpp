@@ -290,6 +290,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::ObjCBoxedExprClass:
   case Stmt::ObjCSubscriptRefExprClass:
   case Stmt::DynamicFunctionTemplateInstantiationExprClass:
+  case Stmt::DynamicTemplateArgumentDescriptorExprClass:
     K = CXCursor_UnexposedExpr;
     break;
 

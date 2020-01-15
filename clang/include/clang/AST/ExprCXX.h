@@ -4757,7 +4757,6 @@ class DynamicFunctionTemplateInstantiationExpr final
       private llvm::TrailingObjects<DynamicFunctionTemplateInstantiationExpr,
                                     Expr *> {
   friend class ASTStmtReader;
-  friend class CastExpr;
   friend class TrailingObjects;
 
   NestedNameSpecifierLoc QualifierLoc;
@@ -4775,6 +4774,8 @@ class DynamicFunctionTemplateInstantiationExpr final
   // Range for '<' '>'
   SourceRange AngleBrackets;
 
+  unsigned InstanceId;
+
   DynamicFunctionTemplateInstantiationExpr(QualType T,
                                            SourceLocation Loc,
                                            NestedNameSpecifierLoc QualifierLoc,
@@ -4782,7 +4783,8 @@ class DynamicFunctionTemplateInstantiationExpr final
                                            ArrayRef<Expr *> Args,
                                            SourceLocation LParenLoc,
                                            SourceLocation RParenLoc,
-                                           SourceRange AngleBrackets);
+                                           SourceRange AngleBrackets,
+                                           unsigned InstanceId);
 
   DynamicFunctionTemplateInstantiationExpr(EmptyShell Empty, unsigned NumArgs)
       : Expr(DynamicFunctionTemplateInstantiationExprClass, Empty) {
@@ -4799,7 +4801,8 @@ public:
                                                           ArrayRef<Expr *> Args,
                                                           SourceLocation LParenLoc,
                                                           SourceLocation RParenLoc,
-                                                          SourceRange AngleBrackets);
+                                                          SourceRange AngleBrackets,
+                                                          unsigned InstanceId);
 
   static DynamicFunctionTemplateInstantiationExpr *CreateEmpty(const ASTContext &Context,
                                                                unsigned NumArgs);
@@ -4831,6 +4834,9 @@ public:
 
   FunctionDecl *
   getTemplateFunctionDecl() const;
+
+  unsigned getInstanceId() const { return InstanceId; }
+  void setInstanceId(unsigned I) { InstanceId = I; }
 
   /// Retrieve the number of arguments.
   unsigned arg_size() const {
@@ -4870,6 +4876,66 @@ public:
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == DynamicFunctionTemplateInstantiationExprClass;
+  }
+
+  // Iterators
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+/// Represents the Clang JIT
+/// __clang_dynamic_template_argument<a>) expression.
+class DynamicTemplateArgumentDescriptorExpr final
+    : public Expr {
+  friend class ASTStmtReader;
+  friend class TrailingObjects;
+
+  TemplateArgumentLoc Arg;
+
+  // The location of the op
+  SourceLocation Loc;
+
+  // Range for '<' '>'
+  SourceRange AngleBrackets;
+
+  unsigned InstanceId;
+
+public:
+
+  DynamicTemplateArgumentDescriptorExpr(QualType T,
+                                        SourceLocation Loc,
+                                        TemplateArgumentLoc Arg,
+                                        SourceRange AngleBrackets,
+                                        unsigned InstanceId);
+
+  DynamicTemplateArgumentDescriptorExpr(EmptyShell Empty)
+      : Expr(DynamicTemplateArgumentDescriptorExprClass, Empty) { }
+
+  /// Retrieve the location of the keyword.
+  SourceLocation getOperatorLoc() const { return Loc; }
+  void setOperatorLoc(SourceLocation L) { Loc = L; }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY { return Loc; }
+  SourceLocation getEndLoc() const LLVM_READONLY {
+    return AngleBrackets.getEnd();
+  }
+
+  SourceRange getAngleBrackets() const LLVM_READONLY { return AngleBrackets; }
+  void setAngleBrackets(SourceRange R) { AngleBrackets = R; }
+
+  TemplateArgumentLoc getTemplateArgumentLoc() const { return Arg; }
+  void setTemplateArgumentLoc(TemplateArgumentLoc A) { Arg = A; }
+
+  unsigned getInstanceId() const { return InstanceId; }
+  void setInstanceId(unsigned I) { InstanceId = I; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == DynamicTemplateArgumentDescriptorExprClass;
   }
 
   // Iterators

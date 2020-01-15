@@ -72,6 +72,8 @@ void Sema::ActOnTranslationUnitScope(Scope *S) {
   PushDeclContext(S, Context.getTranslationUnitDecl());
 }
 
+ClangJITListener::~ClangJITListener() { }
+
 namespace clang {
 namespace sema {
 
@@ -161,8 +163,7 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
   isConstantEvaluatedOverride = false;
 
   NextJITFuncId = 0;
-  ClangJITNamespaceCache = nullptr;
-  DynamicFunctionTemplateInstantiationCache = nullptr;
+  JITListener = nullptr;
 
   LoadedExternalKnownNamespaces = false;
   for (unsigned I = 0; I != NSAPI::NumNSNumberLiteralMethods; ++I)

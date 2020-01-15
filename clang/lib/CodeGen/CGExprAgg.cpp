@@ -183,6 +183,17 @@ public:
   void VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E);
   void VisitOpaqueValueExpr(OpaqueValueExpr *E);
 
+  void VisitDynamicFunctionTemplateInstantiationExpr(
+    DynamicFunctionTemplateInstantiationExpr *E) {
+      CGF.EmitDynamicFunctionTemplateInstantiationExpr(*E, Dest,
+                                                       IsResultUnused);
+  }
+  void VisitDynamicTemplateArgumentDescriptorExpr(
+    DynamicTemplateArgumentDescriptorExpr *E) {
+      CGF.EmitDynamicTemplateArgumentDescriptorExpr(*E, Dest,
+                                                    IsResultUnused);
+  }
+
   void VisitPseudoObjectExpr(PseudoObjectExpr *E) {
     if (E->isGLValue()) {
       LValue LV = CGF.EmitPseudoObjectLValue(E);

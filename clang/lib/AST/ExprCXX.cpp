@@ -1690,7 +1690,8 @@ DynamicFunctionTemplateInstantiationExpr::
                                            ArrayRef<Expr *> Args,
                                            SourceLocation LParenLoc,
                                            SourceLocation RParenLoc,
-                                           SourceRange AngleBrackets) :
+                                           SourceRange AngleBrackets,
+                                           unsigned InstanceId) :
   Expr(DynamicFunctionTemplateInstantiationExprClass, T,
        VK_RValue,
        OK_Ordinary,
@@ -1699,7 +1700,7 @@ DynamicFunctionTemplateInstantiationExpr::
        T->containsUnexpandedParameterPack()),
   QualifierLoc(QualifierLoc),
   Name(Name.getAsVoidPointer()), Loc(Loc), LParenLoc(LParenLoc),
-  RParenLoc(RParenLoc), AngleBrackets(AngleBrackets) {
+  RParenLoc(RParenLoc), AngleBrackets(AngleBrackets), InstanceId(InstanceId) {
   DynamicFunctionTemplateInstantiationExprBits.NumArgs = Args.size();
   auto **StoredArgs = getTrailingObjects<Expr *>();
   for (unsigned I = 0; I != Args.size(); ++I) {
@@ -1723,14 +1724,16 @@ DynamicFunctionTemplateInstantiationExpr::Create(const ASTContext &Context,
                                                  ArrayRef<Expr *> Args,
                                                  SourceLocation LParenLoc,
                                                  SourceLocation RParenLoc,
-                                                 SourceRange AngleBrackets) {
+                                                 SourceRange AngleBrackets,
+                                                 unsigned InstanceId) {
   void *Mem = Context.Allocate(totalSizeToAlloc<Expr *>(Args.size()));
   return new (Mem) DynamicFunctionTemplateInstantiationExpr(T, Loc,
                                                             QualifierLoc,
                                                             Name, Args,
                                                             LParenLoc,
                                                             RParenLoc,
-                                                            AngleBrackets);
+                                                            AngleBrackets,
+                                                            InstanceId);
 }
 
 DynamicFunctionTemplateInstantiationExpr *
@@ -1739,4 +1742,18 @@ DynamicFunctionTemplateInstantiationExpr::CreateEmpty(const ASTContext &Context,
   void *Mem = Context.Allocate(totalSizeToAlloc<Expr *>(NumArgs));
   return new (Mem) DynamicFunctionTemplateInstantiationExpr(EmptyShell(), NumArgs);
 }
+
+DynamicTemplateArgumentDescriptorExpr::
+  DynamicTemplateArgumentDescriptorExpr(QualType T,
+                                        SourceLocation Loc,
+                                        TemplateArgumentLoc Arg,
+                                        SourceRange AngleBrackets,
+                                        unsigned InstanceId) :
+  Expr(DynamicTemplateArgumentDescriptorExprClass, T,
+       VK_RValue,
+       OK_Ordinary,
+       Arg.getArgument().isDependent(), Arg.getArgument().isDependent(),
+       Arg.getArgument().isInstantiationDependent(),
+       Arg.getArgument().containsUnexpandedParameterPack()),
+  Arg(Arg), Loc(Loc), AngleBrackets(AngleBrackets), InstanceId(InstanceId) { }
 

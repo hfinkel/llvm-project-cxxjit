@@ -1871,6 +1871,12 @@ void StmtProfiler::VisitDynamicFunctionTemplateInstantiationExpr(
     VisitExpr(E);
 }
 
+void StmtProfiler::VisitDynamicTemplateArgumentDescriptorExpr(
+  const DynamicTemplateArgumentDescriptorExpr *S) {
+  TemplateArgumentLoc TAL = S->getTemplateArgumentLoc();
+  VisitTemplateArguments(&TAL, 1);
+}
+
 void StmtProfiler::VisitCoroutineBodyStmt(const CoroutineBodyStmt *S) {
   VisitStmt(S);
 }

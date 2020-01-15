@@ -3622,3 +3622,40 @@ ExprResult Parser::ParseDynamicFunctionTemplateInstantiation() {
                    T.getCloseLocation());
 }
 
+/// Parse a __clang_dynamic_template_argument '<' arg '>'
+ExprResult Parser::ParseDynamicTemplateArgumentDescriptor() {
+  tok::TokenKind Kind = Tok.getKind();
+
+  SourceLocation OpLoc = ConsumeToken();
+  SourceLocation LAngleBracketLoc = Tok.getLocation();
+
+  // Check for "<::" which is parsed as "[:".  If found, fix token stream,
+  // diagnose error, suggest fix, and recover parsing.
+  if (Tok.is(tok::l_square) && Tok.getLength() == 2) {
+    Token Next = NextToken();
+    if (Next.is(tok::colon) && areTokensAdjacent(Tok, Next))
+      FixDigraph(*this, PP, Tok, Next, Kind, /*AtDigraph*/true);
+  }
+
+  if (ExpectAndConsume(tok::less))
+    return ExprError();
+
+  ParsedTemplateArgument Arg = ParseTemplateArgument();
+  SourceLocation EllipsisLoc;
+  if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
+    Arg = Actions.ActOnPackExpansion(Arg, EllipsisLoc);
+
+  if (Arg.isInvalid()) {
+    SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
+    return ExprError();
+  }
+
+  SourceLocation RAngleBracketLoc = Tok.getLocation();
+
+  if (ExpectAndConsume(tok::greater))
+    return ExprError(Diag(LAngleBracketLoc, diag::note_matching) << tok::less);
+
+  return Actions.ActOnDynamicTemplateArgumentDescriptor(
+                   OpLoc, Arg, LAngleBracketLoc, RAngleBracketLoc);
+}
+

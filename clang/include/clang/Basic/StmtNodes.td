@@ -194,6 +194,7 @@ def OpaqueValueExpr : DStmt<Expr>;
 def TypoExpr : DStmt<Expr>;
 def BuiltinBitCastExpr : DStmt<ExplicitCastExpr>;
 def DynamicFunctionTemplateInstantiationExpr : DStmt<Expr>;
+def DynamicTemplateArgumentDescriptorExpr : DStmt<Expr>;
 
 // Microsoft Extensions.
 def MSPropertyRefExpr : DStmt<Expr>;

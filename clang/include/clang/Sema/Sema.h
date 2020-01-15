@@ -199,6 +199,8 @@ namespace clang {
   class IndirectFieldDecl;
   struct DeductionFailureInfo;
   class TemplateSpecCandidateSet;
+  class DynamicFunctionTemplateInstantiationExpr;
+  class DynamicTemplateArgumentDescriptorExpr;
 
 namespace sema {
   class AccessedEntity;
@@ -322,6 +324,16 @@ private:
   /// A function to compute expected type at ExpectedLoc. It is only considered
   /// if Type is null.
   llvm::function_ref<QualType()> ComputeType;
+};
+
+class ClangJITListener {
+public:
+  virtual ~ClangJITListener();
+
+  virtual void OnNewDynamicFunctionTemplateInstantiationExpr(
+    DynamicFunctionTemplateInstantiationExpr *) = 0;
+  virtual void OnNewDynamicTemplateArgumentDescriptorExpr(
+    DynamicTemplateArgumentDescriptorExpr *) = 0;
 };
 
 /// Sema - This implements semantic analysis and AST building for C.
@@ -905,12 +917,6 @@ public:
   /// The MSVC "_GUID" struct, which is defined in MSVC header files.
   RecordDecl *MSVCGuidDecl;
 
-  /// The "__clang_jit" namespace.
-  NamespaceDecl *ClangJITNamespaceCache;
-
-  /// The "__clang::jit::dynamic_function_template_instantiation" template.
-  ClassTemplateDecl *DynamicFunctionTemplateInstantiationCache;
-
   /// Caches identifiers/selectors for NSFoundation APIs.
   std::unique_ptr<NSAPI> NSAPIObj;
 
@@ -1253,6 +1259,7 @@ public:
   llvm::SmallVector<QualType, 4> CurrentParameterCopyTypes;
 
   unsigned NextJITFuncId;
+  ClangJITListener *JITListener;
 
   void ReadMethodPool(Selector Sel);
   void updateOutOfDateSelector(Selector Sel);
@@ -8664,6 +8671,11 @@ public:
 
   // Clang JIT extension...
 
+  void setJITListener(ClangJITListener *JL, unsigned NID) {
+    JITListener = JL;
+    NextJITFuncId = NID;
+  }
+
   QualType BuildDynamicFunctionTemplateInstantiationTmpl(
              QualType FnType, SourceLocation Loc);
 
@@ -8683,6 +8695,20 @@ public:
                ArrayRef<Expr *> Args,
                SourceLocation LParenLoc,
                SourceLocation RParenLoc,
+               SourceLocation LAngleBracketLoc,
+               SourceLocation RAngleBracketLoc);
+
+  QualType BuildDynamicTemplateArgumentDescriptor(
+               SourceLocation Loc);
+
+  ExprResult BuildDynamicTemplateArgumentDescriptor(
+               SourceLocation Loc,
+               TemplateArgumentLoc Arg,
+               SourceRange AngleBrackets);
+
+  ExprResult ActOnDynamicTemplateArgumentDescriptor(
+               SourceLocation Loc,
+               ParsedTemplateArgument Arg,
                SourceLocation LAngleBracketLoc,
                SourceLocation RAngleBracketLoc);
 

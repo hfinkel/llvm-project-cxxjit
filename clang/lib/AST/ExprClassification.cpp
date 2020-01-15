@@ -420,6 +420,8 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
 
   case Expr::DynamicFunctionTemplateInstantiationExprClass:
     return Cl::CL_PRValue;
+  case Expr::DynamicTemplateArgumentDescriptorExprClass:
+    return Cl::CL_PRValue;
 
   case Expr::CoawaitExprClass:
   case Expr::CoyieldExprClass:

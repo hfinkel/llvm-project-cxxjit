@@ -2911,6 +2911,15 @@ public:
   LValue EmitCoyieldLValue(const CoyieldExpr *E);
   RValue EmitCoroutineIntrinsic(const CallExpr *E, unsigned int IID);
 
+  RValue EmitDynamicFunctionTemplateInstantiationExpr(
+    const DynamicFunctionTemplateInstantiationExpr &E,
+    AggValueSlot aggSlot = AggValueSlot::ignored(),
+    bool ignoreResult = false);
+  RValue EmitDynamicTemplateArgumentDescriptorExpr(
+    const DynamicTemplateArgumentDescriptorExpr &E,
+    AggValueSlot aggSlot = AggValueSlot::ignored(),
+    bool ignoreResult = false);
+
   void EnterCXXTryStmt(const CXXTryStmt &S, bool IsFnTryBlock = false);
   void ExitCXXTryStmt(const CXXTryStmt &S, bool IsFnTryBlock = false);
 

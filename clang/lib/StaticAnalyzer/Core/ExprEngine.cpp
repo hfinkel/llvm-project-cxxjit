@@ -1231,6 +1231,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::CoreturnStmtClass:
     case Stmt::CoyieldExprClass:
     case Stmt::DynamicFunctionTemplateInstantiationExprClass:
+    case Stmt::DynamicTemplateArgumentDescriptorExprClass:
     case Stmt::SEHTryStmtClass:
     case Stmt::SEHExceptStmtClass:
     case Stmt::SEHLeaveStmtClass:

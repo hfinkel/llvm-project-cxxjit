@@ -3634,6 +3634,7 @@ recurse:
   case Expr::FixedPointLiteralClass:
   case Expr::BuiltinBitCastExprClass:
   case Expr::DynamicFunctionTemplateInstantiationExprClass:
+  case Expr::DynamicTemplateArgumentDescriptorExprClass:
   {
     if (!NullOut) {
       // As bad as this diagnostic is, it's better than crashing.

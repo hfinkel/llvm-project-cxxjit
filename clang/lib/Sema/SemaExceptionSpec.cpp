@@ -1261,6 +1261,8 @@ CanThrowResult Sema::canThrow(const Expr *E) {
                                         DFTIE->getTemplateFunctionDecl()),
                          canSubExprsThrow(*this, E));
   }
+  case Expr::DynamicTemplateArgumentDescriptorExprClass:
+    return CT_Cannot;
 
     // Some expressions are always dependent.
   case Expr::CXXDependentScopeMemberExprClass:

@@ -2615,6 +2615,9 @@ DEF_TRAVERSE_STMT(AtomicExpr, {})
 DEF_TRAVERSE_STMT(DynamicFunctionTemplateInstantiationExpr, {
   TRY_TO(TraverseTemplateName(S->getTemplateName()));
 })
+DEF_TRAVERSE_STMT(DynamicTemplateArgumentDescriptorExpr, {
+  TRY_TO(TraverseTemplateArgumentLoc(S->getTemplateArgumentLoc()));
+})
 
 // For coroutines expressions, traverse either the operand
 // as written or the implied calls, depending on what the

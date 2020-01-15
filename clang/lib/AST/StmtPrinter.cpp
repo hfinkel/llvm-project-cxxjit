@@ -2243,6 +2243,15 @@ void StmtPrinter::VisitDynamicFunctionTemplateInstantiationExpr(
   OS << ")";
 }
 
+void StmtPrinter::VisitDynamicTemplateArgumentDescriptorExpr(
+  DynamicTemplateArgumentDescriptorExpr *E) {
+  OS << "__clang_dynamic_template_argument<";
+
+  E->getTemplateArgumentLoc().getArgument().print(Policy, OS);
+
+  OS << ">";
+}
+
 // C++ Coroutines TS
 
 void StmtPrinter::VisitCoroutineBodyStmt(CoroutineBodyStmt *S) {

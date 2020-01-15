@@ -12715,6 +12715,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::LambdaExprClass:
   case Expr::CXXFoldExprClass:
   case Expr::DynamicFunctionTemplateInstantiationExprClass:
+  case Expr::DynamicTemplateArgumentDescriptorExprClass:
   case Expr::CoawaitExprClass:
   case Expr::DependentCoawaitExprClass:
   case Expr::CoyieldExprClass:

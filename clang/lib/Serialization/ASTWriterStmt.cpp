@@ -1858,7 +1858,19 @@ ASTStmtWriter::VisitDynamicFunctionTemplateInstantiationExpr(
   Record.AddSourceLocation(E->getLParenLoc());
   Record.AddSourceLocation(E->getRParenLoc());
   Record.AddSourceLocation(E->getOperatorLoc());
+  Record.push_back(E->getInstanceId());
   Code = serialization::EXPR_DYNAMIC_FUNCTION_TEMPLATE_INSTANTIATION;
+}
+
+void
+ASTStmtWriter::VisitDynamicTemplateArgumentDescriptorExpr(
+  DynamicTemplateArgumentDescriptorExpr *E) {
+  VisitExpr(E);
+  Record.AddTemplateArgumentLoc(E->getTemplateArgumentLoc());
+  Record.AddSourceRange(E->getAngleBrackets());
+  Record.AddSourceLocation(E->getOperatorLoc());
+  Record.push_back(E->getInstanceId());
+  Code = serialization::EXPR_DYNAMIC_TEMPLATE_ARGUMENT_DESCRIPTOR;
 }
 
 //===----------------------------------------------------------------------===//

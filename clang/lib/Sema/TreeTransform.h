@@ -1427,6 +1427,18 @@ public:
       Loc, QualifierLoc, Name, Args, LParenLoc, RParenLoc, AngleBrackets);
   }
 
+  /// Build a new "__clang_dynamic_template_argument" expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildDynamicTemplateArgumentDescriptorExpr(
+               SourceLocation Loc,
+               TemplateArgumentLoc Arg,
+               SourceRange AngleBrackets) {
+    return getSema().BuildDynamicTemplateArgumentDescriptor(
+      Loc, Arg, AngleBrackets);
+  }
+
   /// Build a new co_return statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
@@ -7221,6 +7233,23 @@ TreeTransform<Derived>::TransformDynamicFunctionTemplateInstantiationExpr(
   return getDerived().RebuildDynamicFunctionTemplateInstantiationExpr(
       E->getOperatorLoc(), QualifierLoc, Name, Args, E->getLParenLoc(),
       E->getRParenLoc(), E->getAngleBrackets());
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformDynamicTemplateArgumentDescriptorExpr(
+                          DynamicTemplateArgumentDescriptorExpr *E) {
+  TemplateArgumentLoc Arg = E->getTemplateArgumentLoc(), NewArg;
+
+  if (getDerived().TransformTemplateArgument(Arg, NewArg, /*Uneval*/ true))
+      return ExprError();
+
+  if (!getDerived().AlwaysRebuild() &&
+      Arg.getArgument().structurallyEquals(NewArg.getArgument()))
+    return E;
+
+  return getDerived().RebuildDynamicTemplateArgumentDescriptorExpr(
+      E->getOperatorLoc(), Arg, E->getAngleBrackets());
 }
 
 // C++ Coroutines TS

@@ -2254,3 +2254,178 @@ llvm::Value *CodeGenFunction::EmitDynamicCast(Address ThisAddr,
 
   return Value;
 }
+
+RValue
+CodeGenFunction::EmitDynamicFunctionTemplateInstantiationExpr(
+    const DynamicFunctionTemplateInstantiationExpr &E,
+    AggValueSlot aggSlot, bool ignoreResult) {
+  assert(getLangOpts().isJITEnabled() &&
+         "Emitting a JIT stub when JIT is disabled?");
+
+  int Cnt = E.getInstanceId();
+
+  SmallString<128> InstKey;
+  llvm::raw_svector_ostream IKOut(InstKey);
+  auto &MC = CGM.getCXXABI().getMangleContext();
+
+  FunctionDecl *FD = E.getTemplateFunctionDecl();
+  MC.mangleName(FD, IKOut);
+
+  auto &C = getContext();
+  RecordDecl *RD =
+    C.buildImplicitRecord(llvm::Twine("__clang_jit_args_")
+                            .concat(llvm::Twine(Cnt))
+                            .concat(llvm::Twine("_t"))
+                            .str());
+  RD->startDefinition();
+
+  for (const auto *A : E.arguments()) {
+    QualType FieldTy = A->getType();
+    auto *Field = FieldDecl::Create(
+        C, RD, SourceLocation(), SourceLocation(), /*Id=*/nullptr,
+        FieldTy, C.getTrivialTypeSourceInfo(FieldTy, SourceLocation()),
+        /*BW=*/nullptr, /*Mutable=*/false, /*InitStyle=*/ICIS_NoInit);
+    Field->setAccess(AS_public);
+    RD->addDecl(Field);
+
+    IKOut << "#";
+    MC.mangleTypeName(FieldTy, IKOut);
+  }
+
+  RD->completeDefinition();
+  RD->addAttr(PackedAttr::CreateImplicit(C));
+
+  QualType RDTy = C.getRecordType(RD);
+  Address AI = CreateMemTemp(RDTy, "__clang_jit_args");
+
+  // In case there's padding, zero out the structure first.
+  Builder.CreateMemSet(AI, Builder.getInt8(0),
+                       Builder.getInt32(C.getTypeSizeInChars(RDTy).getQuantity()));
+
+  LValue Base = MakeAddrLValue(AI, RDTy);
+  auto Fields = cast<RecordDecl>(RDTy->getAsTagDecl())->field_begin();
+
+  for (const auto *A : E.arguments()) {
+    LValue FieldLV = EmitLValueForField(Base, *Fields++);
+    RValue RV = RValue::get(EmitScalarExpr(A, /*Ignore*/ false));
+    EmitStoreThroughLValue(RV, FieldLV);
+  }
+
+  llvm::Type *TypeParams[] =
+    {Int8PtrTy, Int32Ty,
+     VoidPtrTy, SizeTy,
+     VoidPtrTy, SizeTy,
+     VoidPtrPtrTy, Int32Ty,
+     VoidPtrPtrTy, Int32Ty,
+     VoidPtrTy, Int32Ty,
+     VoidPtrTy, Int32Ty,
+     Int8PtrTy, Int32Ty, VoidPtrTy};
+
+  // This function is marked as readonly to allow the optimizer to remove it if
+  // its result is unused (and otherwise combine redundant calls).
+  llvm::AttributeList ReadOnlyAttr = llvm::AttributeList::get(
+      getLLVMContext(), llvm::AttributeList::FunctionIndex,
+      llvm::Attribute::ReadOnly);
+
+  auto *FnTy =
+      llvm::FunctionType::get(VoidTy, TypeParams, /*isVarArg*/ false);
+  auto RTLFn = CGM.CreateRuntimeFunction(FnTy, "__clang_jit_i", ReadOnlyAttr);
+
+  llvm::Value *Args[] = {
+      llvm::Constant::getNullValue(Int8PtrTy),
+      llvm::Constant::getNullValue(Int32Ty),
+      llvm::Constant::getNullValue(VoidPtrTy),
+      llvm::Constant::getNullValue(SizeTy),
+      llvm::Constant::getNullValue(VoidPtrTy),
+      llvm::Constant::getNullValue(SizeTy),
+      llvm::Constant::getNullValue(VoidPtrPtrTy),
+      llvm::Constant::getNullValue(Int32Ty),
+      llvm::Constant::getNullValue(VoidPtrPtrTy),
+      llvm::Constant::getNullValue(Int32Ty),
+      llvm::Constant::getNullValue(VoidPtrTy),
+      llvm::Constant::getNullValue(Int32Ty),
+      Builder.CreatePointerCast(AI.getPointer(), VoidPtrTy),
+      Builder.getInt32(C.getTypeSizeInChars(RDTy).getQuantity()),
+      Builder.CreateGlobalStringPtr(InstKey, ".cj.key.str"),
+      Builder.getInt32(Cnt),
+      Builder.CreatePointerCast(aggSlot.getPointer(), VoidPtrTy)
+  };
+
+  EmitRuntimeCall(RTLFn, Args);
+  return aggSlot.asRValue();
+}
+
+RValue
+CodeGenFunction::EmitDynamicTemplateArgumentDescriptorExpr(
+    const DynamicTemplateArgumentDescriptorExpr &E,
+    AggValueSlot aggSlot, bool ignoreResult) {
+  assert(getLangOpts().isJITEnabled() &&
+         "Emitting a JIT argument stub when JIT is disabled?");
+
+  int Cnt = E.getInstanceId();
+  auto &C = getContext();
+
+  llvm::Value *DataPtr = llvm::Constant::getNullValue(VoidPtrTy);
+  llvm::Value *DataSize = Builder.getInt32(0);
+  TemplateArgument A = E.getTemplateArgumentLoc().getArgument();
+  if (A.getKind() == TemplateArgument::Expression) {
+    SmallVector<PartialDiagnosticAt, 8> Notes;
+    Expr::EvalResult Eval;
+    Eval.Diag = &Notes;
+    if (!A.getAsExpr()->
+          EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, C)) {
+      QualType ArgTy = A.getNonTypeTemplateArgumentType();
+      Address AI = CreateMemTemp(ArgTy, "__clang_jit_dd_arg");
+      RValue RV = RValue::get(EmitScalarExpr(A.getAsExpr(),
+                                             /*Ignore*/ false));
+      EmitStoreThroughLValue(RV, MakeAddrLValue(AI, ArgTy));
+      DataPtr = Builder.CreatePointerCast(AI.getPointer(), VoidPtrTy);
+      DataSize = Builder.getInt32(C.getTypeSizeInChars(ArgTy).getQuantity());
+    }
+  }
+
+  // We may need to initialize the compiler instance based on this call, so we
+  // include all of the TU information here as well.
+
+  llvm::Type *TypeParams[] =
+    {Int8PtrTy, Int32Ty,
+     VoidPtrTy, SizeTy,
+     VoidPtrTy, SizeTy,
+     VoidPtrPtrTy, Int32Ty,
+     VoidPtrPtrTy, Int32Ty,
+     VoidPtrTy, Int32Ty,
+     VoidPtrTy, Int32Ty,
+     Int32Ty, VoidPtrTy};
+
+  // This function is marked as readonly to allow the optimizer to remove it if
+  // its result is unused (and otherwise combine redundant calls).
+  llvm::AttributeList ReadOnlyAttr = llvm::AttributeList::get(
+      getLLVMContext(), llvm::AttributeList::FunctionIndex,
+      llvm::Attribute::ReadOnly);
+
+  auto *FnTy =
+      llvm::FunctionType::get(VoidTy, TypeParams, /*isVarArg*/ false);
+  auto RTLFn = CGM.CreateRuntimeFunction(FnTy, "__clang_jit_dd", ReadOnlyAttr);
+
+  llvm::Value *Args[] = {
+      llvm::Constant::getNullValue(Int8PtrTy),
+      llvm::Constant::getNullValue(Int32Ty),
+      llvm::Constant::getNullValue(VoidPtrTy),
+      llvm::Constant::getNullValue(SizeTy),
+      llvm::Constant::getNullValue(VoidPtrTy),
+      llvm::Constant::getNullValue(SizeTy),
+      llvm::Constant::getNullValue(VoidPtrPtrTy),
+      llvm::Constant::getNullValue(Int32Ty),
+      llvm::Constant::getNullValue(VoidPtrPtrTy),
+      llvm::Constant::getNullValue(Int32Ty),
+      llvm::Constant::getNullValue(VoidPtrTy),
+      llvm::Constant::getNullValue(Int32Ty),
+      DataPtr, DataSize,
+      Builder.getInt32(Cnt),
+      Builder.CreatePointerCast(aggSlot.getPointer(), VoidPtrTy)
+  };
+
+  EmitRuntimeCall(RTLFn, Args);
+  return aggSlot.asRValue();
+}
+

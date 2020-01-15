@@ -507,6 +507,17 @@ ASTStmtReader::VisitDynamicFunctionTemplateInstantiationExpr(
   E->setLParenLoc(ReadSourceLocation());
   E->setRParenLoc(ReadSourceLocation());
   E->setOperatorLoc(ReadSourceLocation());
+  E->setInstanceId(Record.readInt());
+}
+
+void
+ASTStmtReader::VisitDynamicTemplateArgumentDescriptorExpr(
+  DynamicTemplateArgumentDescriptorExpr *E) {
+  VisitExpr(E);
+  E->setTemplateArgumentLoc(Record.readTemplateArgumentLoc());
+  E->setAngleBrackets(ReadSourceRange());
+  E->setOperatorLoc(ReadSourceLocation());
+  E->setInstanceId(Record.readInt());
 }
 
 void ASTStmtReader::VisitCapturedStmt(CapturedStmt *S) {
@@ -3473,6 +3484,10 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
     case EXPR_DYNAMIC_FUNCTION_TEMPLATE_INSTANTIATION:
       S = DynamicFunctionTemplateInstantiationExpr::CreateEmpty(Context,
                               /*NumArgs=*/Record[ASTStmtReader::NumExprFields]);
+      break;
+
+    case EXPR_DYNAMIC_TEMPLATE_ARGUMENT_DESCRIPTOR:
+      S = new (Context) DynamicTemplateArgumentDescriptorExpr(Empty);
       break;
     }
 

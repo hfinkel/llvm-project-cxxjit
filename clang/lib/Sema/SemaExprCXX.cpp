@@ -7943,13 +7943,19 @@ LookupDynamicFunctionTemplateInstantiationTmpl(Sema &S,
                                                SourceLocation Loc) {
   // Note: This should always be available because the header included
   // automatically.
-  if (!S.ClangJITNamespaceCache)
+  DeclContextLookupResult Lookup =
+    S.Context.getTranslationUnitDecl()
+      ->lookup(&S.Context.Idents.get("__clang_jit"));
+  if (Lookup.size() != 1)
+    return nullptr;
+  auto *ClangJITNamespace = dyn_cast<NamespaceDecl>(Lookup.front());
+  if (!ClangJITNamespace)
     return nullptr;
 
   LookupResult Result(S, &S.PP.getIdentifierTable()
                               .get("dynamic_function_template_instantiation"),
                       Loc, Sema::LookupOrdinaryName);
-  if (!S.LookupQualifiedName(Result, S.ClangJITNamespaceCache))
+  if (!S.LookupQualifiedName(Result, ClangJITNamespace))
     return nullptr;
 
   return Result.getAsSingle<ClassTemplateDecl>();
@@ -7958,12 +7964,10 @@ LookupDynamicFunctionTemplateInstantiationTmpl(Sema &S,
 QualType
 Sema::BuildDynamicFunctionTemplateInstantiationTmpl(
         QualType FnType, SourceLocation Loc) {
-  if (!DynamicFunctionTemplateInstantiationCache) {
-    DynamicFunctionTemplateInstantiationCache =
+  auto *DynamicFunctionTemplateInstantiationTmpl =
       LookupDynamicFunctionTemplateInstantiationTmpl(*this, Loc);
-    if (!DynamicFunctionTemplateInstantiationCache)
+  if (!DynamicFunctionTemplateInstantiationTmpl)
       return QualType();
-  }
 
   TemplateArgumentListInfo Args(Loc, Loc);
   Args.addArgument(TemplateArgumentLoc(TemplateArgument(FnType),
@@ -7971,7 +7975,7 @@ Sema::BuildDynamicFunctionTemplateInstantiationTmpl(
                                                                         Loc)));
   return Context.getCanonicalType(
            CheckTemplateIdType(TemplateName(
-                                 DynamicFunctionTemplateInstantiationCache),
+                                 DynamicFunctionTemplateInstantiationTmpl),
                                Loc, Args));
 }
 
@@ -8018,9 +8022,14 @@ Sema::BuildDynamicFunctionTemplateInstantiation(
   if (T.isNull())
     return ExprError();
 
-  return DynamicFunctionTemplateInstantiationExpr::Create(
+  auto DFTI = DynamicFunctionTemplateInstantiationExpr::Create(
     Context, T, Loc, QualifierLoc, Name, Args, LParenLoc, RParenLoc,
-    AngleBrackets);
+    AngleBrackets, ++NextJITFuncId);
+
+  if (JITListener)
+    JITListener->OnNewDynamicFunctionTemplateInstantiationExpr(DFTI);
+
+  return DFTI;
 }
 
 ExprResult

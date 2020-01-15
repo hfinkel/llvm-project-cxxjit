@@ -324,7 +324,8 @@ namespace clang {
           if (auto *Callee =
                 dyn_cast<llvm::Function>(
                   CS.getCalledValue()->stripPointerCasts()))
-            if (Callee->getName() == "__clang_jit")
+            if (Callee->getName() == "__clang_jit_i" ||
+                Callee->getName() == "__clang_jit_dd")
               JCalls.push_back(CS);
 
       if (JCalls.empty())

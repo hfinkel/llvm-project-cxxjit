@@ -10616,3 +10616,69 @@ void Sema::checkPartialSpecializationVisibility(SourceLocation Loc,
                           MissingImportKind::PartialSpecialization,
                           /*Recover*/true);
 }
+
+static RecordDecl *
+LookupDynamicTemplateArgumentDescriptor(Sema &S,
+                                        SourceLocation Loc, bool IsTemplate) {
+  // Note: This should always be available because the header included
+  // automatically.
+  DeclContextLookupResult Lookup =
+    S.Context.getTranslationUnitDecl()
+      ->lookup(&S.Context.Idents.get("__clang_jit"));
+  if (Lookup.size() != 1)
+    return nullptr;
+  auto *ClangJITNamespace = dyn_cast<NamespaceDecl>(Lookup.front());
+  if (!ClangJITNamespace)
+    return nullptr;
+
+  LookupResult Result(S, &S.PP.getIdentifierTable()
+                              .get(IsTemplate ?
+                                   "dynamic_template_template_argument" :
+                                   "dynamic_template_argument"),
+                      Loc, Sema::LookupOrdinaryName);
+  if (!S.LookupQualifiedName(Result, ClangJITNamespace))
+    return nullptr;
+
+  return Result.getAsSingle<RecordDecl>();
+}
+
+ExprResult
+Sema::BuildDynamicTemplateArgumentDescriptor(
+        SourceLocation Loc,
+        TemplateArgumentLoc Arg,
+        SourceRange AngleBrackets) {
+  bool IsTemplate =
+    Arg.getArgument().getKind() == TemplateArgument::Template ||
+    Arg.getArgument().getKind() == TemplateArgument::TemplateExpansion;
+  RecordDecl *RRD =
+    LookupDynamicTemplateArgumentDescriptor(*this, Loc, IsTemplate);
+  if (!RRD)
+    return ExprError();
+
+  QualType T = Context.getRecordType(RRD);
+
+  auto *DFA = new (Context) DynamicTemplateArgumentDescriptorExpr(
+    T, Loc, Arg, AngleBrackets, ++NextJITFuncId);
+
+  if (JITListener)
+    JITListener->OnNewDynamicTemplateArgumentDescriptorExpr(DFA);
+
+  return DFA;
+}
+
+ExprResult
+Sema::ActOnDynamicTemplateArgumentDescriptor(
+        SourceLocation Loc,
+        ParsedTemplateArgument Arg,
+        SourceLocation LAngleBracketLoc,
+        SourceLocation RAngleBracketLoc) {
+  if (!getLangOpts().isJITEnabled()) {
+    Diag(Loc, diag::err_jit_required);
+    return ExprError();
+  }
+
+  return BuildDynamicTemplateArgumentDescriptor(
+    Loc, translateTemplateArgument(*this, Arg),
+    SourceRange(LAngleBracketLoc, RAngleBracketLoc));
+}
+

@@ -3420,6 +3420,7 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
   case DependentCoawaitExprClass:
   case CoyieldExprClass:
   case DynamicFunctionTemplateInstantiationExprClass:
+  case DynamicTemplateArgumentDescriptorExprClass:
     // These always have a side-effect.
     return true;
 

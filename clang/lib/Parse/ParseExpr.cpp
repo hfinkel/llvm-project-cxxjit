@@ -1239,6 +1239,9 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw___clang_dynamic_function_template_instantiation:
     Res = ParseDynamicFunctionTemplateInstantiation();
     break;
+  case tok::kw___clang_dynamic_template_argument:
+    Res = ParseDynamicTemplateArgumentDescriptor();
+    break;
 
   case tok::annot_typename:
     if (isStartOfObjCClassMessageMissingOpenBracket()) {

@@ -101,7 +101,11 @@
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/IPO/Internalize.h"
 
+// Include the internal JIT types header.
+#include "../Headers/__clang_jit_types.h"
+
 #include <cassert>
+#include <cstdarg>
 #include <cstdlib> // ::getenv
 #include <cstring>
 #include <memory>
@@ -406,6 +410,40 @@ private:
     IRStaticDestructorRunners;
 };
 
+class DiagnosticCollector : public DiagnosticConsumer {
+public:
+  DiagnosticCollector(std::vector<__clang_jit::diagnostic> &Errors,
+                      std::vector<__clang_jit::diagnostic> &Warnings)
+    : Errors(Errors), Warnings(Warnings) {}
+
+  void HandleDiagnostic(DiagnosticsEngine::Level DiagLevel,
+                        const Diagnostic &Info) override {
+    if (!Info.hasSourceManager() || !Info.getLocation().isFileID())
+      return;
+
+    PresumedLoc PLoc =
+      Info.getSourceManager().getPresumedLoc(Info.getLocation());
+    if (PLoc.isInvalid())
+      return;
+
+    SmallVector<char, 16> Msg;
+    Info.FormatDiagnostic(Msg);
+
+    __clang_jit::diagnostic d(std::string(Msg.begin(), Msg.end()),
+      __clang_jit::diagnostic::source_location::current(PLoc.getFilename(),
+                                                        "unknown",
+                                                        PLoc.getLine(),
+                                                        PLoc.getColumn()));
+    
+    if (DiagLevel == DiagnosticsEngine::Level::Error)
+      Errors.push_back(d);
+    else if (DiagLevel == DiagnosticsEngine::Level::Warning)
+      Warnings.push_back(d);
+  }
+
+  std::vector<__clang_jit::diagnostic> &Errors, &Warnings;
+};
+
 class BackendConsumer : public ASTConsumer {
   DiagnosticsEngine &Diags;
   BackendAction Action;
@@ -532,53 +570,76 @@ public:
   }
 };
 
-class JFIMapDeclVisitor : public RecursiveASTVisitor<JFIMapDeclVisitor> {
-  DenseMap<unsigned, FunctionDecl *> &Map;
+class DFTIMapVisitor : public RecursiveASTVisitor<DFTIMapVisitor> {
+  DenseMap<unsigned, DynamicFunctionTemplateInstantiationExpr *> &Map;
+  DenseMap<unsigned, DynamicTemplateArgumentDescriptorExpr *> &AMap;
 
 public:
-  explicit JFIMapDeclVisitor(DenseMap<unsigned, FunctionDecl *> &M)
-    : Map(M) { }
+  explicit DFTIMapVisitor(
+    DenseMap<unsigned, DynamicFunctionTemplateInstantiationExpr *> &M,
+    DenseMap<unsigned, DynamicTemplateArgumentDescriptorExpr *> &A)
+    : Map(M), AMap(A) { }
 
-  bool shouldVisitTemplateInstantiations() const { return true; }
+  bool VisitDynamicFunctionTemplateInstantiationExpr(
+    DynamicFunctionTemplateInstantiationExpr *E) {
+    Map[E->getInstanceId()] = E;
+    return true;
+  }
 
-  bool VisitFunctionDecl(const FunctionDecl *D) {
-    if (auto *A = D->getAttr<JITFuncInstantiationAttr>())
-      Map[A->getId()] = const_cast<FunctionDecl *>(D);
+  bool VisitDynamicTemplateArgumentDescriptorExpr(
+    DynamicTemplateArgumentDescriptorExpr *E) {
+    AMap[E->getInstanceId()] = E;
     return true;
   }
 };
 
-class JFICSMapDeclVisitor : public RecursiveASTVisitor<JFICSMapDeclVisitor> {
-  DenseMap<unsigned, FunctionDecl *> &Map;
-  SmallVector<FunctionDecl *, 1> CurrentFD;
+class UpdatingJITListener : public ClangJITListener {
+  DenseMap<unsigned, DynamicFunctionTemplateInstantiationExpr *> &Map;
+  DenseMap<unsigned, DynamicTemplateArgumentDescriptorExpr *> &AMap;
 
 public:
-  explicit JFICSMapDeclVisitor(DenseMap<unsigned, FunctionDecl *> &M)
-    : Map(M) { }
+  explicit UpdatingJITListener(
+    DenseMap<unsigned, DynamicFunctionTemplateInstantiationExpr *> &M,
+    DenseMap<unsigned, DynamicTemplateArgumentDescriptorExpr *> &A)
+    : Map(M), AMap(A) { }
 
-  bool TraverseFunctionDecl(FunctionDecl *FD) {
-    CurrentFD.push_back(FD);
-    bool Continue =
-      RecursiveASTVisitor<JFICSMapDeclVisitor>::TraverseFunctionDecl(FD);
-    CurrentFD.pop_back();
+  ~UpdatingJITListener() override { }
 
-    return Continue;
+  void OnNewDynamicFunctionTemplateInstantiationExpr(
+    DynamicFunctionTemplateInstantiationExpr *DFTI) override {
+      Map[DFTI->getInstanceId()] = DFTI;
   }
 
-  bool VisitDeclRefExpr(DeclRefExpr *E) {
-    auto *FD = dyn_cast<FunctionDecl>(E->getDecl());
-    if (!FD)
-      return true;
-
-    auto *A = FD->getAttr<JITFuncInstantiationAttr>();
-    if (!A)
-      return true;
-
-    Map[A->getId()] = CurrentFD.back();
-
-    return true;
+  void OnNewDynamicTemplateArgumentDescriptorExpr(
+    DynamicTemplateArgumentDescriptorExpr *DFA) {
+      AMap[DFA->getInstanceId()] = DFA;
   }
 };
+
+struct ArgDescriptor {
+  ArgDescriptor(const void *ASTBuffer, unsigned Idx, const void *Value,
+                unsigned ValueSize)
+    : RefCnt(1), ASTBuffer(ASTBuffer), Idx(Idx),
+      Arg(StringRef((const char *) Value, ValueSize)) { }
+
+  ~ArgDescriptor() {
+    for (auto *P : Params) {
+      if (!--P->RefCnt)
+        delete P;
+    }
+  }
+
+  ArgDescriptor(const ArgDescriptor &AD)
+    : RefCnt(1), ASTBuffer(AD.ASTBuffer), Idx(AD.Idx), Arg(AD.Arg) {}
+
+  unsigned RefCnt;
+  const void *ASTBuffer;
+  unsigned Idx;
+  SmallString<16> Arg;
+
+  SmallVector<ArgDescriptor *, 2> Params;
+};
+
 
 unsigned LastUnique = 0;
 std::unique_ptr<llvm::LLVMContext> LCtx;
@@ -630,12 +691,9 @@ struct CompilerData {
   DenseMap<StringRef, ValueDecl *>        NewLocalSymDecls;
   std::unique_ptr<ClangJIT>               CJ;
 
-  DenseMap<unsigned, FunctionDecl *>      FuncMap;
-
-  // A map of each instantiation to the containing function. These might not be
-  // unique, but should be unique for any place where it matters
-  // (instantiations with from-string types).
-  DenseMap<unsigned, FunctionDecl *>      CSFuncMap;
+  DenseMap<unsigned, DynamicFunctionTemplateInstantiationExpr *> DFTIMap;
+  DenseMap<unsigned, DynamicTemplateArgumentDescriptorExpr *> DTAMap;
+  std::unique_ptr<UpdatingJITListener>    JITL;
 
   std::unique_ptr<CompilerData>           DevCD;
   SmallString<1>                          DevAsm;
@@ -777,8 +835,15 @@ struct CompilerData {
     // Tell the diagnostic client that we have started a source file.
     Diagnostics->getClient()->BeginSourceFile(PP->getLangOpts(), PP.get());
 
-    JFIMapDeclVisitor(FuncMap).TraverseAST(*Ctx);
-    JFICSMapDeclVisitor(CSFuncMap).TraverseAST(*Ctx);
+    DFTIMapVisitor(DFTIMap, DTAMap).TraverseAST(*Ctx);
+    JITL.reset(new UpdatingJITListener(DFTIMap, DTAMap));
+
+    unsigned MaxI = 0;
+    for (auto ME : DFTIMap)
+      MaxI = std::max(MaxI, ME.first);
+    for (auto ME: DTAMap)
+      MaxI = std::max(MaxI, ME.first);
+    S->setJITListener(&*JITL, MaxI);
 
     if (IRBufferSize) {
       llvm::SMDiagnostic Err;
@@ -928,42 +993,242 @@ struct CompilerData {
     }
   }
 
-  void restoreFuncDeclContext(FunctionDecl *FunD) {
-    // NOTE: This mirrors the corresponding code in
-    // Parser::ParseLateTemplatedFuncDef (which is used to late parse a C++
-    // function template in Microsoft mode).
+  bool isDynamicArg(QualType Ty) {
+    auto *TD = Ty->getAsTagDecl();
+    if (!TD)
+      return false;
 
-    struct ContainingDC {
-      ContainingDC(DeclContext *DC, bool ShouldPush) : Pair(DC, ShouldPush) {}
-      llvm::PointerIntPair<DeclContext *, 1, bool> Pair;
-      DeclContext *getDC() { return Pair.getPointer(); }
-      bool shouldPushDC() { return Pair.getInt(); }
-    };
+    auto *ND = dyn_cast<NamespaceDecl>(TD->getEnclosingNamespaceContext());
+    if (!ND)
+      return false;
 
-    SmallVector<ContainingDC, 4> DeclContextsToReenter;
-    DeclContext *DD = FunD;
-    DeclContext *NextContaining = S->getContainingDC(DD);
-    while (DD && !DD->isTranslationUnit()) {
-      bool ShouldPush = DD == NextContaining;
-      DeclContextsToReenter.push_back({DD, ShouldPush});
-      if (ShouldPush)
-        NextContaining = S->getContainingDC(DD);
-      DD = DD->getLexicalParent();
-    }
+    if (ND->getParent()->getRedeclContext()->isTranslationUnit())
+      return false;
 
-    // Reenter template scopes from outermost to innermost.
-    for (ContainingDC CDC : reverse(DeclContextsToReenter)) {
-      (void) S->ActOnReenterTemplateScope(S->getCurScope(),
-                                           cast<Decl>(CDC.getDC()));
-      if (CDC.shouldPushDC())
-        S->PushDeclContext(S->getCurScope(), CDC.getDC());
-    }
+    const IdentifierInfo *II = ND->getIdentifier();
+    if (!II || !II->isStr("__clang_jit"))
+      return false;
+
+    II = TD->getIdentifier();
+    return II && (II->isStr("dynamic_template_argument") ||
+                  II->isStr("dynamic_template_template_argument"));
   }
 
-  std::string instantiateTemplate(const void *NTTPValues, const char **TypeStrings,
-                                  unsigned Idx) {
-    FunctionDecl *FD = FuncMap[Idx];
-    if (!FD)
+  TemplateArgument getTemplateArgumentFromData(
+                     QualType Ty, const void *Values, unsigned Offset,
+                     unsigned Size, TemplateDecl *TD,
+                     SourceLocation Loc,
+                     SmallVector<TemplateArgument, 8> &Builder) {
+    // This is a directly-provided value.
+    assert(!Ty->isMemberPointerType() &&
+           "Can't handle member pointers here without ABI knowledge");
+
+    unsigned NumIntWords = llvm::alignTo<8>(Size);
+    SmallVector<uint64_t, 2> IntWords(NumIntWords, 0);
+    std::memcpy((char *) IntWords.data(),
+                ((const char *) Values) + Offset, Size);
+    llvm::APInt IntVal(Size*8, IntWords);
+
+    if (Ty->isIntegralOrEnumerationType()) {
+      llvm::APSInt SIntVal(IntVal,
+                           Ty->isUnsignedIntegerOrEnumerationType());
+      return TemplateArgument(*Ctx, SIntVal, Ty);
+    }
+
+    assert(Ty->isPointerType() || Ty->isReferenceType() ||
+           Ty->isNullPtrType());
+
+    if (IntVal.isNullValue())
+      return TemplateArgument(Ty, /*isNullPtr*/true);
+ 
+    // Note: We always generate a new global for pointer values here.
+    // This provides a new potential way to introduce an ODR violation:
+    // If you also generate an instantiation using the same pointer value
+    // using some other symbol name, this will generate a different
+    // instantiation.
+
+    // As we guarantee that the template parameters are not allowed to
+    // point to subobjects, this is useful for optimization because each
+    // of these resolve to distinct underlying objects.
+
+    llvm::SmallString<256> GlobalName("__clang_jit_symbol_");
+    IntVal.toString(GlobalName, 16, false);
+
+    // To this base name we add the mangled type. Stack/heap addresses
+    // can be reused with variables of different type, and these should
+    // have different names even if they share the same address;
+    auto &CGM = Consumer->getCodeGenerator()->CGM();
+    llvm::raw_svector_ostream MOut(GlobalName);
+    CGM.getCXXABI().getMangleContext().mangleTypeName(Ty, MOut);
+
+    auto NLDSI = NewLocalSymDecls.find(GlobalName);
+    if (NLDSI != NewLocalSymDecls.end())
+      return TemplateArgument(NLDSI->second, Ty);
+
+    Sema::ContextRAII TUContext(*S, Ctx->getTranslationUnitDecl());
+
+    QualType STy = Ty->getPointeeType();
+    auto &II = PP->getIdentifierTable().get(GlobalName);
+
+    LocalSymAddrs[II.getName()] = (const void *) IntVal.getZExtValue();
+
+    if (STy->isFunctionType()) {
+      auto *TAFD = FunctionDecl::Create(*Ctx, S->CurContext, Loc, Loc, &II,
+                                        STy, /*TInfo=*/nullptr, SC_Extern, false,
+                                        STy->isFunctionProtoType());
+      TAFD->setImplicit();
+
+      if (const FunctionProtoType *FT = dyn_cast<FunctionProtoType>(STy)) {
+        SmallVector<ParmVarDecl*, 16> Params;
+        for (unsigned i = 0, e = FT->getNumParams(); i != e; ++i) {
+          ParmVarDecl *Parm =
+            ParmVarDecl::Create(*Ctx, TAFD, SourceLocation(), SourceLocation(),
+                                nullptr, FT->getParamType(i), /*TInfo=*/nullptr,
+                                SC_None, nullptr);
+          Parm->setScopeInfo(0, i);
+          Params.push_back(Parm);
+        }
+
+        TAFD->setParams(Params);
+      }
+
+      NewLocalSymDecls[II.getName()] = TAFD;
+      return TemplateArgument(TAFD, Ty);
+    }
+
+    auto *TPL = TD->getTemplateParameters();
+    if (TPL->size() > Builder.size()) {
+      auto *Param = TPL->getParam(Builder.size());
+      if (NonTypeTemplateParmDecl *NTTP =
+            dyn_cast<NonTypeTemplateParmDecl>(Param)) {
+        QualType OrigTy = NTTP->getType()->getPointeeType();
+        OrigTy = OrigTy.getDesugaredType(*Ctx);
+
+        bool IsArray = false;
+        llvm::APInt Sz;
+        QualType ElemTy;
+        if (const auto *DAT = dyn_cast<DependentSizedArrayType>(OrigTy)) {
+          Expr* SzExpr = DAT->getSizeExpr();
+
+          // Get the already-processed arguments for potential substitution.
+          auto *NewTAL = TemplateArgumentList::CreateCopy(*Ctx, Builder);
+          MultiLevelTemplateArgumentList SubstArgs(*NewTAL);
+
+          SmallVector<Expr *, 1> NewSzExprVec;
+          if (!S->SubstExprs(SzExpr, /*IsCall*/ false, SubstArgs, NewSzExprVec)) {
+            Expr::EvalResult NewSzResult;
+            if (NewSzExprVec[0]->EvaluateAsInt(NewSzResult, *Ctx)) {
+              Sz = NewSzResult.Val.getInt();
+              ElemTy = DAT->getElementType();
+              IsArray = true;
+            }
+          }
+        } else if (const auto *CAT = dyn_cast<ConstantArrayType>(OrigTy)) {
+          Sz = CAT->getSize();
+          ElemTy = CAT->getElementType();
+          IsArray = true;
+        }
+
+        if (IsArray && (ElemTy->isIntegerType() ||
+                        ElemTy->isFloatingType())) {
+          QualType ArrTy =
+            Ctx->getConstantArrayType(ElemTy, Sz, clang::ArrayType::Normal, 0);
+
+          SmallVector<Expr *, 16> Vals;
+          unsigned ElemSize = Ctx->getTypeSizeInChars(ElemTy).getQuantity();
+          unsigned ElemNumIntWords = llvm::alignTo<8>(ElemSize);
+          const char *Elem = (const char *) IntVal.getZExtValue();
+          for (unsigned i = 0; i < Sz.getZExtValue(); ++i) {
+            SmallVector<uint64_t, 2> ElemIntWords(ElemNumIntWords, 0);
+
+            std::memcpy((char *) ElemIntWords.data(), Elem, ElemSize);
+            Elem += ElemSize;
+
+            llvm::APInt ElemVal(ElemSize*8, ElemIntWords);
+            if (ElemTy->isIntegerType()) {
+              Vals.push_back(new (*Ctx) IntegerLiteral(
+              *Ctx, ElemVal, ElemTy, Loc));
+            } else {
+              llvm::APFloat ElemValFlt(Ctx->getFloatTypeSemantics(ElemTy), ElemVal);
+              Vals.push_back(FloatingLiteral::Create(*Ctx, ElemValFlt,
+                                                     false, ElemTy, Loc));
+            }
+          }
+
+          InitListExpr *InitL = new (*Ctx) InitListExpr(*Ctx, Loc, Vals, Loc);
+          InitL->setType(ArrTy);
+
+          auto *TAVD =
+            VarDecl::Create(*Ctx, S->CurContext, Loc, Loc, &II,
+                            ArrTy, Ctx->getTrivialTypeSourceInfo(ArrTy, Loc),
+                            SC_Extern);
+          TAVD->setImplicit();
+          TAVD->setConstexpr(true);
+          TAVD->setInit(InitL);
+
+          NewLocalSymDecls[II.getName()] = TAVD;
+          return TemplateArgument(TAVD, Ctx->getLValueReferenceType(ArrTy));
+        }
+      }
+    }
+
+    auto *TAVD =
+      VarDecl::Create(*Ctx, S->CurContext, Loc, Loc, &II,
+                      STy, Ctx->getTrivialTypeSourceInfo(STy, Loc),
+                      SC_Extern);
+    TAVD->setImplicit();
+
+    NewLocalSymDecls[II.getName()] = TAVD;
+    return TemplateArgument(TAVD, Ty);
+  }
+
+  TemplateArgument getTemplateArgumentFromArgDescriptor(
+                     const ArgDescriptor *AD,
+                     TemplateDecl *TD, SourceLocation Loc,
+                     SmallVector<TemplateArgument, 8> &Builder) {
+    // FIXME: If this AD is for a different AST, make sure that it is merged
+    // in, etc.
+
+    DynamicTemplateArgumentDescriptorExpr *DTA = DTAMap[AD->Idx];
+    if (!DTA)
+      fatal();
+
+    TemplateArgument TA = DTA->getTemplateArgumentLoc().getArgument();
+
+    if (!AD->Params.empty()) {
+      SmallVector<TemplateArgument, 8> PBuilder;
+      for (auto *PAD : AD->Params) {
+        auto *PTD = TA.getAsTemplateOrTemplatePattern().getAsTemplateDecl();
+        PBuilder.push_back(getTemplateArgumentFromArgDescriptor(PAD, PTD,
+                                                       DTA->getOperatorLoc(),
+                                                       PBuilder));
+      }
+
+      return TemplateArgument(Ctx->getTemplateSpecializationType(
+                                TA.getAsTemplateOrTemplatePattern(), PBuilder));
+    }
+
+    if (TA.getKind() != TemplateArgument::Expression)
+      return TA;
+
+    SmallVector<PartialDiagnosticAt, 8> Notes;
+    Expr::EvalResult Eval;
+    Eval.Diag = &Notes;
+    if (TA.getAsExpr()->
+          EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, *Ctx))
+      return TA;
+
+    QualType FieldTy = TA.getNonTypeTemplateArgumentType();
+    QualType CanonFieldTy = Ctx->getCanonicalType(FieldTy);
+
+    return getTemplateArgumentFromData(
+             CanonFieldTy, (const void *) AD->Arg.begin(), 0, AD->Arg.size(),
+             TD, DTA->getOperatorLoc(), Builder);
+  }
+
+  std::string instantiateTemplate(const void *Values, unsigned Idx) {
+    DynamicFunctionTemplateInstantiationExpr *DFTI = DFTIMap[Idx];
+    if (!DFTI)
       fatal();
 
     RecordDecl *RD =
@@ -974,55 +1239,14 @@ struct CompilerData {
 
     RD->startDefinition();
 
-    enum TASaveKind {
-      TASK_None,
-      TASK_Type,
-      TASK_Value
-    };
-
-    SmallVector<TASaveKind, 8> TAIsSaved;
-
-    auto *FTSI = FD->getTemplateSpecializationInfo();
-    for (auto &TA : FTSI->TemplateArguments->asArray()) {
-      auto HandleTA = [&](const TemplateArgument &TA) {
-        if (TA.getKind() == TemplateArgument::Type)
-          if (TA.getAsType()->isJITFromStringType()) {
-            TAIsSaved.push_back(TASK_Type);
-            return;
-          }
-
-        if (TA.getKind() != TemplateArgument::Expression) {
-          TAIsSaved.push_back(TASK_None);
-          return;
-        }
-
-        SmallVector<PartialDiagnosticAt, 8> Notes;
-        Expr::EvalResult Eval;
-        Eval.Diag = &Notes;
-        if (TA.getAsExpr()->
-              EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, *Ctx)) {
-          TAIsSaved.push_back(TASK_None);
-          return;
-        }
-
-        QualType FieldTy = TA.getNonTypeTemplateArgumentType();
-        auto *Field = FieldDecl::Create(
-            *Ctx, RD, SourceLocation(), SourceLocation(), /*Id=*/nullptr,
-            FieldTy, Ctx->getTrivialTypeSourceInfo(FieldTy, SourceLocation()),
-            /*BW=*/nullptr, /*Mutable=*/false, /*InitStyle=*/ICIS_NoInit);
-        Field->setAccess(AS_public);
-        RD->addDecl(Field);
-
-        TAIsSaved.push_back(TASK_Value);
-      };
-
-      if (TA.getKind() == TemplateArgument::Pack) {
-        for (auto &PTA : TA.getPackAsArray())
-          HandleTA(PTA);
-        continue;
-      }
-
-      HandleTA(TA);
+    for (const auto *A : DFTI->arguments()) {
+      QualType FieldTy = A->getType();
+      auto *Field = FieldDecl::Create(
+          *Ctx, RD, SourceLocation(), SourceLocation(), /*Id=*/nullptr,
+          FieldTy, Ctx->getTrivialTypeSourceInfo(FieldTy, SourceLocation()),
+          /*BW=*/nullptr, /*Mutable=*/false, /*InitStyle=*/ICIS_NoInit);
+      Field->setAccess(AS_public);
+      RD->addDecl(Field);
     }
 
     RD->completeDefinition();
@@ -1036,264 +1260,47 @@ struct CompilerData {
 
     SmallVector<TemplateArgument, 8> Builder;
 
-    unsigned TAIdx = 0, TSIdx = 0;
-    for (auto &TA : FTSI->TemplateArguments->asArray()) {
-      auto HandleTA = [&](const TemplateArgument &TA,
-                          SmallVector<TemplateArgument, 8> &Builder) {
-        if (TAIsSaved[TAIdx] == TASK_Type) {
-          PP->ResetForJITTypes();
+    for (const auto *A : DFTI->arguments()) {
+      auto *Field = *Fields++;
+      QualType FieldTy = A->getType();
 
-          PP->setPredefines(TypeStrings[TSIdx]);
-          PP->EnterMainSourceFile();
+      unsigned Offset = RLayout.getFieldOffset(Field->getFieldIndex()) / 8;
+      unsigned Size = Ctx->getTypeSizeInChars(FieldTy).getQuantity();
 
-          Parser P(*PP, *S, /*SkipFunctionBodies*/true, /*JITTypes*/true);
+      QualType CanonFieldTy = Ctx->getCanonicalType(FieldTy);
 
-          // Reset this to nullptr so that when we call
-          // Parser::Initialize it has the clean slate it expects.
-          S->CurContext = nullptr;
-
-          P.Initialize();
-
-          Sema::ContextRAII TUContext(*S, Ctx->getTranslationUnitDecl());
-
-          auto CSFMI = CSFuncMap.find(Idx);
-          if (CSFMI != CSFuncMap.end()) {
-	  // Note that this restores the context of the function in which the
-	  // template was instantiated, but not the state *within* the
-	  // function, so local types will remain unavailable.
-
-            auto *FunD = CSFMI->second;
-            restoreFuncDeclContext(FunD);
-            S->CurContext = S->getContainingDC(FunD);
-          }
-
-          TypeResult TSTy = P.ParseTypeName();
-          if (TSTy.isInvalid())
-            fatal();
-
-          QualType TypeFromString = Sema::GetTypeFromParser(TSTy.get());
-          TypeFromString = Ctx->getCanonicalType(TypeFromString);
-
-          Builder.push_back(TemplateArgument(TypeFromString));
-
-          ++TSIdx;
-          ++TAIdx;
-          return;
-        }
-
-        if (TAIsSaved[TAIdx++] != TASK_Value) {
-          Builder.push_back(TA);
-          return;
-        }
-
-        assert(TA.getKind() == TemplateArgument::Expression &&
-               "Only expressions template arguments handled here");
-
-        QualType FieldTy = TA.getNonTypeTemplateArgumentType();
-
-        assert(!FieldTy->isMemberPointerType() &&
-               "Can't handle member pointers here without ABI knowledge");
-
-        auto *Fld = *Fields++;
-        unsigned Offset = RLayout.getFieldOffset(Fld->getFieldIndex()) / 8;
-        unsigned Size = Ctx->getTypeSizeInChars(FieldTy).getQuantity();
-
-        unsigned NumIntWords = llvm::alignTo<8>(Size);
-        SmallVector<uint64_t, 2> IntWords(NumIntWords, 0);
-        std::memcpy((char *) IntWords.data(),
-                    ((const char *) NTTPValues) + Offset, Size);
-        llvm::APInt IntVal(Size*8, IntWords);
-
-        QualType CanonFieldTy = Ctx->getCanonicalType(FieldTy);
-
-        if (FieldTy->isIntegralOrEnumerationType()) {
-          llvm::APSInt SIntVal(IntVal,
-                               FieldTy->isUnsignedIntegerOrEnumerationType());
-          Builder.push_back(TemplateArgument(*Ctx, SIntVal, CanonFieldTy));
-        } else {
-          assert(FieldTy->isPointerType() || FieldTy->isReferenceType() ||
-                 FieldTy->isNullPtrType());
-          if (IntVal.isNullValue()) {
-            Builder.push_back(TemplateArgument(CanonFieldTy, /*isNullPtr*/true));
-          } else {
-	  // Note: We always generate a new global for pointer values here.
-	  // This provides a new potential way to introduce an ODR violation:
-	  // If you also generate an instantiation using the same pointer value
-	  // using some other symbol name, this will generate a different
-	  // instantiation.
-
-	  // As we guarantee that the template parameters are not allowed to
-	  // point to subobjects, this is useful for optimization because each
-	  // of these resolve to distinct underlying objects.
-
-            llvm::SmallString<256> GlobalName("__clang_jit_symbol_");
-            IntVal.toString(GlobalName, 16, false);
-
-	  // To this base name we add the mangled type. Stack/heap addresses
-	  // can be reused with variables of different type, and these should
-	  // have different names even if they share the same address;
-            auto &CGM = Consumer->getCodeGenerator()->CGM();
-            llvm::raw_svector_ostream MOut(GlobalName);
-            CGM.getCXXABI().getMangleContext().mangleTypeName(CanonFieldTy, MOut);
-
-            auto NLDSI = NewLocalSymDecls.find(GlobalName);
-            if (NLDSI != NewLocalSymDecls.end()) {
-                Builder.push_back(TemplateArgument(NLDSI->second, CanonFieldTy));
-            } else {
-              Sema::ContextRAII TUContext(*S, Ctx->getTranslationUnitDecl());
-              SourceLocation Loc = FTSI->getPointOfInstantiation();
-
-              QualType STy = CanonFieldTy->getPointeeType();
-              auto &II = PP->getIdentifierTable().get(GlobalName);
-
-              if (STy->isFunctionType()) {
-                auto *TAFD =
-                  FunctionDecl::Create(*Ctx, S->CurContext, Loc, Loc, &II,
-                                       STy, /*TInfo=*/nullptr, SC_Extern, false,
-                                       STy->isFunctionProtoType());
-                TAFD->setImplicit();
-
-                if (const FunctionProtoType *FT = dyn_cast<FunctionProtoType>(STy)) {
-                  SmallVector<ParmVarDecl*, 16> Params;
-                  for (unsigned i = 0, e = FT->getNumParams(); i != e; ++i) {
-                    ParmVarDecl *Parm =
-                      ParmVarDecl::Create(*Ctx, TAFD, SourceLocation(), SourceLocation(),
-                                          nullptr, FT->getParamType(i), /*TInfo=*/nullptr,
-                                          SC_None, nullptr);
-                    Parm->setScopeInfo(0, i);
-                    Params.push_back(Parm);
-                  }
-
-                  TAFD->setParams(Params);
-                }
-
-                NewLocalSymDecls[II.getName()] = TAFD;
-                Builder.push_back(TemplateArgument(TAFD, CanonFieldTy));
-              } else {
-                bool MadeArray = false;
-                auto *TPL = FTSI->getTemplate()->getTemplateParameters();
-                if (TPL->size() >= TAIdx) {
-                  auto *Param = TPL->getParam(TAIdx-1);
-                  if (NonTypeTemplateParmDecl *NTTP =
-                        dyn_cast<NonTypeTemplateParmDecl>(Param)) {
-                    QualType OrigTy = NTTP->getType()->getPointeeType();
-                    OrigTy = OrigTy.getDesugaredType(*Ctx);
-
-                    bool IsArray = false;
-                    llvm::APInt Sz;
-                    QualType ElemTy;
-                    if (const auto *DAT = dyn_cast<DependentSizedArrayType>(OrigTy)) {
-                      Expr* SzExpr = DAT->getSizeExpr();
-
-                      // Get the already-processed arguments for potential substitution.
-                      auto *NewTAL = TemplateArgumentList::CreateCopy(*Ctx, Builder);
-                      MultiLevelTemplateArgumentList SubstArgs(*NewTAL);
-
-                      SmallVector<Expr *, 1> NewSzExprVec;
-                      if (!S->SubstExprs(SzExpr, /*IsCall*/ false, SubstArgs, NewSzExprVec)) {
-                        Expr::EvalResult NewSzResult;
-                        if (NewSzExprVec[0]->EvaluateAsInt(NewSzResult, *Ctx)) {
-                          Sz = NewSzResult.Val.getInt();
-                          ElemTy = DAT->getElementType();
-                          IsArray = true;
-                        }
-                      }
-                    } else if (const auto *CAT = dyn_cast<ConstantArrayType>(OrigTy)) {
-                      Sz = CAT->getSize();
-                      ElemTy = CAT->getElementType();
-                      IsArray = true;
-                    }
-
-                    if (IsArray && (ElemTy->isIntegerType() ||
-                                    ElemTy->isFloatingType())) {
-                      QualType ArrTy =
-                        Ctx->getConstantArrayType(ElemTy,
-                                                  Sz, clang::ArrayType::Normal, 0);
-
-                      SmallVector<Expr *, 16> Vals;
-                      unsigned ElemSize = Ctx->getTypeSizeInChars(ElemTy).getQuantity();
-                      unsigned ElemNumIntWords = llvm::alignTo<8>(ElemSize);
-                      const char *Elem = (const char *) IntVal.getZExtValue();
-                      for (unsigned i = 0; i < Sz.getZExtValue(); ++i) {
-                        SmallVector<uint64_t, 2> ElemIntWords(ElemNumIntWords, 0);
-
-                        std::memcpy((char *) ElemIntWords.data(), Elem, ElemSize);
-                        Elem += ElemSize;
-
-                        llvm::APInt ElemVal(ElemSize*8, ElemIntWords);
-                        if (ElemTy->isIntegerType()) {
-                          Vals.push_back(new (*Ctx) IntegerLiteral(
-                            *Ctx, ElemVal, ElemTy, Loc));
-                        } else {
-                          llvm::APFloat ElemValFlt(Ctx->getFloatTypeSemantics(ElemTy), ElemVal);
-                          Vals.push_back(FloatingLiteral::Create(*Ctx, ElemValFlt,
-                                                                 false, ElemTy, Loc));
-                        }
-                      }
-
-                      InitListExpr *InitL = new (*Ctx) InitListExpr(*Ctx, Loc, Vals, Loc);
-                      InitL->setType(ArrTy);
-
-                      auto *TAVD =
-                        VarDecl::Create(*Ctx, S->CurContext, Loc, Loc, &II,
-                                        ArrTy, Ctx->getTrivialTypeSourceInfo(ArrTy, Loc),
-                                        SC_Extern);
-                      TAVD->setImplicit();
-                      TAVD->setConstexpr(true);
-                      TAVD->setInit(InitL);
-
-                      NewLocalSymDecls[II.getName()] = TAVD;
-                      Builder.push_back(TemplateArgument(TAVD, Ctx->getLValueReferenceType(ArrTy)));
-
-                      MadeArray = true;
-                    }
-                  }
-                }
-
-                if (!MadeArray) {
-                  auto *TAVD =
-                    VarDecl::Create(*Ctx, S->CurContext, Loc, Loc, &II,
-                                    STy, Ctx->getTrivialTypeSourceInfo(STy, Loc),
-                                    SC_Extern);
-                  TAVD->setImplicit();
-
-                  NewLocalSymDecls[II.getName()] = TAVD;
-                  Builder.push_back(TemplateArgument(TAVD, CanonFieldTy));
-                }
-              }
-
-              LocalSymAddrs[II.getName()] = (const void *) IntVal.getZExtValue();
-            }
-          }
-        }
-      };
-
-      if (TA.getKind() == TemplateArgument::Pack) {
-        SmallVector<TemplateArgument, 8> PBuilder;
-        for (auto &PTA : TA.getPackAsArray())
-          HandleTA(PTA, PBuilder);
-        Builder.push_back(TemplateArgument::CreatePackCopy(*Ctx, PBuilder));
+      if (isDynamicArg(CanonFieldTy)) {
+        // This value is a template-argument descriptor. The descriptor is just
+        // a pointer to the underlying structure.
+        auto *AD = (const ArgDescriptor *) (((const char *) Values) + Offset);
+        Builder.push_back(getTemplateArgumentFromArgDescriptor(
+                            AD,
+                            DFTI->getTemplateName().getAsTemplateDecl(),
+                            DFTI->getOperatorLoc(), Builder));
         continue;
       }
 
-      HandleTA(TA, Builder);
+      Builder.push_back(getTemplateArgumentFromData(
+                          CanonFieldTy, Values, Offset, Size,
+                          DFTI->getTemplateName().getAsTemplateDecl(),
+                          DFTI->getOperatorLoc(), Builder));
     }
 
-    SourceLocation Loc = FTSI->getPointOfInstantiation();
+    SourceLocation Loc = DFTI->getOperatorLoc();
     auto *NewTAL = TemplateArgumentList::CreateCopy(*Ctx, Builder);
     MultiLevelTemplateArgumentList SubstArgs(*NewTAL);
 
-    auto *FunctionTemplate = FTSI->getTemplate();
+    auto *FunctionTemplate =
+      cast<FunctionTemplateDecl>(DFTI->getTemplateName().getAsTemplateDecl());
     DeclContext *Owner = FunctionTemplate->getDeclContext();
     if (FunctionTemplate->getFriendObjectKind())
       Owner = FunctionTemplate->getLexicalDeclContext();
 
     std::string SMName;
-    FunctionTemplateDecl *FTD = FTSI->getTemplate();
     sema::TemplateDeductionInfo Info(Loc);
     {
       Sema::InstantiatingTemplate Inst(
-        *S, Loc, FTD, NewTAL->asArray(),
+        *S, Loc, FunctionTemplate, NewTAL->asArray(),
         Sema::CodeSynthesisContext::ExplicitTemplateArgumentSubstitution, Info);
 
       S->setCurScope(S->TUScope = new Scope(nullptr, Scope::DeclScope, PP->getDiagnostics()));
@@ -1372,9 +1379,12 @@ struct CompilerData {
     } while (Changed);
   }
 
-  void *resolveFunction(const void *NTTPValues, const char **TypeStrings,
-                        unsigned Idx) {
-    std::string SMName = instantiateTemplate(NTTPValues, TypeStrings, Idx);
+  void *resolveFunction(const void *Values, unsigned Idx,
+                        std::vector<__clang_jit::diagnostic> &Errors,
+                        std::vector<__clang_jit::diagnostic> &Warnings) {
+    Diagnostics->setClient(new DiagnosticCollector(Errors, Warnings));
+
+    std::string SMName = instantiateTemplate(Values, Idx);
 
     // Now we know the name of the symbol, check to see if we already have it.
     if (auto SpecSymbol = CJ->findSymbol(SMName))
@@ -1382,7 +1392,7 @@ struct CompilerData {
         return (void *) llvm::cantFail(SpecSymbol.getAddress());
 
     if (DevCD)
-      DevCD->instantiateTemplate(NTTPValues, TypeStrings, Idx);
+      DevCD->instantiateTemplate(Values, Idx);
 
     emitAllNeeded();
 
@@ -1707,14 +1717,10 @@ bool InitializedTarget = false;
 llvm::DenseMap<const void *, std::unique_ptr<CompilerData>> TUCompilerData;
 
 struct InstInfo {
-  InstInfo(const char *InstKey, const void *NTTPValues,
-           unsigned NTTPValuesSize, const char **TypeStrings,
-           unsigned TypeStringsCnt)
+  InstInfo(const char *InstKey, const void *Values,
+           unsigned ValuesSize)
     : Key(InstKey),
-      NTArgs(StringRef((const char *) NTTPValues, NTTPValuesSize)) {
-    for (unsigned i = 0, e = TypeStringsCnt; i != e; ++i)
-      TArgs.push_back(StringRef(TypeStrings[i]));
-  }
+      Args(StringRef((const char *) Values, ValuesSize)) { }
 
   InstInfo(const StringRef &R) : Key(R) { }
 
@@ -1723,26 +1729,18 @@ struct InstInfo {
   StringRef Key;
 
   // The buffer of non-type arguments (this is packed).
-  SmallString<16> NTArgs;
-
-  // Vector of string type names.
-  SmallVector<SmallString<32>, 1> TArgs;
+  SmallString<16> Args;
 };
 
 struct ThisInstInfo {
-  ThisInstInfo(const char *InstKey, const void *NTTPValues,
-               unsigned NTTPValuesSize, const char **TypeStrings,
-               unsigned TypeStringsCnt)
-    : InstKey(InstKey), NTTPValues(NTTPValues), NTTPValuesSize(NTTPValuesSize),
-      TypeStrings(TypeStrings), TypeStringsCnt(TypeStringsCnt) { }
+  ThisInstInfo(const char *InstKey, const void *Values,
+               unsigned ValuesSize)
+    : InstKey(InstKey), Values(Values), ValuesSize(ValuesSize) { }
 
   const char *InstKey;
 
-  const void *NTTPValues;
-  unsigned NTTPValuesSize;
-
-  const char **TypeStrings;
-  unsigned TypeStringsCnt;
+  const void *Values;
+  unsigned ValuesSize;
 };
 
 struct InstMapInfo {
@@ -1760,10 +1758,8 @@ struct InstMapInfo {
     using llvm::hash_combine_range;
 
     hash_code h = hash_combine_range(II.Key.begin(), II.Key.end());
-    h = hash_combine(h, hash_combine_range(II.NTArgs.begin(),
-                                           II.NTArgs.end()));
-    for (auto &TA : II.TArgs)
-      h = hash_combine(h, hash_combine_range(TA.begin(), TA.end()));
+    h = hash_combine(h, hash_combine_range(II.Args.begin(),
+                                           II.Args.end()));
 
     return (unsigned) h;
   }
@@ -1775,22 +1771,16 @@ struct InstMapInfo {
 
     hash_code h =
       hash_combine_range(TII.InstKey, TII.InstKey + std::strlen(TII.InstKey));
-    h = hash_combine(h, hash_combine_range((const char *) TII.NTTPValues,
-                                           ((const char *) TII.NTTPValues) +
-                                             TII.NTTPValuesSize));
-    for (unsigned int i = 0, e = TII.TypeStringsCnt; i != e; ++i)
-      h = hash_combine(h,
-                       hash_combine_range(TII.TypeStrings[i],
-                                          TII.TypeStrings[i] +
-                                            std::strlen(TII.TypeStrings[i])));
+    h = hash_combine(h, hash_combine_range((const char *) TII.Values,
+                                           ((const char *) TII.Values) +
+                                             TII.ValuesSize));
 
     return (unsigned) h;
   }
 
   static bool isEqual(const InstInfo &LHS, const InstInfo &RHS) {
-    return LHS.Key    == RHS.Key &&
-           LHS.NTArgs == RHS.NTArgs &&
-           LHS.TArgs  == RHS.TArgs;
+    return LHS.Key  == RHS.Key &&
+           LHS.Args == RHS.Args;
   }
 
   static bool isEqual(const ThisInstInfo &LHS, const InstInfo &RHS) {
@@ -1800,21 +1790,27 @@ struct InstMapInfo {
   static bool isEqual(const InstInfo &II, const ThisInstInfo &TII) {
     if (II.Key != StringRef(TII.InstKey))
       return false;
-    if (II.NTArgs != StringRef((const char *) TII.NTTPValues,
-                               TII.NTTPValuesSize))
+    if (II.Args != StringRef((const char *) TII.Values,
+                             TII.ValuesSize))
       return false;
-    if (II.TArgs.size() != TII.TypeStringsCnt)
-      return false;
-    for (unsigned int i = 0, e = TII.TypeStringsCnt; i != e; ++i)
-      if (II.TArgs[i] != StringRef(TII.TypeStrings[i]))
-        return false;
 
     return true; 
   }
 };
 
+struct InstantiationData {
+  InstantiationData(InstInfo II)
+    : RefCnt(1), II(II), FPtr(nullptr) {}
+
+  unsigned RefCnt;
+  InstInfo II;
+  void *FPtr;
+  std::vector<__clang_jit::diagnostic> Errors;
+  std::vector<__clang_jit::diagnostic> Warnings;
+};
+
 llvm::sys::SmartMutex<false> IMutex;
-llvm::DenseMap<InstInfo, void *, InstMapInfo> Instantiations;
+llvm::DenseMap<InstInfo, InstantiationData *, InstMapInfo> Instantiations;
 
 } // anonymous namespace
 
@@ -1822,22 +1818,55 @@ extern "C"
 #ifdef _MSC_VER
 __declspec(dllexport)
 #endif
-void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
-                  const void *ASTBuffer, size_t ASTBufferSize,
-                  const void *IRBuffer, size_t IRBufferSize,
-                  const void **LocalPtrs, unsigned LocalPtrsCnt,
-                  const void **LocalDbgPtrs, unsigned LocalDbgPtrsCnt,
-                  const DevData *DeviceData, unsigned DevCnt,
-                  const void *NTTPValues, unsigned NTTPValuesSize,
-                  const char **TypeStrings, unsigned TypeStringsCnt,
-                  const char *InstKey, unsigned Idx) {
+void __clang_jit_release(void *Ptr) {
+  InstantiationData *II = (InstantiationData *) Ptr;
+  --II->RefCnt;
+
+  // TODO: At some point, we should garbage collect instantiations that are not
+  // in use (or we should not cache at all and always relaim here?).
+}
+
+extern "C"
+#ifdef _MSC_VER
+__declspec(dllexport)
+#endif
+void *__clang_jit_error_vector(void *Ptr) {
+  InstantiationData *II = (InstantiationData *) Ptr;
+  return (void *) &II->Errors;
+}
+
+extern "C"
+#ifdef _MSC_VER
+__declspec(dllexport)
+#endif
+void *__clang_jit_warning_vector(void *Ptr) {
+  InstantiationData *II = (InstantiationData *) Ptr;
+  return (void *) &II->Warnings;
+}
+
+extern "C"
+#ifdef _MSC_VER
+__declspec(dllexport)
+#endif
+void __clang_jit_i(const void *CmdArgs, unsigned CmdArgsLen,
+                   const void *ASTBuffer, size_t ASTBufferSize,
+                   const void *IRBuffer, size_t IRBufferSize,
+                   const void **LocalPtrs, unsigned LocalPtrsCnt,
+                   const void **LocalDbgPtrs, unsigned LocalDbgPtrsCnt,
+                   const DevData *DeviceData, unsigned DevCnt,
+                   const void *Values, unsigned ValuesSize,
+                   const char *InstKey, unsigned Idx,
+                   __clang_jit::dynamic_function_template_instantiation_base *DFTI) {
   {
     llvm::MutexGuard Guard(IMutex);
     auto II =
-      Instantiations.find_as(ThisInstInfo(InstKey, NTTPValues, NTTPValuesSize,
-                                          TypeStrings, TypeStringsCnt));
-    if (II != Instantiations.end())
-      return II->second;
+      Instantiations.find_as(ThisInstInfo(InstKey, Values, ValuesSize));
+    if (II != Instantiations.end()) {
+      new(DFTI) __clang_jit::dynamic_function_template_instantiation_base(
+        (void *) II->second->FPtr, (void *) II->second);
+      ++II->second->RefCnt;
+      return;
+    }
   }
 
   llvm::MutexGuard Guard(Mutex);
@@ -1863,14 +1892,74 @@ void *__clang_jit(const void *CmdArgs, unsigned CmdArgsLen,
     CD = TUCDI->second.get();
   }
 
-  void *FPtr = CD->resolveFunction(NTTPValues, TypeStrings, Idx);
+  InstInfo II(InstKey, Values, ValuesSize);
+  InstantiationData *ID = new InstantiationData(II);
+
+  ID->FPtr = CD->resolveFunction(Values, Idx, ID->Errors, ID->Warnings);
 
   {
     llvm::MutexGuard Guard(IMutex);
-    Instantiations[InstInfo(InstKey, NTTPValues, NTTPValuesSize,
-                            TypeStrings, TypeStringsCnt)] = FPtr;
+    Instantiations[II] = ID;
   }
 
-  return FPtr;
+  new(DFTI) __clang_jit::dynamic_function_template_instantiation_base(
+    (void *) ID->FPtr, (void *) ID);
+}
+
+extern "C"
+#ifdef _MSC_VER
+__declspec(dllexport)
+#endif
+void __clang_jit_dd_release(void *Ptr) {
+  ArgDescriptor *AD = (ArgDescriptor *) Ptr;
+  if (!--AD->RefCnt)
+    delete AD;
+}
+
+extern "C"
+#ifdef _MSC_VER
+__declspec(dllexport)
+#endif
+void __clang_jit_dd_reference(void *Ptr) {
+  ArgDescriptor *AD = (ArgDescriptor *) Ptr;
+  ++AD->RefCnt;
+}
+
+extern "C"
+#ifdef _MSC_VER
+__declspec(dllexport)
+#endif
+void *__clang_jit_dd_compose(void *Ptr, std::size_t NP, ...) {
+  va_list args;
+  va_start(args, NP);
+
+  ArgDescriptor *AD = (ArgDescriptor *) Ptr;
+  ArgDescriptor *CAD = new ArgDescriptor(*AD);
+
+  for (std::size_t i = 0; i < NP; ++i) {
+    ArgDescriptor *PAD = va_arg(args, ArgDescriptor *);
+    ++PAD->RefCnt;
+    CAD->Params.push_back(PAD);
+  }
+
+  va_end(args);
+
+  return (void *) CAD;
+}
+
+extern "C"
+#ifdef _MSC_VER
+__declspec(dllexport)
+#endif
+void __clang_jit_dd(const void *CmdArgs, unsigned CmdArgsLen,
+                    const void *ASTBuffer, size_t ASTBufferSize,
+                    const void *IRBuffer, size_t IRBufferSize,
+                    const void **LocalPtrs, unsigned LocalPtrsCnt,
+                    const void **LocalDbgPtrs, unsigned LocalDbgPtrsCnt,
+                    const DevData *DeviceData, unsigned DevCnt,
+                    const void *Value, unsigned ValueSize, unsigned Idx,
+                    __clang_jit::dynamic_template_argument *DTA) {
+  ArgDescriptor *AD = new ArgDescriptor(ASTBuffer, Idx, Value, ValueSize);
+  new (DTA) __clang_jit::dynamic_template_argument((void *) AD);
 }
 

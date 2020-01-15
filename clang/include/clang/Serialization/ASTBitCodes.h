@@ -1931,6 +1931,7 @@ namespace serialization {
 
       // Clang JIT
       EXPR_DYNAMIC_FUNCTION_TEMPLATE_INSTANTIATION,
+      EXPR_DYNAMIC_TEMPLATE_ARGUMENT_DESCRIPTOR,
 
       // OpenMP directives
       STMT_OMP_PARALLEL_DIRECTIVE,
