@@ -1296,29 +1296,16 @@ struct CompilerData {
     auto *TPL = FunctionTemplate->getTemplateParameters();
     for (unsigned i = Builder.size(); i < TPL->size(); ++i) {
       auto *TP = TPL->getParam(i);
-      if (auto *NTTP = dyn_cast<NonTypeTemplateParmDecl>(TP)) {
-        if (!NTTP->hasDefaultArgument())
-          break;
+      bool HasDefaultArg;
+      auto DefTALoc =
+        S->SubstDefaultTemplateArgumentIfAvailable(
+          FunctionTemplate, FunctionTemplate->getLocation(),
+          FunctionTemplate->getSourceRange().getEnd(),
+          TP, Builder, HasDefaultArg);
+      if (!HasDefaultArg)
+        break;
 
-        Builder.push_back(TemplateArgument(NTTP->getDefaultArgument()));
-        continue;
-      }
-
-      if (auto *TTP = dyn_cast<TemplateTypeParmDecl>(TP)) {
-        if (!TTP->hasDefaultArgument())
-          break;
-
-        Builder.push_back(TemplateArgument(TTP->getDefaultArgument()));
-        continue;
-      }
-
-      if (auto *TTTP = dyn_cast<TemplateTemplateParmDecl>(TP)) {
-        if (!TTTP->hasDefaultArgument())
-          break;
-
-        Builder.push_back(TTTP->getDefaultArgument().getArgument());
-        continue;
-      }
+      Builder.push_back(DefTALoc.getArgument());
     }
 
     auto *NewTAL = TemplateArgumentList::CreateCopy(*Ctx, Builder);
