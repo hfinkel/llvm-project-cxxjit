@@ -150,7 +150,7 @@ struct dynamic_template_argument {
 
   explicit dynamic_template_argument(void *d) : d(d) {}
 
-private:
+protected:
   void *d;
 };
 
@@ -159,9 +159,9 @@ struct dynamic_template_template_argument : public dynamic_template_argument {
   using dynamic_template_argument::dynamic_template_argument;
 
   template <typename... Args>
-  dynamic_template_argument compose(Args args...) const {
+  dynamic_template_argument compose(Args... args) const {
     auto gd = [](const dynamic_template_argument &dd) {
-      return dd->d;
+      return static_cast<const dynamic_template_template_argument *>(&dd)->d;
     };
 
     return dynamic_template_argument(
