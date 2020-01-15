@@ -863,8 +863,11 @@ struct CompilerData {
             // Aliases cannot have externally-available linkage, so give them
             // private linkage.
             GV.setLinkage(llvm::GlobalValue::PrivateLinkage);
-          else
+          else {
             GV.setLinkage(llvm::GlobalValue::AvailableExternallyLinkage);
+            if (auto *GO = dyn_cast<GlobalObject>(&GV))
+              GO->setComdat(nullptr);
+          }
         }
     }
 
@@ -1677,7 +1680,8 @@ struct CompilerData {
       if (!Aliasee || !Aliasee->isDeclarationForLinker()) {
         continue;
       }
-      assert(Aliasee->hasAvailableExternallyLinkage() && "Broken module: alias points to declaration");
+      assert(Aliasee->hasAvailableExternallyLinkage() &&
+             "Broken module: alias points to declaration");
       ToReplace.insert(&Alias);
     }
 
