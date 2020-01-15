@@ -1002,7 +1002,7 @@ struct CompilerData {
     if (!ND)
       return false;
 
-    if (ND->getParent()->getRedeclContext()->isTranslationUnit())
+    if (!ND->getParent()->getRedeclContext()->isTranslationUnit())
       return false;
 
     const IdentifierInfo *II = ND->getIdentifier();
@@ -1272,7 +1272,7 @@ struct CompilerData {
       if (isDynamicArg(CanonFieldTy)) {
         // This value is a template-argument descriptor. The descriptor is just
         // a pointer to the underlying structure.
-        auto *AD = (const ArgDescriptor *) (((const char *) Values) + Offset);
+        auto *AD = *(const ArgDescriptor *const *) (((const char *) Values) + Offset);
         Builder.push_back(getTemplateArgumentFromArgDescriptor(
                             AD,
                             DFTI->getTemplateName().getAsTemplateDecl(),
@@ -1287,11 +1287,40 @@ struct CompilerData {
     }
 
     SourceLocation Loc = DFTI->getOperatorLoc();
+    auto *FunctionTemplate =
+      cast<FunctionTemplateDecl>(DFTI->getTemplateName().getAsTemplateDecl());
+
+    auto *TPL = FunctionTemplate->getTemplateParameters();
+    for (unsigned i = Builder.size(); i < TPL->size(); ++i) {
+      auto *TP = TPL->getParam(i);
+      if (auto *NTTP = dyn_cast<NonTypeTemplateParmDecl>(TP)) {
+        if (!NTTP->hasDefaultArgument())
+          break;
+
+        Builder.push_back(TemplateArgument(NTTP->getDefaultArgument()));
+        continue;
+      }
+
+      if (auto *TTP = dyn_cast<TemplateTypeParmDecl>(TP)) {
+        if (!TTP->hasDefaultArgument())
+          break;
+
+        Builder.push_back(TemplateArgument(TTP->getDefaultArgument()));
+        continue;
+      }
+
+      if (auto *TTTP = dyn_cast<TemplateTemplateParmDecl>(TP)) {
+        if (!TTTP->hasDefaultArgument())
+          break;
+
+        Builder.push_back(TTTP->getDefaultArgument().getArgument());
+        continue;
+      }
+    }
+
     auto *NewTAL = TemplateArgumentList::CreateCopy(*Ctx, Builder);
     MultiLevelTemplateArgumentList SubstArgs(*NewTAL);
 
-    auto *FunctionTemplate =
-      cast<FunctionTemplateDecl>(DFTI->getTemplateName().getAsTemplateDecl());
     DeclContext *Owner = FunctionTemplate->getDeclContext();
     if (FunctionTemplate->getFriendObjectKind())
       Owner = FunctionTemplate->getLexicalDeclContext();
@@ -1959,6 +1988,7 @@ void __clang_jit_dd(const void *CmdArgs, unsigned CmdArgsLen,
                     const DevData *DeviceData, unsigned DevCnt,
                     const void *Value, unsigned ValueSize, unsigned Idx,
                     __clang_jit::dynamic_template_argument *DTA) {
+llvm::errs() << "ND: " << Idx << " s " << ValueSize << "\n";
   ArgDescriptor *AD = new ArgDescriptor(ASTBuffer, Idx, Value, ValueSize);
   new (DTA) __clang_jit::dynamic_template_argument((void *) AD);
 }

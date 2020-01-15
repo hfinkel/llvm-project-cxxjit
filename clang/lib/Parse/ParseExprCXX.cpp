@@ -3640,20 +3640,24 @@ ExprResult Parser::ParseDynamicTemplateArgumentDescriptor() {
   if (ExpectAndConsume(tok::less))
     return ExprError();
 
-  ParsedTemplateArgument Arg = ParseTemplateArgument();
-  SourceLocation EllipsisLoc;
-  if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
-    Arg = Actions.ActOnPackExpansion(Arg, EllipsisLoc);
+  ParsedTemplateArgument Arg;
 
-  if (Arg.isInvalid()) {
-    SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
-    return ExprError();
+  {
+    GreaterThanIsOperatorScope G(GreaterThanIsOperator, false);
+    Arg = ParseTemplateArgument();
+    SourceLocation EllipsisLoc;
+    if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
+      Arg = Actions.ActOnPackExpansion(Arg, EllipsisLoc);
+
+    if (Arg.isInvalid()) {
+      SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
+      return ExprError();
+    }
   }
 
-  SourceLocation RAngleBracketLoc = Tok.getLocation();
-
-  if (ExpectAndConsume(tok::greater))
-    return ExprError(Diag(LAngleBracketLoc, diag::note_matching) << tok::less);
+  SourceLocation RAngleBracketLoc;
+  if (ParseGreaterThanInTemplateList(RAngleBracketLoc, true, false))
+    return ExprError();
 
   return Actions.ActOnDynamicTemplateArgumentDescriptor(
                    OpLoc, Arg, LAngleBracketLoc, RAngleBracketLoc);

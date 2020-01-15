@@ -2307,8 +2307,16 @@ CodeGenFunction::EmitDynamicFunctionTemplateInstantiationExpr(
 
   for (const auto *A : E.arguments()) {
     LValue FieldLV = EmitLValueForField(Base, *Fields++);
-    RValue RV = RValue::get(EmitScalarExpr(A, /*Ignore*/ false));
-    EmitStoreThroughLValue(RV, FieldLV);
+    if (hasScalarEvaluationKind(A->getType())) {
+      RValue RV = RValue::get(EmitScalarExpr(A, /*Ignore*/ false));
+      EmitStoreThroughLValue(RV, FieldLV);
+    } else {
+      EmitAggExpr(A, AggValueSlot::forLValue(FieldLV,
+                                             AggValueSlot::IsDestructed,
+                                             AggValueSlot::DoesNotNeedGCBarriers,
+                                             AggValueSlot::IsNotAliased,
+                                             AggValueSlot::DoesNotOverlap));
+    }
   }
 
   llvm::Type *TypeParams[] =
@@ -2376,9 +2384,18 @@ CodeGenFunction::EmitDynamicTemplateArgumentDescriptorExpr(
           EvaluateAsConstantExpr(Eval, Expr::EvaluateForMangling, C)) {
       QualType ArgTy = A.getNonTypeTemplateArgumentType();
       Address AI = CreateMemTemp(ArgTy, "__clang_jit_dd_arg");
-      RValue RV = RValue::get(EmitScalarExpr(A.getAsExpr(),
-                                             /*Ignore*/ false));
-      EmitStoreThroughLValue(RV, MakeAddrLValue(AI, ArgTy));
+      LValue AL = MakeAddrLValue(AI, ArgTy);
+      if (hasScalarEvaluationKind(A.getAsExpr()->getType())) {
+        RValue RV = RValue::get(EmitScalarExpr(A.getAsExpr(),
+                                               /*Ignore*/ false));
+        EmitStoreThroughLValue(RV, AL);
+      } else {
+        EmitAggExpr(A.getAsExpr(), AggValueSlot::forLValue(AL,
+                                               AggValueSlot::IsDestructed,
+                                               AggValueSlot::DoesNotNeedGCBarriers,
+                                               AggValueSlot::IsNotAliased,
+                                               AggValueSlot::DoesNotOverlap));
+      }
       DataPtr = Builder.CreatePointerCast(AI.getPointer(), VoidPtrTy);
       DataSize = Builder.getInt32(C.getTypeSizeInChars(ArgTy).getQuantity());
     }
