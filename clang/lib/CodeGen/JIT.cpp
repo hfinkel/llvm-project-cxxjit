@@ -1193,8 +1193,11 @@ struct CompilerData {
     // in, etc.
 
     DynamicTemplateArgumentDescriptorExpr *DTA = DTAMap[AD->Idx];
-    if (!DTA)
+    if (!DTA) {
+      llvm::errs() << "Cannot find argument descriptor for index "
+                   << AD->Idx << "\n";
       fatal();
+    }
 
     TemplateArgument TA = DTA->getTemplateArgumentLoc().getArgument();
 
@@ -1231,8 +1234,11 @@ struct CompilerData {
 
   std::string instantiateTemplate(const void *Values, unsigned Idx) {
     DynamicFunctionTemplateInstantiationExpr *DFTI = DFTIMap[Idx];
-    if (!DFTI)
+    if (!DFTI) {
+      llvm::errs() << "Cannot find JIT instantiation for index "
+                   << Idx << "\n";
       fatal();
+    }
 
     RecordDecl *RD =
       Ctx->buildImplicitRecord(llvm::Twine("__clang_jit_args_")

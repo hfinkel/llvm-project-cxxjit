@@ -2607,6 +2607,8 @@ DEF_TRAVERSE_STMT(AtomicExpr, {})
 
 DEF_TRAVERSE_STMT(DynamicFunctionTemplateInstantiationExpr, {
   TRY_TO(TraverseTemplateName(S->getTemplateName()));
+  for (auto *A : S->arguments())
+    TRY_TO(TraverseStmt(A));
 })
 DEF_TRAVERSE_STMT(DynamicTemplateArgumentDescriptorExpr, {
   TRY_TO(TraverseTemplateArgumentLoc(S->getTemplateArgumentLoc()));
