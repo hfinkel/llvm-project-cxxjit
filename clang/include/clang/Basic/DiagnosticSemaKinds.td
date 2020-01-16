@@ -3008,9 +3008,13 @@ def ext_cannot_use_trivial_abi : ExtWarn<
 // For Clang JIT
 def err_dynamic_instantiation_of_overloaded_function : Error<
   "cannot dynamically instantiate an overloaded function template">;
-def err_dynamic_instantiation_with_spec_type_mismatch : Error<
-  "specialization of dynamically-instantiated function template has type '%0' "
-  ", which is different from the type of the base template: '%1'">;
+def err_dynamic_instantiation_with_dependent_type : Error<
+  "dynamically-instantiated function template has a "
+  "template-parameter-dependent type '%0'">;
+def err_dynamic_instantiation_marked_with_dependent_type : Error<
+  "function template marked for dynamic instantiation has a "
+  "template-parameter-dependent type '%0'">;
+
 def err_jit_required : Error<
   "dynamic function-template instantiation not enabled; use -fjit to enable">;
 

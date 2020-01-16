@@ -7992,14 +7992,6 @@ Sema::BuildDynamicFunctionTemplateInstantiation(
   // dynamic_function_template_instantiation<FnTy> where FnTy is the function
   // type of the underlying template.
 
-  auto *FTD = cast<FunctionTemplateDecl>(Name.getAsTemplateDecl());
-  QualType FnTy = FTD->getTemplatedDecl()->getType();
-
-  if (!FTD->getTemplatedDecl()->hasAttr<JITFuncAttr>()) {
-    Diag(Loc, diag::warn_jit_no_attr);
-    NoteAllFoundTemplates(Name);
-  }
- 
   // We cannot dynamically instantiate a function template that is overloaded.
   // We need to form the type of the function pointer before the call arguments
   // are known.
@@ -8010,22 +8002,27 @@ Sema::BuildDynamicFunctionTemplateInstantiation(
     return ExprError();
   }
 
-  // A function template can be specialized, but each specializaton must share
-  // its function type with the base template.
+  auto *FTD = cast<FunctionTemplateDecl>(Name.getAsTemplateDecl());
+  auto *FD = FTD->getTemplatedDecl();
+  QualType FnTy = FD->getType();
 
-  for (const FunctionDecl *SFD : FTD->specializations())
-    if (Context.getCanonicalType(SFD->getType()) !=
-        Context.getCanonicalType(FnTy)) {
-      Diag(Loc, diag::err_dynamic_instantiation_with_spec_type_mismatch) <<
-        SFD->getType() << FnTy;
-      Diag(SFD->getLocation(), diag::note_template_declared_here) << 0 <<
-        SFD->getDeclName();
+  // The function type cannot be dependent on the template parameters.
+  if (DependsOnTemplateParameters(FnTy, FTD->getTemplateParameters())) {
+      Diag(Loc, diag::err_dynamic_instantiation_with_dependent_type)
+        << FnTy;
+      Diag(FD->getLocation(), diag::note_template_declared_here) << 0 <<
+        FD->getDeclName();
       return ExprError();
-    }
-
+  }
+ 
   QualType T = BuildDynamicFunctionTemplateInstantiationTmpl(FnTy, Loc);
   if (T.isNull())
     return ExprError();
+
+  if (!FD->hasAttr<JITFuncAttr>()) {
+    Diag(Loc, diag::warn_jit_no_attr);
+    NoteAllFoundTemplates(Name);
+  }
 
   auto DFTI = DynamicFunctionTemplateInstantiationExpr::Create(
     Context, T, Loc, QualifierLoc, Name, Args, LParenLoc, RParenLoc,

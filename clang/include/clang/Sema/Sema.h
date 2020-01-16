@@ -6551,6 +6551,8 @@ public:
       ArrayRef<TemplateParameterList *> ParamLists,
       bool IsFriend, bool &IsMemberSpecialization, bool &Invalid);
 
+  bool DependsOnTemplateParameters(QualType T, TemplateParameterList *Params);
+
   DeclResult CheckClassTemplate(
       Scope *S, unsigned TagSpec, TagUseKind TUK, SourceLocation KWLoc,
       CXXScopeSpec &SS, IdentifierInfo *Name, SourceLocation NameLoc,

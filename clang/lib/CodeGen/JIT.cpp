@@ -1329,7 +1329,7 @@ struct CompilerData {
       auto *Specialization = cast_or_null<FunctionDecl>(
         S->SubstDecl(FunctionTemplate->getTemplatedDecl(), Owner, SubstArgs));
       if (!Specialization || Specialization->isInvalidDecl())
-        fatal();
+        return "";
 
       Specialization->setTemplateSpecializationKind(TSK_ExplicitInstantiationDefinition, Loc);
       S->InstantiateFunctionDefinition(Loc, Specialization, true, true, true);
@@ -1338,7 +1338,7 @@ struct CompilerData {
     }
 
     if (Diagnostics->hasErrorOccurred())
-      fatal();
+      return "";
 
     return SMName;
   }
@@ -1404,6 +1404,8 @@ struct CompilerData {
     Diagnostics->setClient(new DiagnosticCollector(Errors, Warnings));
 
     std::string SMName = instantiateTemplate(Values, Idx);
+    if (SMName.empty())
+      return nullptr;
 
     // Now we know the name of the symbol, check to see if we already have it.
     if (auto SpecSymbol = CJ->findSymbol(SMName))
@@ -1979,7 +1981,6 @@ void __clang_jit_dd(const void *CmdArgs, unsigned CmdArgsLen,
                     const DevData *DeviceData, unsigned DevCnt,
                     const void *Value, unsigned ValueSize, unsigned Idx,
                     __clang_jit::dynamic_template_argument *DTA) {
-llvm::errs() << "ND: " << Idx << " s " << ValueSize << "\n";
   ArgDescriptor *AD = new ArgDescriptor(ASTBuffer, Idx, Value, ValueSize);
   new (DTA) __clang_jit::dynamic_template_argument((void *) AD);
 }

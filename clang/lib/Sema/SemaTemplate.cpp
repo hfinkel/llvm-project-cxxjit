@@ -2581,8 +2581,8 @@ struct DependencyChecker : RecursiveASTVisitor<DependencyChecker> {
 
 /// Determines whether a given type depends on the given parameter
 /// list.
-static bool
-DependsOnTemplateParameters(QualType T, TemplateParameterList *Params) {
+bool
+Sema::DependsOnTemplateParameters(QualType T, TemplateParameterList *Params) {
   DependencyChecker Checker(Params, /*IgnoreNonTypeDependent*/false);
   Checker.TraverseType(T);
   return Checker.Match;

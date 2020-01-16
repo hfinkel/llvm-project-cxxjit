@@ -4312,6 +4312,18 @@ JITFuncAttr *Sema::mergeJITFuncAttr(Decl *D, SourceRange Range,
   if (D->hasAttr<JITFuncAttr>())
     return nullptr;
 
+  auto *FD = cast<FunctionDecl>(D);
+  QualType FnTy = FD->getType();
+  auto *FTD = FD->getDescribedFunctionTemplate();
+
+  // The function type cannot be dependent on the template parameters.
+  if (DependsOnTemplateParameters(FnTy, FTD->getTemplateParameters())) {
+      Diag(FD->getLocation(),
+           diag::err_dynamic_instantiation_marked_with_dependent_type)
+        << FnTy;
+      return nullptr;
+  }
+
   return ::new (Context) JITFuncAttr(Range, Context,
                                      AttrSpellingListIndex);
 }
